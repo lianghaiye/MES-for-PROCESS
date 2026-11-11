@@ -1,0 +1,3366 @@
+<template>
+  <FormCreateShell
+    :page-mode="pageMode"
+    :detail-mode="isDetailPage"
+    :open="open"
+    :title="isDetailPage ? detailPageTitle : shellTitle"
+    width="92%"
+    class="master-item-form-modal"
+    :class="{ 'is-detail-page': isDetailPage }"
+    @cancel="handleCancel"
+    @update:open="(val) => emit('update:open', val)"
+  >
+    <template v-if="isDetailPage" #header-extra>
+      <span v-if="form.name" class="detail-product-name">{{ form.name }}</span>
+      <a-tag v-if="derivedItemKindLabel">{{ derivedItemKindLabel }}</a-tag>
+      <a-tag v-if="form.supplyForm">{{ form.supplyForm }}</a-tag>
+      <a-tag v-if="form.materialType">{{ form.materialType }}</a-tag>
+    </template>
+    <div class="master-form-header-card">
+      <div class="entity-name-header">
+        <div class="entity-identity-panel">
+          <div class="entity-identity-grid">
+            <div class="entity-identity-field">
+              <div class="entity-name-label">
+                <span class="entity-required-mark">*</span>
+                产品名称
+              </div>
+              <a-input
+                v-model:value="form.name"
+                class="entity-name-input"
+                placeholder="请输入产品名称"
+                allow-clear
+                :disabled="viewOnly"
+              />
+            </div>
+            <div class="entity-identity-field">
+              <div class="entity-name-label entity-code-label">
+                <span>{{ isMultiVariantMode ? '族编码' : '产品编码' }}</span>
+                <span class="entity-code-hint">（留空则按系统规则自动生成）</span>
+              </div>
+              <a-input
+                v-model:value="form.code"
+                class="entity-name-input"
+                :placeholder="isMultiVariantMode ? '如 F0001' : '请输入产品编码'"
+                allow-clear
+                :disabled="viewOnly"
+                @change="onFamilyCodeChange"
+              />
+            </div>
+          </div>
+        </div>
+        <div class="entity-capability-panel">
+          <div class="entity-capability-row">
+            <a-checkbox v-model:checked="form.canSell" :disabled="viewOnly">可销售</a-checkbox>
+            <a-checkbox v-model:checked="form.canProduce" :disabled="viewOnly">可生产</a-checkbox>
+            <template v-if="form.canSell">
+              <a-checkbox v-model:checked="form.isWholeMachine" :disabled="viewOnly"
+                >整机</a-checkbox
+              >
+              <a-checkbox v-model:checked="form.isPart" :disabled="viewOnly">零部件</a-checkbox>
+            </template>
+            <a-checkbox v-model:checked="form.canPurchase" :disabled="viewOnly">可采购</a-checkbox>
+            <a-checkbox v-model:checked="form.canOutsource" :disabled="viewOnly">可外协</a-checkbox>
+            <a-checkbox v-model:checked="form.production.needIndustrialLabel" :disabled="viewOnly">
+              工业标识
+            </a-checkbox>
+            <span v-if="derivedItemKindLabel" class="derived-type-tag">
+              产品类型：{{ derivedItemKindLabel }}
+            </span>
+          </div>
+          <div v-if="!viewOnly && !isEdit" class="master-data-mode-row">
+            <span class="mode-label">创建模式：</span>
+            <a-radio-group v-model:value="form.masterDataMode" size="small">
+              <a-radio-button value="single">单规格物料</a-radio-button>
+              <a-radio-button value="multiVariant">多规格变体</a-radio-button>
+            </a-radio-group>
+          </div>
+        </div>
+      </div>
+      <div v-if="form.spuId" class="spu-inherit-banner">
+        <a-tag color="blue">产品族：{{ form.spuName || form.spuId }}</a-tag>
+        <span class="spu-inherit-hint">变体 SKU — 规格/材质为族内区分维度</span>
+      </div>
+    </div>
+
+    <div class="master-form-tabs-card">
+      <a-tabs
+        v-model:activeKey="activeTabKey"
+        class="form-tabs detail-tabs detail-tabs-pill"
+        :class="{ 'is-view-only': viewOnly }"
+      >
+        <a-tab-pane key="basic" tab="基本信息">
+          <div class="tab-pane-body">
+            <a-form layout="inline" class="horizontal-form">
+              <div class="form-product-material-section basic-info-box modal-basic-card">
+                <a-row :gutter="[12, 12]" style="width: 100%">
+                  <a-col :span="6">
+                    <a-form-item label="条码类型" required>
+                      <a-select
+                        v-model:value="form.barcodeType"
+                        size="small"
+                        :options="barcodeOpts"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-form-item label="类型" required>
+                      <a-select
+                        v-model:value="form.materialType"
+                        size="small"
+                        :options="materialTypeOpts"
+                        placeholder="请选择 类型"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-form-item label="供应型态" required>
+                      <a-select
+                        v-model:value="form.supplyForm"
+                        size="small"
+                        :options="supplyFormOpts"
+                        placeholder="请选择 供应型态"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col v-if="!isMultiVariantMode" :span="6">
+                    <a-form-item label="规格型号" required>
+                      <a-input
+                        v-model:value="form.specModel"
+                        size="small"
+                        placeholder="请输入 规格型号"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col v-if="!isMultiVariantMode" :span="6">
+                    <a-form-item label="材质">
+                      <a-select
+                        v-model:value="form.materialGradeId"
+                        size="small"
+                        allow-clear
+                        show-search
+                        :options="materialGradeIdOpts"
+                        placeholder="请选择 材质"
+                        :filter-option="filterMaterialGrade"
+                        @change="onMaterialGradeChange"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-form-item label="图号">
+                      <a-input
+                        v-model:value="form.drawingNo"
+                        size="small"
+                        placeholder="请输入 图号"
+                        allow-clear
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-form-item label="库存单位" required>
+                      <a-select
+                        v-model:value="form.inventoryUnit"
+                        size="small"
+                        :options="unitOpts"
+                        placeholder="请选择 库存单位"
+                        :disabled="viewOnly"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col v-if="showProductFields" :span="6">
+                    <a-form-item label="产品类别">
+                      <a-select
+                        v-model:value="form.productCategoryKey"
+                        size="small"
+                        allow-clear
+                        show-search
+                        :options="productCategoryOpts"
+                        :filter-option="filterSelectOption"
+                        option-filter-prop="label"
+                        placeholder="请搜索或选择产品类别"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col v-else :span="6">
+                    <a-form-item label="物料类别">
+                      <a-select
+                        v-model:value="form.categoryKey"
+                        size="small"
+                        allow-clear
+                        show-search
+                        :options="categoryOpts"
+                        :filter-option="filterSelectOption"
+                        option-filter-prop="label"
+                        placeholder="请搜索或选择物料类别"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col v-if="showProductFields" :span="6">
+                    <a-form-item label="产品属性">
+                      <a-select
+                        v-model:value="form.productAttribute"
+                        size="small"
+                        allow-clear
+                        :options="productAttrOpts"
+                        placeholder="请选择 产品属性"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col v-if="showProductFields" :span="6">
+                    <a-form-item label="标准规范">
+                      <a-input
+                        v-model:value="form.standardSpec"
+                        size="small"
+                        placeholder="请输入标准规范"
+                        allow-clear
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col v-if="showProductFields && showAssemblyPartSwitch" :span="6">
+                    <a-form-item label="是否需要组装">
+                      <a-switch v-model:checked="form.isAssemblyPart" :disabled="viewOnly" />
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+              </div>
+
+              <div class="form-product-material-section basic-info-box modal-basic-card">
+                <a-row :gutter="[12, 12]" style="width: 100%">
+                  <a-col v-if="showProductFields" :span="6">
+                    <a-form-item label="计划策略">
+                      <a-select
+                        v-model:value="form.production.planStrategy"
+                        size="small"
+                        allow-clear
+                        :options="planStrategyOpts"
+                        :disabled="viewOnly"
+                        placeholder="选填"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col
+                    v-if="showProductFields && isPlanStrategyMts(form.production.planStrategy)"
+                    :span="6"
+                  >
+                    <a-form-item label="补货批量">
+                      <a-input-number
+                        v-model:value="form.production.replenishQty"
+                        size="small"
+                        :min="0"
+                        :precision="2"
+                        :disabled="viewOnly"
+                        placeholder="选填"
+                        style="width: 100%"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-form-item label="默认存放仓库">
+                      <a-select
+                        v-model:value="form.production.defaultWarehouse"
+                        size="small"
+                        allow-clear
+                        :options="warehouseOpts"
+                        :disabled="viewOnly"
+                        placeholder="请选择 默认存放仓库"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-form-item label="默认工艺路线">
+                      <a-select
+                        v-model:value="form.production.defaultProcessRoute"
+                        size="small"
+                        allow-clear
+                        show-search
+                        :options="processRouteSelectOpts"
+                        :filter-option="filterSelectOption"
+                        option-filter-prop="label"
+                        :disabled="viewOnly"
+                        placeholder="请搜索或选择工艺路线"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-form-item label="默认工作中心">
+                      <a-select
+                        v-model:value="form.production.defaultWorkCenter"
+                        size="small"
+                        allow-clear
+                        :options="workCenterOpts"
+                        :disabled="viewOnly"
+                        placeholder="请选择 默认工作中心"
+                      />
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+              </div>
+            </a-form>
+            <a-form layout="horizontal" class="stacked-remark-form">
+              <div
+                class="form-product-material-section basic-info-box modal-basic-card stacked-remark-box"
+              >
+                <a-form-item label="技术参数" class="remark-item stacked-remark-item">
+                  <a-textarea
+                    v-model:value="form.techParams"
+                    :rows="2"
+                    :auto-size="false"
+                    size="small"
+                    class="stacked-remark-textarea"
+                    placeholder="请输入技术参数"
+                    allow-clear
+                  />
+                </a-form-item>
+                <a-form-item label="配置要求" class="remark-item stacked-remark-item">
+                  <a-textarea
+                    v-model:value="form.matchingRequirements"
+                    :rows="2"
+                    :auto-size="false"
+                    size="small"
+                    class="stacked-remark-textarea"
+                    placeholder="请输入配置要求"
+                    :maxlength="200"
+                    show-count
+                  />
+                </a-form-item>
+              </div>
+            </a-form>
+          </div>
+        </a-tab-pane>
+
+        <a-tab-pane
+          v-if="isProductEntry && !isMultiVariantMode && !isEdit"
+          key="bomMaintain"
+          tab="BOM维护"
+        >
+          <div class="tab-pane-body">
+            <div class="form-product-material-section basic-info-box modal-basic-card">
+              <ProductFormBomDraftPanel
+                ref="bomDraftPanelRef"
+                :product-name="form.name"
+                :product-code="form.code"
+                :spec-model="form.specModel"
+                :readonly="viewOnly"
+              />
+            </div>
+          </div>
+        </a-tab-pane>
+
+        <a-tab-pane key="units" tab="单位管理">
+          <div class="tab-pane-body">
+            <div class="form-product-material-section basic-info-box modal-basic-card">
+              <UnitManageTab
+                ref="unitManageTabRef"
+                v-model:base-unit="form.inventoryUnit"
+                v-model:aux-units="form.auxUnits"
+                :unit-options="unitOpts"
+                :disabled="viewOnly"
+                @flat-change="onUnitManageFlatChange"
+              />
+            </div>
+          </div>
+        </a-tab-pane>
+
+        <a-tab-pane v-if="isMultiVariantMode" key="variant" tab="变体配置">
+          <div class="tab-pane-body">
+            <div class="form-product-material-section basic-info-box modal-basic-card">
+              <VariantAttributeEditor
+                v-model:variant-axes="form.variantAxes"
+                v-model:sku-code-pattern="form.skuCodePattern"
+                :spu-code="familyCodePreview"
+                :disabled="viewOnly"
+              >
+                <template #after-sku>
+                  <a-form layout="inline" class="horizontal-form variant-bom-form">
+                    <a-row :gutter="[12, 8]" style="width: 100%">
+                      <a-col :span="10">
+                        <a-form-item label="BOM 策略">
+                          <a-select
+                            v-model:value="form.bomStrategy"
+                            size="small"
+                            :options="bomStrategyOpts"
+                            :disabled="viewOnly"
+                            style="width: 100%"
+                          />
+                        </a-form-item>
+                      </a-col>
+                      <a-col v-if="form.bomStrategy !== 'independent'" :span="14">
+                        <a-form-item label="族模板 BOM">
+                          <template v-if="hasSavedSpu">
+                            <a-space wrap>
+                              <span v-if="form.baseBomId" class="bom-id-text">{{
+                                form.baseBomId
+                              }}</span>
+                              <span v-else class="bom-id-text is-empty">尚未关联模板 BOM</span>
+                              <a-button
+                                size="small"
+                                type="link"
+                                :disabled="viewOnly"
+                                @click="openTemplateBom"
+                              >
+                                {{ form.baseBomId ? '编辑族模板 BOM' : '去维护族模板 BOM' }}
+                              </a-button>
+                            </a-space>
+                          </template>
+                          <span v-else class="bom-pending-hint"
+                            >先保存产品族后，再在此维护族模板 BOM</span
+                          >
+                        </a-form-item>
+                      </a-col>
+                      <a-col :span="24">
+                        <div class="bom-strategy-help">{{ bomStrategyHelp }}</div>
+                      </a-col>
+                    </a-row>
+                  </a-form>
+                </template>
+              </VariantAttributeEditor>
+              <VariantSkuMatrixPreview
+                ref="matrixPreviewRef"
+                :spu="spuPreviewContext"
+                :variant-axes="form.variantAxes"
+                :sku-code-pattern="form.skuCodePattern"
+                :enabled-keys="form.enabledCombinationKeys"
+                :disabled="viewOnly"
+                @update:enabled-keys="(k) => (form.enabledCombinationKeys = k)"
+              />
+            </div>
+          </div>
+        </a-tab-pane>
+
+        <a-tab-pane key="sales" tab="销售">
+          <div class="tab-pane-body">
+            <div class="form-product-material-section basic-info-box modal-basic-card">
+              <a-form layout="inline" class="horizontal-form">
+                <a-row :gutter="[12, 12]" style="width: 100%">
+                  <a-col :span="6">
+                    <a-form-item label="标准单价(不含税)" class="label-wide">
+                      <a-input-number
+                        v-model:value="form.unitPrice"
+                        size="small"
+                        :min="0"
+                        :precision="2"
+                        placeholder="请输入标准单价(不含税)"
+                        style="width: 100%"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-form-item label="标准单价(含税)" class="label-wide">
+                      <a-input-number
+                        :value="unitPriceInclTax"
+                        size="small"
+                        :precision="2"
+                        disabled
+                        placeholder="自动计算"
+                        style="width: 100%"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-form-item label="销项税">
+                      <a-input-number
+                        v-model:value="form.outputTaxRate"
+                        size="small"
+                        :min="0"
+                        :max="100"
+                        :precision="2"
+                        placeholder="请输入销项税率"
+                        style="width: 100%"
+                        addon-after="%"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-form-item label="标准包装量">
+                      <a-input-group compact class="qty-with-unit">
+                        <a-input-number
+                          v-model:value="form.standardPackQty"
+                          size="small"
+                          :min="0"
+                          :precision="4"
+                          :disabled="viewOnly"
+                          placeholder="选填"
+                          class="qty-with-unit-input"
+                        />
+                        <a-select
+                          v-model:value="form.standardPackUnit"
+                          size="small"
+                          :options="unitOpts"
+                          :disabled="viewOnly"
+                          class="qty-with-unit-select"
+                          placeholder="单位"
+                          :get-popup-container="popupContainer"
+                        />
+                      </a-input-group>
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+              </a-form>
+            </div>
+          </div>
+        </a-tab-pane>
+
+        <a-tab-pane key="purchase" tab="采购">
+          <div class="tab-pane-body">
+            <div class="form-product-material-section basic-info-box modal-basic-card">
+              <div class="purchase-supplier-block">
+                <div class="section-head">
+                  <span class="section-title">供应商</span>
+                </div>
+                <a-table
+                  :columns="purchaseSupplierColumns"
+                  :data-source="form.purchaseSuppliers"
+                  row-key="id"
+                  size="small"
+                  bordered
+                  :pagination="false"
+                  :locale="{ emptyText: '暂无供应商，请添加明细行' }"
+                >
+                  <template #bodyCell="{ column, record }">
+                    <template v-if="column.key === 'supplierName'">
+                      <PlanSupplierSelect
+                        :value="record.supplierName"
+                        size="small"
+                        :disabled="viewOnly"
+                        placeholder="请选择供应商"
+                        @update:value="(v) => onPurchaseSupplierChange(record, v)"
+                      />
+                    </template>
+                    <template v-else-if="column.key === 'supplierType'">
+                      {{ record.supplierType || '—' }}
+                    </template>
+                    <template v-else-if="column.key === 'unitPriceExTax'">
+                      <a-input-number
+                        v-model:value="record.unitPriceExTax"
+                        size="small"
+                        :min="0"
+                        :precision="2"
+                        :disabled="viewOnly"
+                        placeholder="不含税"
+                        style="width: 100%"
+                      />
+                    </template>
+                    <template v-else-if="column.key === 'unitPriceInclTax'">
+                      {{
+                        formatMoney(
+                          calcPurchasePriceInclTax(record.unitPriceExTax, form.inputTaxRate),
+                        )
+                      }}
+                    </template>
+                    <template v-else-if="column.key === 'currency'">
+                      <a-select
+                        v-model:value="record.currency"
+                        size="small"
+                        :options="PURCHASE_CURRENCY_OPTIONS"
+                        :disabled="viewOnly"
+                        style="width: 100%"
+                      />
+                    </template>
+                    <template v-else-if="column.key === 'leadTimeDays'">
+                      <a-input-number
+                        v-model:value="record.leadTimeDays"
+                        size="small"
+                        :min="0"
+                        :precision="0"
+                        :disabled="viewOnly"
+                        placeholder="天"
+                        style="width: 100%"
+                      />
+                    </template>
+                    <template v-else-if="column.key === 'actions'">
+                      <a-button
+                        v-if="!viewOnly"
+                        type="text"
+                        size="small"
+                        danger
+                        @click="removePurchaseSupplier(record)"
+                      >
+                        <DeleteOutlined />
+                      </a-button>
+                      <span v-else>—</span>
+                    </template>
+                  </template>
+                </a-table>
+                <a v-if="!viewOnly" class="add-line-link" @click.prevent="addPurchaseSupplier">
+                  添加明细行
+                </a>
+
+                <a-form layout="inline" class="horizontal-form purchase-extra-form">
+                  <div class="purchase-extra-row">
+                    <a-form-item label="进项税" class="purchase-extra-item">
+                      <a-input-number
+                        v-model:value="form.inputTaxRate"
+                        size="small"
+                        :min="0"
+                        :max="100"
+                        :precision="2"
+                        placeholder="请输入进项税率"
+                        style="width: 160px"
+                        addon-after="%"
+                      />
+                    </a-form-item>
+                    <a-form-item label="控制策略" class="purchase-extra-item">
+                      <a-radio-group
+                        v-model:value="form.purchaseControlStrategy"
+                        size="small"
+                        :disabled="viewOnly"
+                        :options="PURCHASE_CONTROL_STRATEGY_OPTIONS"
+                      />
+                    </a-form-item>
+                  </div>
+                </a-form>
+              </div>
+            </div>
+          </div>
+        </a-tab-pane>
+
+        <a-tab-pane key="production" tab="生产控制">
+          <div class="tab-pane-body">
+            <div class="form-product-material-section basic-info-box modal-basic-card">
+              <a-form layout="inline" class="horizontal-form">
+                <a-row :gutter="[12, 12]" style="width: 100%">
+                  <a-col :span="6">
+                    <a-form-item label="标准制造周期">
+                      <a-input-number
+                        v-model:value="form.production.standardCycleDays"
+                        size="small"
+                        :min="0"
+                        :disabled="viewOnly"
+                        placeholder="请输入"
+                        style="width: 100%"
+                        addon-after="天"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-form-item label="入库质检要求">
+                      <a-select
+                        v-model:value="form.production.inboundQcRequirement"
+                        size="small"
+                        allow-clear
+                        :options="inboundQcOpts"
+                        :disabled="viewOnly"
+                        placeholder="请选择"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-form-item label="领料属性">
+                      <a-switch
+                        v-model:checked="form.production.requisitionEnabled"
+                        :disabled="viewOnly"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-form-item label="需要下料结算">
+                      <a-switch v-model:checked="form.needsBlankingSettle" :disabled="viewOnly" />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-form-item label="关键件标识">
+                      <a-switch v-model:checked="form.production.isKeyPart" :disabled="viewOnly" />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-form-item label="辅料标识">
+                      <a-switch
+                        v-model:checked="form.production.isAuxiliary"
+                        :disabled="viewOnly"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-form-item label="危险品标识">
+                      <a-switch
+                        v-model:checked="form.production.isHazardous"
+                        :disabled="viewOnly"
+                      />
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+              </a-form>
+            </div>
+          </div>
+        </a-tab-pane>
+
+        <a-tab-pane key="labor" tab="工时配置">
+          <div class="tab-pane-body">
+            <div class="form-product-material-section basic-info-box modal-basic-card">
+              <div class="labor-enable-row" :class="{ 'is-only': !form.laborEnabled }">
+                <span class="labor-enable-label">启用工时配置</span>
+                <a-switch v-model:checked="form.laborEnabled" size="small" :disabled="viewOnly" />
+              </div>
+              <div v-if="form.laborEnabled" class="labor-block">
+                <div v-for="(row, index) in form.laborRows" :key="row.id" class="labor-row-card">
+                  <a-form layout="inline" class="horizontal-form">
+                    <a-row :gutter="[12, 12]" style="width: 100%">
+                      <a-col :span="8">
+                        <a-form-item required>
+                          <template #label>
+                            <span class="required-label">工序</span>
+                          </template>
+                          <a-select
+                            v-model:value="row.processName"
+                            size="small"
+                            show-search
+                            :options="processOpts"
+                            placeholder="请选择工序"
+                            style="width: 100%"
+                            @change="() => onLaborProcessChange(row)"
+                          />
+                        </a-form-item>
+                      </a-col>
+                      <a-col :span="8">
+                        <a-form-item required>
+                          <template #label>
+                            <span>报工类型</span>
+                            <a-tooltip
+                              title="批量计件：工时=整批准备工时+合格报工数量×单件标准工时；时长报工：工时=准备工时+员工填报总时长（审核后）"
+                            >
+                              <InfoCircleOutlined class="info-icon" />
+                            </a-tooltip>
+                          </template>
+                          <a-select
+                            v-model:value="row.reportType"
+                            size="small"
+                            :options="reportTypeOpts"
+                            placeholder="请选择报工类型"
+                            style="width: 100%"
+                            @change="(v) => onLaborReportTypeChange(row, v)"
+                          />
+                        </a-form-item>
+                      </a-col>
+                      <a-col :span="8">
+                        <a-form-item label="单件标准工时" required>
+                          <a-input-number
+                            v-model:value="row.standardMinutesPerPiece"
+                            size="small"
+                            :min="0"
+                            :precision="0"
+                            style="width: 100%"
+                            addon-after="分钟"
+                          />
+                        </a-form-item>
+                      </a-col>
+                      <a-col :span="8">
+                        <a-form-item label="整批准备工时" required>
+                          <a-input-number
+                            v-model:value="row.setupMinutesPerBatch"
+                            size="small"
+                            :min="0"
+                            :precision="0"
+                            style="width: 100%"
+                            addon-after="分钟"
+                          />
+                        </a-form-item>
+                      </a-col>
+                      <a-col :span="8">
+                        <a-form-item required>
+                          <template #label>
+                            <span>计薪方式</span>
+                            <a-tooltip
+                              title="计件工资=合格数量×单件计件单价+补贴报工数量；计时工资按标准工时单价核算（详见工时管理）。时长报工仅支持计时工资。"
+                            >
+                              <InfoCircleOutlined class="info-icon" />
+                            </a-tooltip>
+                          </template>
+                          <a-select
+                            v-model:value="row.salaryMethod"
+                            size="small"
+                            :options="salaryMethodOptsFor(row.reportType)"
+                            placeholder="请选择计薪方式"
+                            style="width: 100%"
+                          />
+                        </a-form-item>
+                      </a-col>
+                      <a-col :span="8">
+                        <a-form-item label="标准工时单价" required>
+                          <a-input-number
+                            v-model:value="row.standardHourlyRate"
+                            size="small"
+                            :min="0"
+                            :precision="2"
+                            style="width: 100%"
+                            addon-after="元/小时"
+                          />
+                        </a-form-item>
+                      </a-col>
+                      <a-col :span="8">
+                        <a-form-item label="单件计件单价" required>
+                          <a-input-number
+                            v-model:value="row.pieceRate"
+                            size="small"
+                            :min="0"
+                            :precision="2"
+                            style="width: 100%"
+                            addon-after="元/件"
+                          />
+                        </a-form-item>
+                      </a-col>
+                      <a-col
+                        v-if="isWorkItemWagePhaseEnabled() && laborWorkItemCatalog(row).length"
+                        :span="24"
+                      >
+                        <div class="work-item-rates-block">
+                          <div class="work-item-rates-title">作业分项单价</div>
+                          <div class="work-item-rates-hint">
+                            分项来自工序模板；请维护本产品单价（及可选单件计划量）
+                          </div>
+                          <div
+                            v-for="item in laborWorkItemCatalog(row)"
+                            :key="item.code"
+                            class="work-item-rate-row"
+                          >
+                            <span class="work-item-rate-name"
+                              >{{ item.name }}
+                              <span class="work-item-rate-code">({{ item.code }})</span></span
+                            >
+                            <a-input-number
+                              :value="getLaborWorkItemRate(row, item.code, 'unitPrice')"
+                              size="small"
+                              :min="0"
+                              :precision="2"
+                              :disabled="viewOnly"
+                              placeholder="单价"
+                              style="width: 120px"
+                              addon-after="元"
+                              @update:value="
+                                (v) => setLaborWorkItemRate(row, item.code, 'unitPrice', v)
+                              "
+                            />
+                            <a-input-number
+                              :value="getLaborWorkItemRate(row, item.code, 'plannedQtyPerPiece')"
+                              size="small"
+                              :min="0"
+                              :precision="2"
+                              :disabled="viewOnly"
+                              placeholder="单件计划量"
+                              style="width: 140px"
+                              :addon-after="item.unit || '个'"
+                              @update:value="
+                                (v) => setLaborWorkItemRate(row, item.code, 'plannedQtyPerPiece', v)
+                              "
+                            />
+                          </div>
+                        </div>
+                      </a-col>
+                      <a-col
+                        v-if="!viewOnly && form.laborRows.length > 1"
+                        :span="24"
+                        class="row-remove-col"
+                      >
+                        <a-button type="link" danger size="small" @click="removeLaborRow(index)">
+                          删除本行
+                        </a-button>
+                      </a-col>
+                    </a-row>
+                  </a-form>
+                </div>
+                <a-button
+                  v-if="!viewOnly"
+                  type="dashed"
+                  block
+                  class="add-labor-row-btn"
+                  @click="addLaborRow"
+                >
+                  新增一行
+                </a-button>
+              </div>
+            </div>
+          </div>
+        </a-tab-pane>
+
+        <a-tab-pane key="alert" tab="预警信息">
+          <div class="tab-pane-body">
+            <div class="form-product-material-section basic-info-box modal-basic-card">
+              <a-form layout="inline" class="horizontal-form">
+                <a-row :gutter="[12, 12]" style="width: 100%">
+                  <a-col :span="8">
+                    <a-form-item label="库存预警">
+                      <a-switch
+                        v-model:checked="form.alert.stockAlertEnabled"
+                        :disabled="viewOnly"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col v-if="form.alert.stockAlertEnabled" :span="8">
+                    <a-form-item label="最高库存">
+                      <a-input-number
+                        v-model:value="form.alert.maxStockQty"
+                        size="small"
+                        :min="0"
+                        :precision="2"
+                        :disabled="viewOnly"
+                        placeholder="请输入"
+                        style="width: 100%"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col v-if="form.alert.stockAlertEnabled" :span="8">
+                    <a-form-item label="最低库存">
+                      <a-input-number
+                        v-model:value="form.alert.minStockQty"
+                        size="small"
+                        :min="0"
+                        :precision="2"
+                        :disabled="viewOnly"
+                        placeholder="请输入"
+                        style="width: 100%"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="8">
+                    <a-form-item label="过期预警">
+                      <a-switch
+                        v-model:checked="form.alert.expiryAlertEnabled"
+                        :disabled="viewOnly"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="8">
+                    <a-form-item label="不良率预警阈值">
+                      <a-input-number
+                        v-model:value="form.alert.defectRateThreshold"
+                        size="small"
+                        :min="0"
+                        :max="100"
+                        :precision="2"
+                        :disabled="viewOnly"
+                        placeholder="请输入"
+                        style="width: 100%"
+                        addon-after="%"
+                      />
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+              </a-form>
+            </div>
+          </div>
+        </a-tab-pane>
+
+        <a-tab-pane v-if="showProductFields" key="productMaterials" tab="产品资料">
+          <div class="tab-pane-body">
+            <div class="form-product-material-section basic-info-box modal-basic-card">
+              <a-form layout="inline" class="horizontal-form">
+                <a-row :gutter="[12, 12]" style="width: 100%">
+                  <a-col :span="24">
+                    <a-form-item label="产品资料" class="remark-item product-materials-item">
+                      <a-upload
+                        v-model:file-list="productMaterialList"
+                        list-type="text"
+                        :accept="PRODUCT_MATERIAL_ACCEPT_ATTR"
+                        :disabled="viewOnly"
+                        :max-count="PRODUCT_MATERIAL_MAX"
+                        :show-upload-list="{ showRemoveIcon: !viewOnly }"
+                        :before-upload="beforeUploadProductMaterial"
+                        @preview="onPreviewProductMaterial"
+                        @remove="onRemoveProductMaterial"
+                      >
+                        <a-button
+                          v-if="!viewOnly && productMaterialList.length < PRODUCT_MATERIAL_MAX"
+                          size="small"
+                        >
+                          <UploadOutlined />
+                          上传文件
+                        </a-button>
+                      </a-upload>
+                      <div class="upload-hint">
+                        支持图片、视频、Word、Excel，最多 {{ PRODUCT_MATERIAL_MAX }} 个文件
+                      </div>
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+              </a-form>
+            </div>
+          </div>
+        </a-tab-pane>
+
+        <a-tab-pane v-if="isEdit" key="bom" tab="BOM信息">
+          <div class="tab-pane-body">
+            <div class="form-product-material-section basic-info-box modal-basic-card">
+              <ItemBomInfoTab :item-type="bomItemType" :item-id="editRecord?.id || ''" />
+            </div>
+          </div>
+        </a-tab-pane>
+      </a-tabs>
+
+      <div v-if="activeTabHelpItems.length" class="field-help-panel">
+        <ul class="field-help-list">
+          <li v-for="item in activeTabHelpItems" :key="item.name">
+            <span class="field-help-name">{{ item.name }}</span>
+            ：{{ item.desc }}
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <template #footer>
+      <template v-if="viewOnly">
+        <template v-if="isDetailPage">
+          <a-button size="small" @click="handleGoEditFromDetail">编辑</a-button>
+          <a-button
+            v-if="showProductFields && !isMultiVariantMode"
+            size="small"
+            @click="handleMaintainBomFromDetail"
+          >
+            BOM维护
+          </a-button>
+          <a-button size="small" @click="goBack">返回列表</a-button>
+        </template>
+        <a-button v-else type="primary" @click="handleCancel">关闭</a-button>
+      </template>
+      <template v-else>
+        <a-button @click="handleCancel">
+          <CloseOutlined />
+          取消
+        </a-button>
+        <a-button
+          v-if="showProductFields && !isMultiVariantMode && isEdit"
+          @click="handleSaveAndMaintainBom"
+        >
+          保存并维护BOM
+        </a-button>
+        <a-button type="primary" @click="handleOk">
+          <PlusOutlined />
+          保存
+        </a-button>
+      </template>
+    </template>
+  </FormCreateShell>
+</template>
+
+<script setup>
+import { computed, h, nextTick, reactive, ref, watch } from 'vue'
+import { message, Modal } from 'ant-design-vue'
+import {
+  CloseOutlined,
+  DeleteOutlined,
+  InfoCircleOutlined,
+  PlusOutlined,
+  UploadOutlined,
+} from '@ant-design/icons-vue'
+import FormCreateShell from '@/components/FormCreateShell.vue'
+import { useFormCreateModal } from '@/composables/useFormCreateModal'
+import { flattenCategoryNodes } from '@/mock/materialCategories'
+import { PRODUCT_CATEGORY_FINISHED } from '@/mock/productCategories'
+import { productCategoryState } from '@/store/productCategoryStore'
+import { materialCategoryState } from '@/store/materialCategoryStore'
+import { generateProductCode, productInfoState } from '@/store/productInfoStore'
+import { materialInfoState } from '@/store/materialInfoStore'
+import { buildCategoryItemCountMap, sortCategoryTreeForDisplay } from '@/utils/categoryTreeSort'
+import {
+  partProductAttributeOptions,
+  normalizePartProductAttribute,
+  isPartProductAttribute,
+  productAttributeOptions,
+  wholeMachineProductAttributeOptions,
+  PLAN_STRATEGY_OPTIONS,
+  isPlanStrategyMts,
+} from '@/mock/productInfoOptions'
+import {
+  barcodeTypeOptions,
+  materialTypeOptions,
+  supplyFormOptions,
+  reportTypeOptions,
+  inboundQcOptions,
+  workCenterOpts,
+  processOpts,
+  createDefaultLaborRow,
+  createDefaultProductionControl,
+  createDefaultAlertConfig,
+} from '@/mock/materialInfoOptions'
+import { getProcessByName } from '@/store/processConfigStore'
+import {
+  isWorkItemWagePhaseEnabled,
+  mergeWorkItemTemplatesWithRates,
+  normalizeWorkItemRates,
+  normalizeProcessWorkItemFields,
+} from '@/utils/processWorkItem'
+import { unitState, getInventoryUnitOptions } from '@/store/unitStore'
+import { saveMasterItem, resolveMasterItemEditRecord } from '@/utils/masterItemSave'
+import { openCreateTab } from '@/utils/openCreateTab'
+import { persistProductBomDraft, validateProductBomDraft } from '@/utils/productBomFromDraft'
+import {
+  ITEM_KIND,
+  itemKindLabel,
+  normalizeCapabilityFlags,
+  resolveBomItemTypeForKind,
+  resolveItemKind,
+} from '@/utils/masterItemKind'
+import { materialGradeState, getMaterialGradeById } from '@/store/materialGradeStore'
+import { resolveMaterialGradeIdByName } from '@/utils/materialGradeResolve'
+import { getWarehouseSelectOptions, warehouseState } from '@/store/warehouseStore'
+import { getProcessRouteSelectOptions } from '@/utils/productionPlanMaterial'
+import PlanSupplierSelect from '@/views/planning/components/PlanSupplierSelect.vue'
+import {
+  PURCHASE_CONTROL_STRATEGY,
+  PURCHASE_CONTROL_STRATEGY_OPTIONS,
+  PURCHASE_CURRENCY_OPTIONS,
+  calcPurchasePriceInclTax,
+  createEmptyPurchaseSupplier,
+  hydratePurchaseSuppliers,
+  resolveSupplierTypeLabel,
+  syncPurchaseSupplierDefaults,
+} from '@/utils/purchaseSuppliers'
+import ItemBomInfoTab from '@/views/product-process/components/ItemBomInfoTab.vue'
+import ProductFormBomDraftPanel from '@/views/product-process/components/ProductFormBomDraftPanel.vue'
+import VariantAttributeEditor from '@/views/product-process/components/VariantAttributeEditor.vue'
+import VariantSkuMatrixPreview from '@/views/product-process/components/VariantSkuMatrixPreview.vue'
+import { addSpu, updateSpu, generateSpuCode } from '@/store/spuStore'
+import { batchGenerateSkus, listSkusForSpu } from '@/utils/spuSkuSave'
+import { matrixRowsToSkuCombos } from '@/utils/spuMatrix'
+import { hydrateMaterialAxisFromSkus } from '@/utils/spuVariant'
+import {
+  PRODUCT_SKU_CODE_PATTERN,
+  SPU_BOM_STRATEGY,
+  SPU_BOM_STRATEGY_HELPS,
+  SPU_BOM_STRATEGY_LABELS,
+  ensureLockedVariantAxes,
+} from '@/constants/spu'
+import { getVariantAxesForCategory } from '@/utils/variantAxisTemplate'
+import { validateSettleUnitOnMaster } from '@/utils/settleUnit'
+import {
+  deriveIsVariableLength,
+  deriveSettleUnitForSave,
+  resolveUomRelationByInventory,
+} from '@/utils/unitCaliber'
+import {
+  applyUnitManageToFlat,
+  hydrateUnitManageFromSource,
+  validateUnitManage,
+} from '@/utils/unitManageTab'
+import UnitManageTab from '@/views/product-process/components/UnitManageTab.vue'
+import { useRouter } from 'vue-router'
+import { useTabs } from '@/composables/useTabs'
+import { resolveItemBomNavigation } from '@/utils/itemBomNavigation'
+import {
+  normalizeSalaryMethodForReportType,
+  resolveSalaryMethodOptions,
+} from '@/utils/laborConfigResolver'
+
+const props = defineProps({
+  open: { type: Boolean, default: false },
+  pageMode: { type: Boolean, default: false },
+  listPath: { type: String, default: '' },
+  editRecord: { type: Object, default: null },
+  editSpu: { type: Object, default: null },
+  viewOnly: { type: Boolean, default: false },
+})
+
+const emit = defineEmits(['update:open', 'saved'])
+
+const router = useRouter()
+const { openTab } = useTabs()
+const matrixPreviewRef = ref(null)
+
+const isEdit = computed(() => Boolean(props.editRecord?.id))
+const isSpuEdit = computed(() => Boolean(props.editSpu?.id))
+
+const bomStrategyOpts = Object.entries(SPU_BOM_STRATEGY_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}))
+
+const bomStrategyHelp = computed(
+  () =>
+    SPU_BOM_STRATEGY_HELPS[form.bomStrategy] ||
+    '同类变体共用结构 → 建族模板 +「继承」；SKU 建产品 BOM / 设计任务可带入族基准；特殊 SKU 再建独立 BOM。销售投产仅认 SKU 自有生效 BOM。',
+)
+
+const { isActive, shellTitle, handleCancel, closeAfterSave, goBack } = useFormCreateModal(
+  props,
+  emit,
+  {
+    listPath: '/product-process/products',
+    getTitle: () => {
+      const isProductEntry = String(props.listPath || '').includes('/product-process/products')
+      if (props.viewOnly) return isProductEntry ? '产品详情' : '主数据详情'
+      if (isProductEntry) return isEdit.value ? '编辑产品' : '新增产品'
+      return isEdit.value ? '编辑主数据' : '新增主数据'
+    },
+  },
+)
+
+const isProductEntry = computed(() =>
+  String(props.listPath || '').includes('/product-process/products'),
+)
+
+const isDetailPage = computed(() => Boolean(props.pageMode && props.viewOnly))
+const detailPageTitle = computed(
+  () => form.code || (isProductEntry.value ? '产品详情' : '主数据详情'),
+)
+
+const derivedItemKind = computed(() =>
+  resolveItemKind({ canSell: form.canSell, canProduce: form.canProduce }),
+)
+const derivedItemKindLabel = computed(() =>
+  derivedItemKind.value ? itemKindLabel(derivedItemKind.value) : '',
+)
+/** 产品入口（新增/编辑产品）始终展示产品侧字段，避免历史数据缺 canSell 时编辑比新增少字段 */
+const showProductFields = computed(
+  () =>
+    isProductEntry.value ||
+    derivedItemKind.value === ITEM_KIND.PRODUCT ||
+    derivedItemKind.value === ITEM_KIND.PRODUCT_MATERIAL,
+)
+const showMaterialFields = computed(
+  () =>
+    derivedItemKind.value === ITEM_KIND.MATERIAL ||
+    derivedItemKind.value === ITEM_KIND.PRODUCT_MATERIAL ||
+    isProductEntry.value,
+)
+const showAssemblyPartSwitch = computed(
+  () => form.isPart || isPartProductAttribute(form.productAttribute),
+)
+const bomItemType = computed(() =>
+  resolveBomItemTypeForKind(derivedItemKind.value || ITEM_KIND.PRODUCT),
+)
+
+const isMultiVariantMode = computed(() => form.masterDataMode === 'multiVariant' || isSpuEdit.value)
+
+/** 含税单价 = 不含税 × (1 + 销项税率%) */
+const unitPriceInclTax = computed(() => {
+  const ex = Number(form.unitPrice)
+  if (!Number.isFinite(ex)) return undefined
+  const rate = Number(form.outputTaxRate)
+  const r = Number.isFinite(rate) ? rate : 0
+  return Number((ex * (1 + r / 100)).toFixed(2))
+})
+
+function formatMoney(val) {
+  if (val == null || val === '') return '—'
+  const n = Number(val)
+  if (!Number.isFinite(n)) return '—'
+  return n.toFixed(2)
+}
+
+const purchaseSupplierColumns = [
+  { title: '供应商', key: 'supplierName', width: 200 },
+  { title: '类型', key: 'supplierType', width: 110 },
+  { title: '采购单价（不含税）', key: 'unitPriceExTax', width: 140 },
+  { title: '采购单价（含税）', key: 'unitPriceInclTax', width: 130, align: 'right' },
+  { title: '币种', key: 'currency', width: 100 },
+  { title: '供货期（天）', key: 'leadTimeDays', width: 120 },
+  { title: '', key: 'actions', width: 56, align: 'center' },
+]
+
+function addPurchaseSupplier() {
+  form.purchaseSuppliers.push(createEmptyPurchaseSupplier())
+}
+
+function removePurchaseSupplier(record) {
+  form.purchaseSuppliers = form.purchaseSuppliers.filter((r) => r.id !== record.id)
+}
+
+function onPurchaseSupplierChange(record, supplierName) {
+  record.supplierName = supplierName || ''
+  record.supplierType = resolveSupplierTypeLabel(supplierName)
+}
+
+function applyPurchaseSupplierSync() {
+  const synced = syncPurchaseSupplierDefaults(form.purchaseSuppliers)
+  form.production.defaultSupplier = synced.defaultSupplier
+  form.production.defaultOutsourceSupplier = synced.defaultOutsourceSupplier
+  form.purchaseUnitPrice = synced.purchaseUnitPrice
+  form.production.purchaseSuppliers = form.purchaseSuppliers.map((r) =>
+    createEmptyPurchaseSupplier(r),
+  )
+  form.production.purchaseControlStrategy = form.purchaseControlStrategy
+}
+
+function popupContainer(trigger) {
+  return trigger?.parentNode || document.body
+}
+
+/** 产品族已落库后，才允许维护族模板 BOM（需关联 spuId） */
+const hasSavedSpu = computed(() => Boolean(form.spuId || props.editSpu?.id))
+
+const flatCats = computed(() =>
+  flattenCategoryNodes(materialCategoryState.tree).filter((c) => !c.children?.length),
+)
+const flatProductCats = computed(() =>
+  flattenCategoryNodes(productCategoryState.tree).filter((c) => !c.children?.length),
+)
+
+/** 族编码：手填优先；未填时按保存规则预览自动生成码 */
+const familyCodePreview = computed(() => {
+  const typed = (form.spuCode || form.code || '').trim()
+  if (typed) return typed
+  return generateSpuCode()
+})
+
+const spuPreviewContext = computed(() => ({
+  id: props.editSpu?.id || form.spuId || '',
+  name: form.name,
+  code: familyCodePreview.value,
+  baseBomId: form.baseBomId,
+  bomStrategy: form.bomStrategy,
+  variantAxes: form.variantAxes,
+  skuCodePattern: form.skuCodePattern,
+}))
+
+function onFamilyCodeChange() {
+  form.spuCode = form.code
+}
+
+const barcodeOpts = barcodeTypeOptions.map((v) => ({ label: v, value: v }))
+const materialTypeOpts = materialTypeOptions.map((v) => ({ label: v, value: v }))
+const supplyFormOpts = supplyFormOptions.map((v) => ({ label: v, value: v }))
+const unitOpts = computed(() => {
+  void unitState.units
+  return getInventoryUnitOptions()
+})
+
+const materialGradeIdOpts = computed(() => {
+  void materialGradeState.items
+  return materialGradeState.items.map((i) => ({ label: i.name, value: i.id }))
+})
+
+function onMaterialGradeChange(gradeId) {
+  const grade = getMaterialGradeById(gradeId)
+  form.material = grade?.name || ''
+}
+const reportTypeOpts = reportTypeOptions.map((v) => ({ label: v, value: v }))
+
+function salaryMethodOptsFor(reportType) {
+  return resolveSalaryMethodOptions(reportType).map((v) => ({ label: v, value: v }))
+}
+
+function onLaborReportTypeChange(row, reportType) {
+  row.salaryMethod = normalizeSalaryMethodForReportType(reportType, row.salaryMethod)
+  if (reportType === '时长报工') row.pieceRate = 0
+}
+const inboundQcOpts = inboundQcOptions.map((v) => ({ label: v, value: v }))
+const planStrategyOpts = PLAN_STRATEGY_OPTIONS
+const categoryOpts = computed(() => {
+  void materialCategoryState.tree
+  const countMap = buildCategoryItemCountMap(
+    materialCategoryState.tree,
+    [
+      ...materialInfoState.materials.flatMap((m) => [m.categoryKey, m.materialCategoryKey]),
+      ...productInfoState.products.map((p) => p.materialCategoryKey),
+    ].filter(Boolean),
+  )
+  return sortCategoryTreeForDisplay(
+    flatCats.value.map((c) => ({ ...c, children: undefined })),
+    countMap,
+  ).map((c) => ({
+    label: `(${c.code}) ${c.title}`,
+    value: c.key,
+  }))
+})
+const productAttrOpts = computed(() => {
+  let options = partProductAttributeOptions
+  if (showProductFields.value && form.canSell && !form.isPart) {
+    options = form.isWholeMachine ? wholeMachineProductAttributeOptions : productAttributeOptions
+  }
+  return options.map((v) => ({ label: v, value: v }))
+})
+const productCategoryOpts = computed(() => {
+  void productCategoryState.tree
+  const countMap = buildCategoryItemCountMap(
+    productCategoryState.tree,
+    productInfoState.products.flatMap((p) => [p.categoryKey, p.productCategoryKey]).filter(Boolean),
+  )
+  return sortCategoryTreeForDisplay(
+    flatProductCats.value.map((c) => ({ ...c, children: undefined })),
+    countMap,
+  ).map((c) => ({
+    label: `(${c.code}) ${c.title}`,
+    value: c.key,
+  }))
+})
+const warehouseOpts = computed(() => {
+  void warehouseState.warehouses
+  return getWarehouseSelectOptions()
+})
+
+const activeTabKey = ref('basic')
+
+const FIELD_HELP_BY_TAB = {
+  basic: [
+    {
+      name: '供应型态',
+      desc: '标识物料来源方式（外购件、自制件、外协件、组装等），影响销售订单审核后是否自动生成采购申请、生产工单或外协订单。',
+    },
+    {
+      name: '计划策略',
+      desc: '选填。按订单MTO：按销售订单排产；按库存MTS：靠库存补货维持水位；按订单MTO+按库存MTS：二者兼有。与库存预警无强制关联。',
+    },
+    {
+      name: '补货批量',
+      desc: '选填。一次建议最少补多少（库存单位）。库存预警算建议量时：取「补到最高库存还差多少」与「补货批量」的较大值，避免补得太碎。例：最高100、可用80、补货批量50 → 建议补50。',
+    },
+  ],
+  units: [
+    {
+      name: '主单位',
+      desc: '库存记账、领料发料与成本核算的基准单位。',
+    },
+    {
+      name: '辅助单位 · 采购',
+      desc: '跟供应商下单、到货清点用的单位。与主单位不同时可填默认换算率（1 采购单位 = N 主单位）做包装取整；采购不支持按批次覆盖，且不可与结算同挂。',
+    },
+    {
+      name: '默认换算率',
+      desc: '选填。采购：有则做包装换算，无则不做。结算：仅开单预估；未填时可回退最近批次单量。',
+    },
+    {
+      name: '换算类型',
+      desc: '固定：主数据换算率直接用。按批次覆盖：仅结算角色可用，入库过磅实填为准。',
+    },
+    {
+      name: '辅助单位 · 结算',
+      desc: '与供应商结算的单位。配置后入库须同时录入结算数量（如按 kg 过磅）。与采购请分两行配置。',
+    },
+  ],
+  sales: [
+    {
+      name: '标准包装量',
+      desc: '选填。销售发货或报价常用的标准包装数量，单位为库存单位（如每捆长度、每箱件数）。',
+    },
+  ],
+  purchase: [
+    {
+      name: '供应商',
+      desc: '可维护多家供应商及对应采购单价、币种、供货期。类型取自供应商档案（外协/采购）。首行采购类、外协类分别回写默认采购/外协供应商以兼容旧单据。',
+    },
+    {
+      name: '控制策略',
+      desc: '订购数量：按采购订单订购量控制；收到数量：按实际收货/入库数量控制。',
+    },
+  ],
+  production: [
+    {
+      name: '领料属性',
+      desc: '开=参与领料；关=不进领料单，发料方式=倒冲。',
+    },
+    {
+      name: '需要下料结算',
+      desc: '开=作为 BOM 子件领出后需下料结算。工单含「下料工序」时下发页展示；结算仅针对勾选物料。',
+    },
+  ],
+  labor: [
+    {
+      name: '报工类型',
+      desc: '批量计件：工时=整批准备工时+合格报工数量×单件标准工时；时长报工：工时=准备工时+员工填报总时长（审核后）。',
+    },
+    {
+      name: '计薪方式',
+      desc: '计件工资=合格数量×单件计件单价+补贴报工数量；计时工资按标准工时单价核算（详见工时管理）。',
+    },
+  ],
+}
+
+const activeTabHelpItems = computed(() => FIELD_HELP_BY_TAB[activeTabKey.value] || [])
+
+const form = reactive({
+  code: '',
+  name: '',
+  barcodeType: '一物一码',
+  materialType: undefined,
+  supplyForm: undefined,
+  categoryKey: undefined,
+  specModel: '',
+  drawingNo: '',
+  material: '',
+  materialGradeId: '',
+  spuId: '',
+  spuName: '',
+  isVariantSku: false,
+  variantValues: {},
+  bomOverrides: [],
+  masterDataMode: 'single',
+  spuCode: '',
+  variantAxes: [],
+  skuCodePattern: PRODUCT_SKU_CODE_PATTERN,
+  enabledCombinationKeys: null,
+  bomStrategy: SPU_BOM_STRATEGY.INHERIT,
+  baseBomId: '',
+  techParams: '',
+  weight: '',
+  inventoryUnit: undefined,
+  isVariableLength: false,
+  needsBlankingSettle: false,
+  purchaseUnit: undefined,
+  settleUnit: undefined,
+  standardUnitWeight: undefined,
+  auxUnits: [],
+  stockUnit: undefined,
+  uomRelation: '',
+  unitPrice: undefined,
+  purchaseUnitPrice: undefined,
+  purchaseSuppliers: [],
+  purchaseControlStrategy: PURCHASE_CONTROL_STRATEGY.RECEIVED_QTY,
+  packContentQty: undefined,
+  packContentUnit: undefined,
+  standardPackQty: undefined,
+  standardPackUnit: undefined,
+  canSell: false,
+  canProduce: false,
+  isWholeMachine: false,
+  isPart: false,
+  canPurchase: false,
+  canOutsource: false,
+  productAttribute: undefined,
+  productCategoryKey: PRODUCT_CATEGORY_FINISHED.key,
+  standardSpec: '',
+  isAssemblyPart: false,
+  matchingRequirements: '',
+  outputTaxRate: undefined,
+  inputTaxRate: undefined,
+  laborEnabled: false,
+  laborRows: [],
+  production: createDefaultProductionControl(),
+  alert: createDefaultAlertConfig(),
+  productMaterials: [],
+})
+
+const unitManageTabRef = ref(null)
+const bomDraftPanelRef = ref(null)
+const productMaterialList = ref([])
+
+const PRODUCT_MATERIAL_MAX = 9
+const PRODUCT_MATERIAL_ACCEPT_ATTR =
+  '.jpg,.jpeg,.png,.webp,.gif,.mp4,.webm,.mov,.avi,.doc,.docx,.xls,.xlsx,image/*,video/*,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+const PRODUCT_MATERIAL_EXT_RE = /\.(jpe?g|png|webp|gif|mp4|webm|mov|avi|docx?|xlsx?)$/i
+const PRODUCT_MATERIAL_MIME = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+  'image/gif',
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
+  'video/x-msvideo',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+])
+
+function resolveProductMaterialsSource(source = {}) {
+  if (Array.isArray(source.productMaterials) && source.productMaterials.length) {
+    return source.productMaterials
+  }
+  if (Array.isArray(source.productImages) && source.productImages.length) {
+    return source.productImages
+  }
+  return source.productMaterials || source.productImages || []
+}
+
+function getProductMaterialKind(name = '', type = '') {
+  const lower = String(name).toLowerCase()
+  const mime = String(type || '').toLowerCase()
+  if (mime.startsWith('image/') || /\.(jpe?g|png|webp|gif)$/i.test(lower)) return 'image'
+  if (mime.startsWith('video/') || /\.(mp4|webm|mov|avi)$/i.test(lower)) return 'video'
+  if (mime.includes('word') || mime === 'application/msword' || /\.docx?$/i.test(lower)) {
+    return 'word'
+  }
+  if (mime.includes('excel') || mime.includes('spreadsheet') || /\.xlsx?$/i.test(lower)) {
+    return 'excel'
+  }
+  return 'file'
+}
+
+function isAllowedProductMaterial(file) {
+  const type = String(file?.type || '')
+  const name = String(file?.name || '')
+  if (type && PRODUCT_MATERIAL_MIME.has(type)) return true
+  if (type.startsWith('image/') || type.startsWith('video/')) return true
+  return PRODUCT_MATERIAL_EXT_RE.test(name)
+}
+
+function normalizeProductMaterials(list = []) {
+  return (Array.isArray(list) ? list : [])
+    .map((item, i) => {
+      const url = item.url || item.thumbUrl || item.dataUrl || ''
+      if (!url && !item.name) return null
+      const name = item.name || `产品资料${i + 1}`
+      const fileType = item.type || item.fileType || ''
+      return {
+        uid: item.uid || `file-${i}-${Date.now()}`,
+        name,
+        status: 'done',
+        url,
+        thumbUrl: item.thumbUrl || (getProductMaterialKind(name, fileType) === 'image' ? url : ''),
+        type: fileType,
+        fileType: getProductMaterialKind(name, fileType),
+      }
+    })
+    .filter(Boolean)
+    .slice(0, PRODUCT_MATERIAL_MAX)
+}
+
+function syncProductMaterialsFromList() {
+  form.productMaterials = productMaterialList.value.map((f) => ({
+    uid: f.uid,
+    name: f.name,
+    url: f.url || f.thumbUrl || '',
+    thumbUrl: f.thumbUrl || '',
+    type: f.type || '',
+    fileType: f.fileType || getProductMaterialKind(f.name, f.type),
+  }))
+}
+
+function beforeUploadProductMaterial(file) {
+  if (productMaterialList.value.length >= PRODUCT_MATERIAL_MAX) {
+    message.warning(`最多上传 ${PRODUCT_MATERIAL_MAX} 个文件`)
+    return false
+  }
+  if (!isAllowedProductMaterial(file)) {
+    message.warning('仅支持图片、视频、Word、Excel')
+    return false
+  }
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    const url = String(e.target?.result || '')
+    const kind = getProductMaterialKind(file.name, file.type)
+    productMaterialList.value = [
+      ...productMaterialList.value,
+      {
+        uid: file.uid || `file-${Date.now()}`,
+        name: file.name,
+        status: 'done',
+        url,
+        thumbUrl: kind === 'image' ? url : '',
+        type: file.type || '',
+        fileType: kind,
+      },
+    ].slice(0, PRODUCT_MATERIAL_MAX)
+    syncProductMaterialsFromList()
+  }
+  reader.readAsDataURL(file)
+  return false
+}
+
+function onRemoveProductMaterial(file) {
+  productMaterialList.value = productMaterialList.value.filter((f) => f.uid !== file.uid)
+  syncProductMaterialsFromList()
+}
+
+function onPreviewProductMaterial(file) {
+  const url = file.url || file.thumbUrl
+  if (!url) return
+  const name = file.name || '产品资料'
+  const kind = file.fileType || getProductMaterialKind(name, file.type)
+  if (kind === 'image') {
+    Modal.info({
+      title: name,
+      icon: null,
+      width: 640,
+      content: h('img', {
+        src: url,
+        alt: name,
+        style: 'max-width:100%;display:block;margin:0 auto;',
+      }),
+      okText: '关闭',
+    })
+    return
+  }
+  if (kind === 'video') {
+    Modal.info({
+      title: name,
+      icon: null,
+      width: 720,
+      content: h('video', {
+        src: url,
+        controls: true,
+        style: 'max-width:100%;display:block;margin:0 auto;',
+      }),
+      okText: '关闭',
+    })
+    return
+  }
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.rel = 'noopener'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
+function onUnitManageFlatChange(flat) {
+  if (!flat) return
+  form.inventoryUnit = flat.inventoryUnit
+  form.purchaseUnit = flat.purchaseUnit
+  form.settleUnit = flat.settleUnit
+  form.settleConvertType = flat.settleConvertType
+  form.isVariableLength = flat.isVariableLength
+  form.stockUnit = flat.stockUnit
+  form.standardUnitWeight = flat.standardUnitWeight
+  form.packContentQty = flat.packContentQty
+  // auxUnits 以 TAB v-model 为准，避免 flat 回写触发循环
+  syncUnitCaliberFlags()
+}
+
+function syncUnitCaliberFlags() {
+  const dual = deriveIsVariableLength(form.inventoryUnit, form.purchaseUnit)
+  form.isVariableLength = dual
+  form.stockUnit = form.inventoryUnit
+  if (dual) {
+    form.uomRelation = resolveUomRelationByInventory(form.inventoryUnit)
+    // 采购≠库存时换算率来自辅助单位「采购」默认换算率，勿清空
+  } else {
+    form.uomRelation = ''
+    if (!form.purchaseUnit && form.inventoryUnit) {
+      form.purchaseUnit = form.inventoryUnit
+    }
+  }
+  if (!deriveSettleUnitForSave(form.inventoryUnit, form.settleUnit)) {
+    form.standardUnitWeight = undefined
+  }
+}
+
+watch(
+  () => form.inventoryUnit,
+  (unit, oldUnit) => {
+    if (!unit) return
+    if (!form.standardPackUnit) form.standardPackUnit = unit
+    if (!form.packContentUnit) form.packContentUnit = form.purchaseUnit || unit
+    // 辅助单位列表由单位 TAB 维护；此处仅同步包装相关默认值
+    if (form.settleUnit === oldUnit) {
+      form.settleUnit = undefined
+      form.standardUnitWeight = undefined
+    }
+    syncUnitCaliberFlags()
+  },
+)
+
+watch(
+  () => form.purchaseUnit,
+  (unit) => {
+    if (!unit) return
+    if (!form.packContentUnit) form.packContentUnit = unit
+    syncUnitCaliberFlags()
+  },
+)
+
+watch(
+  () => form.settleUnit,
+  () => {
+    syncUnitCaliberFlags()
+  },
+)
+
+const processRouteSelectOpts = computed(() => getProcessRouteSelectOptions())
+
+function resetForm() {
+  form.code = ''
+  form.name = ''
+  form.barcodeType = '一物一码'
+  form.materialType = undefined
+  form.supplyForm = undefined
+  form.categoryKey = undefined
+  form.specModel = ''
+  form.drawingNo = ''
+  form.material = ''
+  form.materialGradeId = ''
+  form.spuId = ''
+  form.spuName = ''
+  form.isVariantSku = false
+  form.variantValues = {}
+  form.bomOverrides = []
+  form.masterDataMode = 'single'
+  form.spuCode = ''
+  form.variantAxes = []
+  form.skuCodePattern = PRODUCT_SKU_CODE_PATTERN
+  form.enabledCombinationKeys = null
+  form.bomStrategy = SPU_BOM_STRATEGY.INHERIT
+  form.baseBomId = ''
+  form.techParams = ''
+  form.weight = ''
+  form.inventoryUnit = undefined
+  form.isVariableLength = false
+  form.needsBlankingSettle = false
+  form.purchaseUnit = undefined
+  form.settleUnit = undefined
+  form.standardUnitWeight = undefined
+  form.auxUnits = []
+  form.stockUnit = undefined
+  form.uomRelation = ''
+  form.unitPrice = undefined
+  form.purchaseUnitPrice = undefined
+  form.purchaseSuppliers = []
+  form.purchaseControlStrategy = PURCHASE_CONTROL_STRATEGY.RECEIVED_QTY
+  form.packContentQty = undefined
+  form.packContentUnit = undefined
+  form.standardPackQty = undefined
+  form.standardPackUnit = undefined
+  form.canSell = false
+  form.canProduce = false
+  form.isWholeMachine = false
+  form.isPart = false
+  form.canPurchase = false
+  form.canOutsource = false
+  form.productAttribute = undefined
+  form.productCategoryKey = PRODUCT_CATEGORY_FINISHED.key
+  form.standardSpec = ''
+  form.isAssemblyPart = false
+  form.matchingRequirements = ''
+  form.outputTaxRate = undefined
+  form.inputTaxRate = undefined
+  form.laborEnabled = false
+  form.laborRows = []
+  form.production = createDefaultProductionControl()
+  form.alert = createDefaultAlertConfig()
+  form.productMaterials = []
+  productMaterialList.value = []
+  activeTabKey.value = 'basic'
+  // 产品信息入口新增：默认可销售，以便展示产品字段/计划策略
+  if (isProductEntry.value) {
+    form.canSell = true
+  }
+  nextTick(() => bomDraftPanelRef.value?.clearDraft?.())
+}
+
+function loadEditRecord(record) {
+  const source = resolveMasterItemEditRecord(record)
+  suppressMaterialTypeDefault = true
+  resetForm()
+  form.code = source.code
+  form.name = source.name
+  form.barcodeType = source.barcodeType
+  form.materialType = source.materialType
+  form.supplyForm = source.supplyForm
+  form.categoryKey = source.categoryKey
+  form.specModel = source.specModel || ''
+  form.drawingNo = source.drawingNo || ''
+  form.material = source.material || ''
+  form.materialGradeId = source.materialGradeId || resolveMaterialGradeIdByName(source.material)
+  form.spuId = source.spuId || ''
+  form.spuName = source.spuName || ''
+  form.isVariantSku = Boolean(source.isVariantSku)
+  form.variantValues = source.variantValues ? { ...source.variantValues } : {}
+  form.bomOverrides = source.bomOverrides ? [...source.bomOverrides] : []
+  form.techParams = source.techParams || ''
+  form.weight = source.weight || ''
+  form.inventoryUnit = source.inventoryUnit
+  form.isVariableLength = Boolean(source.isVariableLength)
+  form.needsBlankingSettle = Boolean(source.needsBlankingSettle)
+  form.purchaseUnit = source.purchaseUnit || source.inventoryUnit
+  form.settleUnit = source.settleUnit || undefined
+  form.standardUnitWeight =
+    source.standardUnitWeight != null && source.standardUnitWeight !== ''
+      ? Number(source.standardUnitWeight)
+      : undefined
+  {
+    const hydrated = hydrateUnitManageFromSource(source)
+    form.auxUnits = hydrated.auxUnits
+    if (hydrated.baseUnit && !form.inventoryUnit) form.inventoryUnit = hydrated.baseUnit
+  }
+  form.stockUnit = source.stockUnit || source.inventoryUnit
+  if (!form.purchaseUnit) form.purchaseUnit = form.inventoryUnit
+  // 以 TAB 推导结果对齐扁平字段（兼容仅存扁平的历史数据）
+  onUnitManageFlatChange(applyUnitManageToFlat(form.inventoryUnit, form.auxUnits))
+  form.uomRelation = source.uomRelation || form.uomRelation || ''
+  form.unitPrice = source.unitPrice
+  form.purchaseUnitPrice = source.purchaseUnitPrice
+  form.packContentQty = source.packContentQty ?? source.packageContent ?? source.minOrderQty
+  form.packContentUnit =
+    source.packContentUnit ||
+    source.purchaseUnit ||
+    source.inventoryUnit ||
+    source.stockUnit ||
+    undefined
+  form.standardPackQty = source.standardPackQty
+  form.standardPackUnit =
+    source.standardPackUnit || source.inventoryUnit || source.stockUnit || undefined
+  {
+    const caps = normalizeCapabilityFlags(
+      source,
+      source._productRow ||
+        source.itemKind === ITEM_KIND.PRODUCT ||
+        source.itemKind === ITEM_KIND.PRODUCT_MATERIAL
+        ? 'product'
+        : source._materialRow
+          ? 'material'
+          : isProductEntry.value
+            ? 'product'
+            : '',
+    )
+    form.canSell = caps.canSell
+    form.canProduce = caps.canProduce
+  }
+  // 产品入口编辑：历史数据若缺可销售标记，与新增对齐默认可销售，避免产品字段被藏掉
+  if (isProductEntry.value && !form.canSell && !form.canProduce) {
+    form.canSell = true
+  }
+  form.isWholeMachine = Boolean(source.isWholeMachine)
+  form.isPart = Boolean(source.isPart)
+  form.canPurchase = Boolean(source.canPurchase)
+  form.canOutsource = Boolean(source.canOutsource)
+  if (form.isPart) {
+    form.productAttribute = normalizePartProductAttribute(source.productAttribute)
+  } else if (form.isWholeMachine) {
+    form.productAttribute = wholeMachineProductAttributeOptions.includes(source.productAttribute)
+      ? source.productAttribute
+      : undefined
+  } else {
+    form.productAttribute = source.productAttribute || undefined
+  }
+  form.productCategoryKey = source.productCategoryKey
+  form.standardSpec = source.standardSpec || ''
+  form.isAssemblyPart = Boolean(source.isAssemblyPart)
+  form.matchingRequirements = source.matchingRequirements || source.remark || ''
+  form.outputTaxRate = source.outputTaxRate
+  form.inputTaxRate = source.inputTaxRate
+  form.laborEnabled = source.laborEnabled ?? false
+  form.laborRows =
+    source.laborRows?.length > 0
+      ? JSON.parse(JSON.stringify(source.laborRows)).map((row) => ({
+          ...row,
+          workItemRates: normalizeWorkItemRates(row.workItemRates),
+        }))
+      : [createDefaultLaborRow()]
+  form.laborRows.forEach((row) => {
+    if (row.processName) onLaborProcessChange(row)
+  })
+  form.production = {
+    ...createDefaultProductionControl(),
+    ...(source.production || {}),
+  }
+  form.purchaseSuppliers = hydratePurchaseSuppliers({
+    ...source,
+    production: form.production,
+    purchaseUnitPrice: form.purchaseUnitPrice,
+  })
+  form.purchaseControlStrategy =
+    source.purchaseControlStrategy ||
+    source.production?.purchaseControlStrategy ||
+    PURCHASE_CONTROL_STRATEGY.RECEIVED_QTY
+  form.alert = {
+    ...createDefaultAlertConfig(),
+    ...(source.alert || {}),
+  }
+  productMaterialList.value = normalizeProductMaterials(resolveProductMaterialsSource(source))
+  syncProductMaterialsFromList()
+  if (source.requisitionAttr !== undefined && source.requisitionAttr !== '') {
+    form.production.requisitionEnabled = Boolean(Number(source.requisitionAttr))
+  }
+  if (form.isPart) form.isWholeMachine = false
+  else if (form.isWholeMachine) form.isPart = false
+  nextTick(() => {
+    suppressMaterialTypeDefault = false
+  })
+}
+
+function loadEditSpu(spu) {
+  resetForm()
+  form.masterDataMode = 'multiVariant'
+  form.spuId = spu.id
+  form.spuName = spu.name
+  form.name = spu.name
+  form.spuCode = spu.code
+  form.code = spu.code
+  form.categoryKey = spu.categoryKey
+  form.productCategoryKey = spu.categoryKey
+  form.canSell = spu.canSell
+  form.canProduce = spu.canProduce
+  form.canPurchase = spu.canPurchase
+  form.canOutsource = spu.canOutsource
+  form.variantAxes = hydrateMaterialAxisFromSkus(
+    ensureLockedVariantAxes(spu.variantAxes || []),
+    listSkusForSpu(spu.id),
+    getMaterialGradeById,
+  )
+  form.skuCodePattern = PRODUCT_SKU_CODE_PATTERN
+  form.enabledCombinationKeys = Array.isArray(spu.enabledCombinations)
+    ? [...spu.enabledCombinations]
+    : null
+  form.bomStrategy = spu.bomStrategy || SPU_BOM_STRATEGY.INHERIT
+  form.baseBomId = spu.baseBomId || ''
+  const shared = spu.sharedFields || {}
+  form.techParams = shared.techParams || ''
+  form.materialType = shared.materialType
+  form.supplyForm = shared.supplyForm
+  form.inventoryUnit = shared.inventoryUnit
+  form.purchaseUnit = shared.purchaseUnit || shared.inventoryUnit
+  form.settleUnit = shared.settleUnit || undefined
+  form.standardUnitWeight =
+    shared.standardUnitWeight != null && shared.standardUnitWeight !== ''
+      ? Number(shared.standardUnitWeight)
+      : undefined
+  {
+    const hydrated = hydrateUnitManageFromSource(shared)
+    form.auxUnits = hydrated.auxUnits
+  }
+  onUnitManageFlatChange(applyUnitManageToFlat(form.inventoryUnit, form.auxUnits))
+  productMaterialList.value = normalizeProductMaterials(
+    resolveProductMaterialsSource({
+      ...shared,
+      productImages: shared.productImages || spu.productImages,
+    }),
+  )
+  syncProductMaterialsFromList()
+  activeTabKey.value = 'variant'
+}
+
+function syncFormOnOpen() {
+  if (!isActive.value) return
+  if (props.editSpu) loadEditSpu(props.editSpu)
+  else if (props.editRecord) loadEditRecord(props.editRecord)
+  else resetForm()
+}
+
+watch(
+  () =>
+    isActive.value
+      ? props.editSpu?.id || props.editRecord?.id || props.editRecord?.code || '__new__'
+      : '',
+  () => syncFormOnOpen(),
+  { immediate: true },
+)
+
+watch(
+  () => form.masterDataMode,
+  (mode) => {
+    if (mode === 'single' && activeTabKey.value === 'variant') {
+      activeTabKey.value = 'basic'
+    }
+    if (mode !== 'multiVariant' || form.variantAxes.length) return
+    const catKey = form.categoryKey || form.productCategoryKey
+    form.variantAxes = getVariantAxesForCategory(
+      catKey,
+      showProductFields.value ? 'product' : 'material',
+    )
+  },
+)
+
+watch(
+  () => form.laborEnabled,
+  (enabled) => {
+    if (!enabled) return
+    if (!form.laborRows.length) form.laborRows = [createDefaultLaborRow()]
+    activeTabKey.value = 'labor'
+  },
+)
+
+let syncingProductTypePair = false
+/** 编辑回填时跳过整机/零部件对「类型」的默认写入 */
+let suppressMaterialTypeDefault = false
+
+watch(
+  () => form.isWholeMachine,
+  (val) => {
+    if (syncingProductTypePair) return
+    if (val && form.isPart) {
+      syncingProductTypePair = true
+      form.isPart = false
+      syncingProductTypePair = false
+    }
+    if (val && !suppressMaterialTypeDefault) {
+      form.materialType = '成品'
+    }
+    if (
+      val &&
+      !form.isPart &&
+      !wholeMachineProductAttributeOptions.includes(form.productAttribute)
+    ) {
+      form.productAttribute = '标准产品'
+    }
+  },
+)
+
+watch(
+  () => form.isPart,
+  (val) => {
+    if (!syncingProductTypePair && val && form.isWholeMachine) {
+      syncingProductTypePair = true
+      form.isWholeMachine = false
+      syncingProductTypePair = false
+    }
+    if (val) {
+      if (!suppressMaterialTypeDefault) {
+        form.materialType = '零部件'
+      }
+      form.productAttribute = normalizePartProductAttribute(form.productAttribute)
+    } else if (isPartProductAttribute(form.productAttribute)) {
+      form.productAttribute = undefined
+      form.isAssemblyPart = false
+    }
+  },
+)
+
+watch(
+  () => form.productAttribute,
+  (val) => {
+    if (!isPartProductAttribute(val)) form.isAssemblyPart = false
+  },
+)
+
+function addLaborRow() {
+  form.laborRows.push(createDefaultLaborRow())
+}
+
+function removeLaborRow(index) {
+  form.laborRows.splice(index, 1)
+}
+
+function laborWorkItemCatalog(row) {
+  if (!row?.processName) return []
+  const process = getProcessByName(row.processName)
+  if (!process) return []
+  const { workItemTemplates } = normalizeProcessWorkItemFields(process)
+  if (!workItemTemplates.length) return []
+  return mergeWorkItemTemplatesWithRates(workItemTemplates, row.workItemRates || [])
+}
+
+function onLaborProcessChange(row) {
+  const catalog = laborWorkItemCatalog(row)
+  const prev = new Map(normalizeWorkItemRates(row.workItemRates).map((r) => [r.itemCode, r]))
+  row.workItemRates = catalog.map((item) => {
+    const hit = prev.get(item.code)
+    return {
+      itemCode: item.code,
+      unitPrice: hit ? Number(hit.unitPrice) || 0 : 0,
+      plannedQtyPerPiece: hit?.plannedQtyPerPiece ?? null,
+    }
+  })
+}
+
+function getLaborWorkItemRate(row, itemCode, field) {
+  const hit = (row.workItemRates || []).find((r) => r.itemCode === itemCode)
+  if (!hit) return field === 'unitPrice' ? 0 : null
+  return hit[field]
+}
+
+function setLaborWorkItemRate(row, itemCode, field, value) {
+  if (!Array.isArray(row.workItemRates)) row.workItemRates = []
+  let hit = row.workItemRates.find((r) => r.itemCode === itemCode)
+  if (!hit) {
+    hit = { itemCode, unitPrice: 0, plannedQtyPerPiece: null }
+    row.workItemRates.push(hit)
+  }
+  if (field === 'plannedQtyPerPiece') {
+    hit.plannedQtyPerPiece =
+      value != null && value !== '' && Number(value) > 0 ? Number(value) : null
+  } else {
+    hit.unitPrice = Number(value) || 0
+  }
+}
+
+function validate() {
+  if (!form.canSell && !form.canProduce) {
+    message.warning('请至少勾选「可销售」或「可生产」之一')
+    return false
+  }
+  if (!form.name?.trim()) {
+    message.warning('请填写产品名称')
+    return false
+  }
+  applyPurchaseSupplierSync()
+  if (!form.barcodeType) {
+    message.warning('请选择条码类型')
+    return false
+  }
+  if (!form.materialType) {
+    message.warning('请选择类型')
+    return false
+  }
+  if (!form.supplyForm) {
+    message.warning('请选择供应型态')
+    return false
+  }
+  if (!isMultiVariantMode.value && !form.specModel?.trim()) {
+    message.warning('请填写规格型号')
+    return false
+  }
+  if (isMultiVariantMode.value) {
+    if (!form.variantAxes?.length) {
+      message.warning('请至少配置一个变体属性')
+      return false
+    }
+    const missingDomain = form.variantAxes.find((a) => !a.enumValues?.length)
+    if (missingDomain) {
+      message.warning(`请为「${missingDomain.label || '变体属性'}」配置值域`)
+      return false
+    }
+  }
+  if (!form.inventoryUnit) {
+    message.warning('请选择库存单位')
+    activeTabKey.value = 'basic'
+    return false
+  }
+  {
+    const unitCheck = validateUnitManage(form.inventoryUnit, form.auxUnits)
+    if (!unitCheck.ok) {
+      message.warning(unitCheck.message)
+      activeTabKey.value = 'units'
+      return false
+    }
+  }
+  {
+    const flat = applyUnitManageToFlat(form.inventoryUnit, form.auxUnits)
+    form.auxUnits = flat.auxUnits
+    onUnitManageFlatChange(flat)
+  }
+  if (!form.purchaseUnit) {
+    form.purchaseUnit = form.inventoryUnit
+  }
+  syncUnitCaliberFlags()
+  // 同步后再用辅助单位换算率回填（避免 sync 影响）
+  {
+    const flat = applyUnitManageToFlat(form.inventoryUnit, form.auxUnits)
+    form.packContentQty = flat.packContentQty
+    form.standardUnitWeight = flat.standardUnitWeight
+  }
+  if (form.isVariableLength && !form.purchaseUnit) {
+    message.warning('请配置带「采购」角色的辅助单位')
+    activeTabKey.value = 'units'
+    return false
+  }
+  // 结算与库存相同视为未启用
+  const settleForSave = deriveSettleUnitForSave(form.inventoryUnit, form.settleUnit)
+  form.settleUnit = settleForSave || undefined
+  if (!settleForSave) {
+    form.standardUnitWeight = undefined
+  }
+  const settleCheck = validateSettleUnitOnMaster(form)
+  if (!settleCheck.ok) {
+    message.warning(settleCheck.message)
+    activeTabKey.value = 'units'
+    return false
+  }
+  if (form.laborEnabled) {
+    for (let i = 0; i < form.laborRows.length; i += 1) {
+      const row = form.laborRows[i]
+      if (!row.processName) {
+        message.warning(`请为第 ${i + 1} 行选择工序`)
+        return false
+      }
+      if (!row.reportType) {
+        message.warning(`请为第 ${i + 1} 行选择报工类型`)
+        return false
+      }
+      if (!row.salaryMethod) {
+        message.warning(`请为第 ${i + 1} 行选择计薪方式`)
+        return false
+      }
+      if (!resolveSalaryMethodOptions(row.reportType).includes(row.salaryMethod)) {
+        message.warning(`第 ${i + 1} 行：时长报工仅支持计时工资`)
+        return false
+      }
+    }
+  }
+  return true
+}
+
+function filterMaterialGrade(input, option) {
+  return (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+}
+
+function filterSelectOption(input, option) {
+  const kw = String(input || '').toLowerCase()
+  const label = String(option?.label ?? option?.value ?? '').toLowerCase()
+  return label.includes(kw)
+}
+
+function buildProductPayload() {
+  const cat = flatProductCats.value.find((c) => c.key === form.productCategoryKey)
+  const parent = cat?.parentKey
+    ? flattenCategoryNodes(productCategoryState.tree).find((c) => c.key === cat.parentKey)
+    : null
+  const code = form.code?.trim() || generateProductCode()
+  const isPm = derivedItemKind.value === ITEM_KIND.PRODUCT_MATERIAL
+
+  return {
+    code,
+    name: form.name.trim(),
+    barcodeType: form.barcodeType,
+    productAttribute: form.productAttribute,
+    categoryKey: form.productCategoryKey,
+    categoryCode: cat?.code || '',
+    categoryName: parent ? parent.title : cat?.title || '',
+    parentCategoryKey: cat?.parentKey || cat?.key || '',
+    specModel: form.specModel,
+    drawingNo: form.drawingNo?.trim() || '',
+    material: form.material,
+    materialGradeId: form.materialGradeId || '',
+    spuId: form.spuId || '',
+    spuName: form.spuName || '',
+    isVariantSku: form.isVariantSku,
+    variantValues: form.isVariantSku
+      ? { specModel: form.specModel, material: form.material, ...form.variantValues }
+      : form.variantValues,
+    bomOverrides: form.bomOverrides || [],
+    weight: Number(form.weight) || 0,
+    inventoryUnit: form.inventoryUnit,
+    isVariableLength: form.isVariableLength,
+    needsBlankingSettle: Boolean(form.needsBlankingSettle),
+    purchaseUnit: form.isVariableLength
+      ? form.purchaseUnit
+      : form.purchaseUnit || form.inventoryUnit,
+    settleUnit: form.settleUnit ? String(form.settleUnit).trim() : '',
+    settleConvertType: form.settleUnit ? 'floating' : '',
+    standardUnitWeight:
+      form.settleUnit && Number(form.standardUnitWeight) > 0
+        ? Number(form.standardUnitWeight)
+        : undefined,
+    auxUnits: Array.isArray(form.auxUnits) ? form.auxUnits : [],
+    packageContent: Number(form.packContentQty) > 0 ? Number(form.packContentQty) : undefined,
+    stockUnit: form.isVariableLength ? form.inventoryUnit || '米' : form.inventoryUnit,
+    uomRelation: form.isVariableLength
+      ? form.uomRelation ||
+        (form.inventoryUnit === '㎡' ||
+        form.inventoryUnit === 'm²' ||
+        form.inventoryUnit === '平方米'
+          ? 'per_piece_area'
+          : String(form.inventoryUnit).toLowerCase() === 'kg' ||
+              form.inventoryUnit === '公斤' ||
+              form.inventoryUnit === '千克'
+            ? 'per_piece_weight'
+            : 'per_piece_length')
+      : '',
+    standardSpec: form.standardSpec || '',
+    techParams: form.techParams?.trim() || '',
+    unitPrice: form.unitPrice ?? 0,
+    purchaseUnitPrice: form.purchaseUnitPrice ?? 0,
+    purchaseSuppliers: Array.isArray(form.purchaseSuppliers)
+      ? form.purchaseSuppliers.map((r) => createEmptyPurchaseSupplier(r))
+      : [],
+    purchaseControlStrategy: form.purchaseControlStrategy || PURCHASE_CONTROL_STRATEGY.RECEIVED_QTY,
+    packContentQty: form.packContentQty ?? null,
+    packContentUnit: form.packContentUnit || form.purchaseUnit || form.inventoryUnit || null,
+    standardPackQty: form.standardPackQty ?? null,
+    standardPackUnit: form.standardPackUnit || form.inventoryUnit || null,
+    canSell: form.canSell,
+    canProduce: form.canProduce,
+    isWholeMachine: form.isWholeMachine,
+    isPart: form.isPart,
+    canPurchase: form.canPurchase,
+    canOutsource: form.canOutsource,
+    isAssemblyPart: showAssemblyPartSwitch.value ? form.isAssemblyPart : false,
+    isProductMaterial: isPm,
+    materialType: form.materialType,
+    materialCategoryKey: form.categoryKey || undefined,
+    supplyForm: form.supplyForm || undefined,
+    matchingRequirements: form.matchingRequirements?.trim() || '',
+    remark: form.matchingRequirements?.trim() || '',
+    outputTaxRate: form.outputTaxRate,
+    inputTaxRate: form.inputTaxRate,
+    laborEnabled: form.laborEnabled,
+    laborRows: form.laborEnabled ? JSON.parse(JSON.stringify(form.laborRows)) : [],
+    production: JSON.parse(JSON.stringify(form.production)),
+    alert: JSON.parse(JSON.stringify(form.alert)),
+    productMaterials: JSON.parse(JSON.stringify(form.productMaterials || [])),
+  }
+}
+
+function buildMaterialPayload() {
+  const cat = flatCats.value.find((c) => c.key === form.categoryKey)
+  const parent = cat?.parentKey
+    ? flattenCategoryNodes(materialCategoryState.tree).find((c) => c.key === cat.parentKey)
+    : null
+  const code = form.code?.trim() || generateProductCode()
+  const isPm = derivedItemKind.value === ITEM_KIND.PRODUCT_MATERIAL
+  const laborRows = form.laborEnabled ? JSON.parse(JSON.stringify(form.laborRows)) : []
+
+  return {
+    code,
+    name: form.name.trim(),
+    barcodeType: form.barcodeType,
+    materialType: form.materialType,
+    supplyForm: form.supplyForm,
+    categoryKey: form.categoryKey,
+    categoryCode: cat?.code || '',
+    categoryName: parent ? parent.title : cat?.title || '',
+    parentCategoryKey: cat?.parentKey || cat?.key || '',
+    specModel: form.specModel,
+    drawingNo: form.drawingNo?.trim() || '',
+    material: form.material,
+    materialGradeId: form.materialGradeId || '',
+    spuId: form.spuId || '',
+    spuName: form.spuName || '',
+    isVariantSku: form.isVariantSku,
+    variantValues: form.isVariantSku
+      ? { specModel: form.specModel, material: form.material, ...form.variantValues }
+      : form.variantValues,
+    bomOverrides: form.bomOverrides || [],
+    techParams: form.techParams?.trim() || '',
+    weight: form.weight,
+    inventoryUnit: form.inventoryUnit,
+    isVariableLength: form.isVariableLength,
+    needsBlankingSettle: Boolean(form.needsBlankingSettle),
+    purchaseUnit: form.isVariableLength
+      ? form.purchaseUnit
+      : form.purchaseUnit || form.inventoryUnit,
+    settleUnit: form.settleUnit ? String(form.settleUnit).trim() : '',
+    settleConvertType: form.settleUnit ? 'floating' : '',
+    standardUnitWeight:
+      form.settleUnit && Number(form.standardUnitWeight) > 0
+        ? Number(form.standardUnitWeight)
+        : undefined,
+    auxUnits: Array.isArray(form.auxUnits) ? form.auxUnits : [],
+    packageContent: Number(form.packContentQty) > 0 ? Number(form.packContentQty) : undefined,
+    stockUnit: form.isVariableLength ? form.inventoryUnit || '米' : form.inventoryUnit,
+    uomRelation: form.isVariableLength
+      ? form.uomRelation ||
+        (form.inventoryUnit === '㎡' ||
+        form.inventoryUnit === 'm²' ||
+        form.inventoryUnit === '平方米'
+          ? 'per_piece_area'
+          : String(form.inventoryUnit).toLowerCase() === 'kg' ||
+              form.inventoryUnit === '公斤' ||
+              form.inventoryUnit === '千克'
+            ? 'per_piece_weight'
+            : 'per_piece_length')
+      : '',
+    unitPrice: form.unitPrice ?? 0,
+    purchaseUnitPrice: form.purchaseUnitPrice ?? 0,
+    purchaseSuppliers: Array.isArray(form.purchaseSuppliers)
+      ? form.purchaseSuppliers.map((r) => createEmptyPurchaseSupplier(r))
+      : [],
+    purchaseControlStrategy: form.purchaseControlStrategy || PURCHASE_CONTROL_STRATEGY.RECEIVED_QTY,
+    packContentQty: form.packContentQty ?? null,
+    packContentUnit: form.packContentUnit || form.purchaseUnit || form.inventoryUnit || null,
+    standardPackQty: form.standardPackQty ?? null,
+    standardPackUnit: form.standardPackUnit || form.inventoryUnit || null,
+    canSell: form.canSell,
+    canProduce: form.canProduce,
+    canPurchase: form.canPurchase,
+    canOutsource: form.canOutsource,
+    isProductMaterial: isPm,
+    productAttribute: isPm ? form.productAttribute : undefined,
+    productCategoryKey: isPm ? form.productCategoryKey : undefined,
+    materialCategoryKey: form.categoryKey,
+    isAssemblyPart: isPm ? form.isAssemblyPart : false,
+    matchingRequirements: form.matchingRequirements?.trim() || '',
+    remark: form.matchingRequirements?.trim() || '',
+    outputTaxRate: form.outputTaxRate,
+    inputTaxRate: form.inputTaxRate,
+    requisitionAttr: form.production.requisitionEnabled ? 1 : 0,
+    laborEnabled: form.laborEnabled,
+    laborRows,
+    production: JSON.parse(JSON.stringify(form.production)),
+    alert: JSON.parse(JSON.stringify(form.alert)),
+    productMaterials: JSON.parse(JSON.stringify(form.productMaterials || [])),
+  }
+}
+
+function buildSpuPayloadFromForm() {
+  const catKey = form.categoryKey || form.productCategoryKey
+  const cat =
+    flatCats.value.find((c) => c.key === catKey) ||
+    flatProductCats.value.find((c) => c.key === catKey)
+  const parentKey = cat?.parentKey || catKey
+  const kind = resolveItemKind({ canSell: form.canSell, canProduce: form.canProduce })
+  return {
+    id: form.spuId || undefined,
+    code: form.spuCode?.trim() || form.code?.trim() || generateSpuCode(),
+    name: form.name.trim(),
+    categoryKey: catKey,
+    parentCategoryKey: parentKey,
+    categoryName: cat?.title || '',
+    categoryTreeMode: showProductFields.value ? 'product' : 'material',
+    itemKind:
+      kind === ITEM_KIND.PRODUCT_MATERIAL
+        ? 'productMaterial'
+        : kind === ITEM_KIND.PRODUCT
+          ? 'product'
+          : 'material',
+    canSell: form.canSell,
+    canProduce: form.canProduce,
+    canPurchase: form.canPurchase,
+    canOutsource: form.canOutsource,
+    variantAxes: JSON.parse(JSON.stringify(form.variantAxes || [])),
+    skuCodePattern: form.skuCodePattern,
+    enabledCombinations: Array.isArray(form.enabledCombinationKeys)
+      ? [...form.enabledCombinationKeys]
+      : [],
+    bomStrategy: form.bomStrategy,
+    baseBomId: form.baseBomId,
+    mixedBomRules: null,
+    sharedFields: {
+      techParams: form.techParams?.trim() || '',
+      materialType: form.materialType,
+      supplyForm: form.supplyForm,
+      inventoryUnit: form.inventoryUnit,
+      categoryKey: catKey,
+      parentCategoryKey: parentKey,
+      categoryName: cat?.title || '',
+      production: JSON.parse(JSON.stringify(form.production)),
+      productMaterials: JSON.parse(JSON.stringify(form.productMaterials || [])),
+    },
+  }
+}
+
+function saveMultiVariantMaster() {
+  const spuPayload = buildSpuPayloadFromForm()
+  const spu = form.spuId ? updateSpu(form.spuId, spuPayload) : addSpu(spuPayload)
+  const enabledRows = matrixPreviewRef.value?.getEnabledRows?.() || []
+  const combos = matrixRowsToSkuCombos(enabledRows)
+  if (combos.length) {
+    const results = batchGenerateSkus(spu.id, combos)
+    const created = results.filter((r) => r.created).length
+    message.success(`模板已保存，生成/更新 ${results.length} 个 SKU（新建 ${created}）`)
+  } else {
+    message.success('模板已保存')
+  }
+  emit('saved', { spu, mode: 'multiVariant' })
+  closeAfterSave()
+}
+
+function openTemplateBom() {
+  const spuId = form.spuId || props.editSpu?.id
+  if (!spuId) {
+    message.info('请先保存产品族后再维护族模板 BOM')
+    return
+  }
+  router.push({
+    path: '/product-process/bom/new',
+    query: { itemType: 'spu', itemId: spuId, itemName: form.name, bomType: '基准BOM' },
+  })
+}
+
+function navigateToMaintainBom(itemType, itemId, itemName) {
+  const nav = resolveItemBomNavigation(itemType, itemId)
+  const resolved = router.resolve({
+    path: nav.path,
+    query: {
+      ...(nav.query || {}),
+      itemName: itemName || '',
+    },
+  })
+  openTab(resolved.fullPath || resolved.path, nav.title || '维护BOM')
+  router.push(resolved)
+}
+
+function handleGoEditFromDetail() {
+  const id = props.editRecord?.id
+  if (!id) return
+  openCreateTab(router, openTab, {
+    path: `/product-process/products/${id}/edit`,
+    title: `编辑产品 ${form.code || form.name || ''}`.trim(),
+  })
+}
+
+function handleMaintainBomFromDetail() {
+  const id = props.editRecord?.id
+  if (!id) {
+    message.warning('无法定位物品，请稍后从列表维护 BOM')
+    return
+  }
+  const itemType =
+    derivedItemKind.value === ITEM_KIND.MATERIAL ||
+    (!showProductFields.value && showMaterialFields.value)
+      ? 'material'
+      : 'product'
+  navigateToMaintainBom(itemType, id, form.name)
+}
+
+/** 新增产品且存在 BOM 草稿明细时，随主数据一并落库为待发布产品 BOM */
+function tryPersistBomDraftOnCreate(result) {
+  if (isEdit.value || !isProductEntry.value || isMultiVariantMode.value) {
+    return { saved: false, skipped: true }
+  }
+  if (!result?.id) return { saved: false, skipped: true }
+
+  const draft = bomDraftPanelRef.value?.getDraft?.()
+  if (!draft?.lineItems?.length) return { saved: false, skipped: true }
+
+  const itemType =
+    result.kind === ITEM_KIND.MATERIAL || (!showProductFields.value && showMaterialFields.value)
+      ? 'material'
+      : 'product'
+
+  return persistProductBomDraft({
+    draft,
+    itemId: result.id,
+    itemType,
+    itemCode: form.code?.trim() || '',
+    itemName: form.name?.trim() || '',
+    specModel: form.specModel || '',
+    material: form.material || '',
+    drawingNo: form.drawingNo || '',
+    techParams: form.techParams || '',
+    processRoute: form.production?.defaultProcessRoute || '',
+    matchingRequirements: form.matchingRequirements || '',
+  })
+}
+
+function handleOk() {
+  if (!validate()) return
+  syncProductMaterialsFromList()
+  if (isMultiVariantMode.value && !isEdit.value) {
+    saveMultiVariantMaster()
+    return
+  }
+  if (isSpuEdit.value || (isMultiVariantMode.value && form.spuId)) {
+    saveMultiVariantMaster()
+    return
+  }
+
+  const canAttachBomDraft = !isEdit.value && isProductEntry.value && !isMultiVariantMode.value
+  if (canAttachBomDraft) {
+    const draft = bomDraftPanelRef.value?.getDraft?.()
+    const draftCheck = validateProductBomDraft(draft)
+    if (!draftCheck.ok) {
+      message.warning(draftCheck.message || 'BOM 草稿校验未通过')
+      activeTabKey.value = 'bomMaintain'
+      return
+    }
+  }
+
+  const productPayload = showProductFields.value ? buildProductPayload() : null
+  const materialPayload = showMaterialFields.value ? buildMaterialPayload() : null
+  const payload = {
+    isEdit: isEdit.value,
+    id: props.editRecord?.id,
+    productPayload,
+    materialPayload,
+  }
+
+  if (props.pageMode || canAttachBomDraft) {
+    const result = saveMasterItem(payload)
+    if (!props.pageMode) {
+      emit('saved', { ...payload, alreadySaved: true, id: result?.id })
+    }
+    const bomRes = tryPersistBomDraftOnCreate(result)
+    if (bomRes?.error) {
+      message.warning(`产品已保存，但 BOM 落库失败：${bomRes.error}`)
+      closeAfterSave()
+      return
+    }
+    message.success(
+      bomRes?.saved ? '已保存产品及 BOM（待发布）' : isEdit.value ? '已更新' : '已保存',
+    )
+    closeAfterSave()
+    return
+  }
+
+  emit('saved', payload)
+  message.success(isEdit.value ? '已更新' : '已保存')
+  closeAfterSave()
+}
+
+function handleSaveAndMaintainBom() {
+  if (!validate()) return
+  if (isMultiVariantMode.value || isSpuEdit.value) {
+    message.info('产品族请通过「族模板 BOM」入口维护')
+    return
+  }
+  const productPayload = showProductFields.value ? buildProductPayload() : null
+  const materialPayload = showMaterialFields.value ? buildMaterialPayload() : null
+  const payload = {
+    isEdit: isEdit.value,
+    id: props.editRecord?.id,
+    productPayload,
+    materialPayload,
+  }
+  const result = saveMasterItem(payload)
+  emit('saved', { ...payload, alreadySaved: true, id: result?.id })
+  if (!result?.id) {
+    message.warning('保存成功，但无法定位物品，请稍后从列表维护 BOM')
+    closeAfterSave()
+    return
+  }
+  const itemType =
+    result.kind === ITEM_KIND.MATERIAL || (!showProductFields.value && showMaterialFields.value)
+      ? 'material'
+      : 'product'
+  message.success(isEdit.value ? '已更新，正在打开 BOM' : '已保存，正在打开 BOM')
+  closeAfterSave()
+  navigateToMaintainBom(itemType, result.id, form.name)
+}
+</script>
+
+<style lang="less" scoped>
+.material-form-modal,
+.master-item-form-modal {
+  :deep(.ant-modal-body) {
+    max-height: calc(100vh - 200px);
+    overflow-y: auto;
+    padding-top: 8px;
+  }
+}
+
+.master-data-mode-row {
+  margin-top: 0;
+  margin-bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+}
+.mode-label {
+  font-size: 12px;
+  line-height: 22px;
+  color: rgba(0, 0, 0, 0.65);
+}
+.spu-code-row {
+  margin-top: 6px;
+}
+
+.spu-inherit-banner {
+  margin: 0 16px 12px;
+  padding: 8px 12px;
+  background: #e6f4ff;
+  border-radius: 4px;
+  border: 1px solid #91caff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spu-inherit-hint {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.master-form-header-card,
+.master-form-tabs-card {
+  background: #fff;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+/* 名称/能力外白盒 与 Tab 白盒间距：由 FormCreateShell gap:8px 承担，勿再叠加 margin */
+.master-form-header-card {
+  margin-bottom: 0;
+}
+
+.entity-name-header {
+  margin-bottom: 0;
+  padding: 12px 16px;
+  background: #fff;
+}
+
+.entity-name-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.88);
+  margin-bottom: 4px;
+}
+
+.entity-required-mark {
+  display: inline-block;
+  margin-inline-end: 4px;
+  color: #ff4d4f;
+  font-family: SimSun, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.entity-name-input {
+  font-size: 18px;
+  font-weight: 600;
+  padding: 4px 0 6px;
+  border: none;
+  border-bottom: 1px solid #d9d9d9;
+  border-radius: 0;
+  box-shadow: none;
+  width: 100%;
+
+  &:hover,
+  &:focus {
+    border-bottom-color: #1677ff;
+    box-shadow: none;
+  }
+
+  :deep(.ant-input) {
+    border: none;
+    box-shadow: none;
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+
+.entity-code-label {
+  margin-top: 0;
+}
+
+.entity-code-hint {
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.entity-identity-panel,
+.entity-capability-panel {
+  padding: 12px 14px;
+  border: 1px solid #91caff;
+  border-radius: 8px;
+}
+
+.entity-capability-panel {
+  padding: 6px 12px;
+}
+
+.entity-identity-panel {
+  margin: 0;
+  background: #fff;
+}
+
+.entity-identity-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+  align-items: start;
+}
+
+.entity-identity-field {
+  min-width: 0;
+  width: 100%;
+}
+
+.entity-capability-panel {
+  margin-top: 8px;
+  background: #f0f5ff;
+
+  :deep(.ant-checkbox-wrapper) {
+    font-size: 13px;
+    line-height: 22px;
+  }
+
+  :deep(.ant-radio-button-wrapper) {
+    height: 24px;
+    line-height: 22px;
+    padding-inline: 10px;
+    font-size: 12px;
+  }
+}
+
+.entity-capability-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 0;
+  padding-top: 0;
+  align-items: center;
+  min-height: 22px;
+}
+
+.entity-capability-panel .master-data-mode-row {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed #91caff;
+}
+
+.derived-type-tag {
+  font-size: 12px;
+  line-height: 22px;
+  color: rgba(0, 0, 0, 0.65);
+  margin-left: 4px;
+}
+
+.detail-product-name {
+  font-size: 14px;
+  color: rgba(0, 0, 0, 0.65);
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.master-item-form-modal.is-detail-page {
+  .master-form-header-card,
+  .master-form-tabs-card {
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  }
+}
+
+/* 胶囊 Tab 与所在白盒、下方内容的间距统一为 12px */
+.form-tabs.detail-tabs.detail-tabs-pill {
+  margin: 0;
+  padding: 12px 16px 0 !important;
+
+  :deep(> .ant-tabs-nav) {
+    margin: 0 0 12px !important;
+    padding: 0 !important;
+  }
+
+  :deep(> .ant-tabs-nav .ant-tabs-nav-list) {
+    padding: 4px !important;
+    align-items: center;
+  }
+
+  :deep(> .ant-tabs-content-holder) {
+    background: #fff;
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  :deep(> .ant-tabs-content-holder .ant-tabs-content) {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  :deep(.ant-tabs-tabpane) {
+    padding: 0 !important;
+  }
+}
+
+.tab-pane-body {
+  padding: 0 0 16px;
+  min-height: 200px;
+}
+
+.tab-pane-body > .horizontal-form > .basic-info-box:first-child,
+.tab-pane-body > .horizontal-form > .modal-basic-card:first-child,
+.tab-pane-body > .horizontal-form > .form-product-material-section:first-child,
+.tab-pane-body > .basic-info-box:first-child,
+.tab-pane-body > .modal-basic-card:first-child,
+.tab-pane-body > .form-product-material-section:first-child {
+  margin-top: 0 !important;
+}
+
+.form-tabs.is-view-only {
+  :deep(.ant-input),
+  :deep(.ant-input-number),
+  :deep(.ant-select),
+  :deep(.ant-switch),
+  :deep(.ant-upload),
+  :deep(.ant-btn) {
+    pointer-events: none;
+  }
+}
+
+.labor-enable-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+}
+
+.labor-enable-label {
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.88);
+  white-space: nowrap;
+}
+
+.labor-enable-row.is-only {
+  margin-bottom: 0;
+}
+
+.horizontal-form {
+  width: 100%;
+
+  :deep(.ant-form-item) {
+    width: 100%;
+    margin-bottom: 0;
+  }
+
+  :deep(.ant-form-item-row) {
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+
+  :deep(.ant-form-item-label) {
+    flex: 0 0 96px;
+    max-width: 96px;
+  }
+
+  :deep(.ant-form-item-label > label) {
+    height: auto;
+    min-height: 24px;
+    line-height: 24px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  :deep(
+    .ant-form-item-label
+      > label.ant-form-item-required:not(.ant-form-item-required-mark-optional)::before
+  ) {
+    margin-inline-end: 4px;
+  }
+
+  :deep(.ant-form-item-control) {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .label-wide {
+    :deep(.ant-form-item-label) {
+      flex: 0 0 128px;
+      max-width: 128px;
+    }
+  }
+
+  .remark-item {
+    :deep(.ant-form-item-label) {
+      flex: 0 0 96px;
+      max-width: 96px;
+    }
+  }
+
+  .product-materials-item {
+    :deep(.ant-form-item-control-input-content) {
+      display: block;
+    }
+  }
+}
+
+/*
+ * 技术参数 / 配置要求：
+ * - 外层盒子高度自适应（height:auto），不是写死的
+ * - 初始 textarea 54px，允许纵向拖拽；拖拽后由浏览器写 inline height，包裹层跟着撑开，下方字段下移
+ * - 两字段间距固定 12px（flex gap）
+ * 注意：不要对 textarea 使用 height/max-height !important，否则会压住拖拽产生的 inline height
+ */
+.stacked-remark-form {
+  width: 100%;
+  margin-top: 12px;
+  height: auto;
+}
+
+.stacked-remark-box {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  height: auto;
+}
+
+.stacked-remark-form :deep(.stacked-remark-item) {
+  width: 100%;
+  height: auto;
+  margin-bottom: 0 !important;
+}
+
+.stacked-remark-form :deep(.ant-form-item-row) {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+
+.stacked-remark-form :deep(.ant-form-item-label) {
+  flex: 0 0 96px;
+  max-width: 96px;
+  text-align: right;
+}
+
+.stacked-remark-form :deep(.ant-form-item-label > label) {
+  height: auto;
+  min-height: 24px;
+  line-height: 32px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.stacked-remark-form :deep(.ant-form-item-control) {
+  flex: 1;
+  min-width: 0;
+  height: auto;
+}
+
+/* 关键 Design 包裹层必须随 textarea 实际高度撑开，否则拖高后会溢出盖住下一字段 */
+.stacked-remark-form :deep(.ant-form-item-control-input),
+.stacked-remark-form :deep(.ant-form-item-control-input-content),
+.stacked-remark-form :deep(.ant-input-textarea),
+.stacked-remark-form :deep(.ant-input-affix-wrapper),
+.stacked-remark-form :deep(.ant-input-textarea-affix-wrapper),
+.stacked-remark-form :deep(.ant-input-textarea-show-count) {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+.stacked-remark-form :deep(textarea.ant-input),
+.stacked-remark-form :deep(.stacked-remark-textarea),
+.stacked-remark-form :deep(.ant-input-textarea textarea) {
+  resize: vertical;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 54px;
+  height: 54px; /* 初始高度；勿加 !important，否则拖拽无效 */
+  max-height: none;
+  line-height: 1.5715;
+  overflow-y: auto;
+}
+
+.stacked-remark-form :deep(.ant-input-textarea-show-count) {
+  position: relative;
+  display: block;
+}
+
+.stacked-remark-form :deep(.ant-input-textarea-show-count::after) {
+  position: static !important;
+  display: block;
+  margin-top: 4px;
+  float: none;
+  text-align: right;
+}
+
+.upload-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+  line-height: 1.4;
+}
+
+.upload-text {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.variant-bom-form {
+  margin-top: 8px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+
+  :deep(.ant-form-item-label) {
+    flex: 0 0 88px;
+    max-width: 88px;
+  }
+}
+
+.bom-pending-hint,
+.bom-id-text.is-empty {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.bom-id-text {
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.form-option-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 48px;
+  min-height: 32px;
+  margin-top: 4px;
+  padding: 10px 12px;
+  background: #fafafa;
+  border-radius: 6px;
+}
+
+.form-option-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.form-option-label {
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.88);
+  white-space: nowrap;
+}
+
+.mts-hint {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.form-product-material-section {
+  padding: 12px;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+}
+
+.basic-info-box {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.basic-info-box:last-child {
+  margin-bottom: 0;
+}
+
+.field-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.section-label {
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.required-label::before {
+  display: inline-block;
+  margin-inline-end: 4px;
+  color: #ff4d4f;
+  font-size: 14px;
+  line-height: 1;
+  content: '*';
+}
+
+.info-icon {
+  margin-left: 4px;
+  color: #fa8c16;
+  font-size: 12px;
+}
+
+.field-help-panel {
+  margin: 0;
+  padding: 14px 16px;
+  background: #fafafa;
+  border: none;
+  border-top: 1px solid #f0f0f0;
+  border-radius: 0;
+}
+
+.field-help-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: rgba(0, 0, 0, 0.55);
+}
+
+.field-help-name {
+  color: rgba(0, 0, 0, 0.75);
+  font-weight: 500;
+}
+
+.purchase-supplier-block {
+  margin-bottom: 16px;
+}
+
+.purchase-supplier-block .section-head {
+  margin-bottom: 8px;
+}
+
+.purchase-supplier-block .section-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.add-line-link {
+  display: inline-block;
+  margin-top: 8px;
+  color: #1677ff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.purchase-extra-form {
+  margin-top: 8px;
+  width: 100%;
+}
+
+.purchase-extra-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 24px 32px;
+  width: 100%;
+}
+
+.purchase-extra-form .purchase-extra-item {
+  width: auto;
+  margin-inline-end: 0;
+}
+
+.purchase-extra-form .purchase-extra-item :deep(.ant-form-item-label) {
+  flex: 0 0 auto;
+  max-width: none;
+  padding: 0;
+}
+
+.labor-row-card {
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  padding: 12px 12px 4px;
+  margin-bottom: 12px;
+  background: #fafafa;
+}
+
+.work-item-rates-block {
+  width: 100%;
+  padding: 8px 10px 4px;
+  background: #fff;
+  border: 1px dashed #d9d9d9;
+  border-radius: 6px;
+}
+
+.work-item-rates-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #262626;
+  margin-bottom: 2px;
+}
+
+.work-item-rates-hint {
+  font-size: 12px;
+  color: #8c8c8c;
+  margin-bottom: 8px;
+}
+
+.work-item-rate-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.work-item-rate-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: #434343;
+}
+
+.work-item-rate-code {
+  color: #8c8c8c;
+  margin-left: 4px;
+}
+
+.add-labor-row-btn {
+  margin-top: 4px;
+  color: #1677ff;
+  border-color: #91caff;
+}
+
+.row-remove-col {
+  text-align: right;
+}
+
+.qty-with-unit {
+  display: flex;
+  width: 100%;
+}
+
+.qty-with-unit :deep(.qty-with-unit-input),
+.qty-with-unit :deep(.ant-input-number) {
+  flex: 1;
+  min-width: 0;
+  width: calc(100% - 88px);
+}
+
+.qty-with-unit-select {
+  width: 88px;
+  flex-shrink: 0;
+}
+
+.bom-strategy-help {
+  margin: -4px 0 8px;
+  padding: 0 4px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+  line-height: 1.5;
+}
+
+.unit-caliber-hint {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+  line-height: 1.5;
+}
+</style>

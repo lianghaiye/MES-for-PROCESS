@@ -1,0 +1,60 @@
+{
+  "name": "i-doms-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "I-DOMS MES 前端框架",
+  "scripts": {
+    "serve": "vue-cli-service serve",
+    "build": "vue-cli-service build && cp dist/index.html dist/404.html",
+    "lint": "vue-cli-service lint",
+    "format": "prettier --write \"src/**/*.{js,vue,less,css}\"",
+    "prepare": "husky",
+    "agent:proxy": "npm --prefix agent-proxy start",
+    "agent:proxy:install": "npm --prefix agent-proxy install"
+  },
+  "dependencies": {
+    "@ant-design/icons-vue": "^7.0.1",
+    "@wangeditor/editor": "^5.1.23",
+    "@wangeditor/editor-for-vue": "^5.1.12",
+    "ant-design-vue": "^4.2.6",
+    "axios": "^1.7.9",
+    "dayjs": "^1.11.13",
+    "echarts": "^6.1.0",
+    "qrcode": "^1.5.4",
+    "vue": "^3.5.13",
+    "vue-echarts": "^8.0.1",
+    "vue-router": "^4.5.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@babel/eslint-parser": "^7.25.9",
+    "@vue/cli-plugin-babel": "~5.0.8",
+    "@vue/cli-plugin-eslint": "~5.0.8",
+    "@vue/cli-plugin-router": "~5.0.8",
+    "@vue/cli-service": "~5.0.8",
+    "@vue/eslint-config-prettier": "^9.0.0",
+    "eslint": "^8.57.1",
+    "eslint-plugin-vue": "^9.32.0",
+    "husky": "^9.1.7",
+    "less": "^4.2.1",
+    "less-loader": "^12.2.0",
+    "lint-staged": "^15.4.3",
+    "prettier": "^3.4.2",
+    "vue-eslint-parser": "^9.4.3"
+  },
+  "lint-staged": {
+    "*.{js,vue}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{less,css,json,md}": [
+      "prettier --write"
+    ]
+  },
+  "browserslist": [
+    "> 1%",
+    "last 2 versions",
+    "not dead"
+  ]
+}

@@ -1,0 +1,320 @@
+<template>
+  <div class="process-route-page">
+    <div class="filter-card">
+      <a-form :model="filters" layout="inline" class="filter-form horizontal-form">
+        <a-row :gutter="[12, 8]" style="width: 100%">
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item label="编号">
+              <a-input v-model:value="filters.code" allow-clear size="small" placeholder="请输入" />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item label="名称">
+              <a-input v-model:value="filters.name" allow-clear size="small" placeholder="请输入" />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="8">
+            <a-form-item class="filter-actions-item">
+              <a-space>
+                <a-button type="primary" size="small" @click="handleSearch">
+                  <SearchOutlined />
+                  搜索
+                </a-button>
+                <a-button size="small" @click="handleReset">清空</a-button>
+              </a-space>
+            </a-form-item>
+          </a-col>
+        </a-row>
+      </a-form>
+    </div>
+
+    <div class="toolbar-row">
+      <a-space>
+        <a-button type="primary" size="small" @click="openCreate">
+          <PlusOutlined />
+          新增
+        </a-button>
+        <a-button size="small" @click="importOpen = true">导入</a-button>
+        <a-button size="small" @click="historyOpen = true">导入导出历史</a-button>
+      </a-space>
+      <a-space :size="4" class="toolbar-icons">
+        <a-tooltip title="刷新">
+          <a-button type="text" size="small" @click="handleSearch">
+            <ReloadOutlined />
+          </a-button>
+        </a-tooltip>
+        <TableColumnSettingButton @click="columnDrawerOpen = true" />
+      </a-space>
+    </div>
+
+    <a-tabs v-model:activeKey="listTab" size="small" class="list-status-tabs">
+      <a-tab-pane key="active" tab="使用中" />
+      <a-tab-pane key="archived" tab="已归档" />
+    </a-tabs>
+
+    <div class="table-card">
+      <a-table
+        :columns="displayColumns"
+        :data-source="filteredList"
+        row-key="id"
+        size="small"
+        bordered
+        :scroll="{ x: tableScrollX }"
+        :pagination="{ pageSize: 10, size: 'small', showSizeChanger: true }"
+      >
+        <template #bodyCell="{ column, record, index }">
+          <template v-if="column.key === 'index'">{{ index + 1 }}</template>
+          <template v-else-if="column.key === 'code'">
+            <a class="link-code" @click="goDetail(record)">{{ record.code }}</a>
+          </template>
+          <template v-else-if="column.key === 'applyScope'">
+            {{ formatApplyScopeLabel(record.applyScope) }}
+          </template>
+          <template v-else-if="column.key === 'product'">
+            {{ record.productDisplay || record.itemName || record.categoryName || '—' }}
+          </template>
+          <template v-else-if="column.key === 'processCount'">
+            {{ countGridProcesses(record.grid) }}
+          </template>
+          <template v-else-if="column.key === 'status'">
+            <a-tag :color="statusColor(record.status)">{{ record.status }}</a-tag>
+          </template>
+          <template v-else-if="column.key === 'creator'">
+            {{ record.creator || '—' }}
+          </template>
+          <template v-else-if="column.key === 'updater'">
+            {{ record.updater || '—' }}
+          </template>
+          <template v-else-if="column.key === 'actions'">
+            <a-space :size="0" wrap>
+              <a-button
+                type="link"
+                size="small"
+                :disabled="record.status === '已归档'"
+                @click="openEdit(record)"
+              >
+                编辑
+              </a-button>
+              <a-button
+                v-if="record.status === '使用中' || record.status === '新建'"
+                type="link"
+                size="small"
+                @click="handleArchive(record)"
+              >
+                归档
+              </a-button>
+              <a-button
+                v-if="record.status === '已归档'"
+                type="link"
+                size="small"
+                @click="handleUnarchive(record)"
+              >
+                取消归档
+              </a-button>
+              <a-button type="link" size="small" @click="handleClone(record)">克隆</a-button>
+            </a-space>
+          </template>
+        </template>
+      </a-table>
+    </div>
+
+    <TableColumnSettingDrawer
+      v-model:open="columnDrawerOpen"
+      v-model:settings="columnSettings"
+      :default-settings="defaultColumnSettings"
+    />
+
+    <ImportExcelModal
+      v-model:open="importOpen"
+      :import-def="processRouteBundleImportDef"
+      @done="onSaved"
+    />
+    <ImportExportHistoryModal v-model:open="historyOpen" />
+  </div>
+</template>
+
+<script>
+export default { name: 'ProcessRouteView' }
+</script>
+
+<script setup>
+import { computed, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { message } from 'ant-design-vue'
+import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons-vue'
+import {
+  processRouteState,
+  filterProcessRoutes,
+  archiveProcessRoute,
+  unarchiveProcessRoute,
+  cloneProcessRoute,
+} from '@/store/processRouteStore'
+import TableColumnSettingDrawer from '@/components/TableColumnSettingDrawer.vue'
+import TableColumnSettingButton from '@/components/TableColumnSettingButton.vue'
+import { useTableColumnSettings } from '@/composables/useTableColumnSettings'
+import { useTabs } from '@/composables/useTabs'
+import { findCreatePageByListPath } from '@/config/createPages'
+import { openCreateTab } from '@/utils/openCreateTab'
+import { countGridProcesses, formatApplyScopeLabel } from '@/utils/processRouteGrid'
+import ImportExcelModal from '@/components/ImportExcelModal.vue'
+import ImportExportHistoryModal from '@/components/ImportExportHistoryModal.vue'
+import { processRouteBundleImportDef } from '@/utils/importDefs/processRouteBundleImport'
+
+const router = useRouter()
+const { openTab } = useTabs()
+const processRouteCreatePage = findCreatePageByListPath('/product-process/routing')
+const filters = reactive({ code: '', name: '' })
+const applied = reactive({ code: '', name: '' })
+const listTab = ref('active')
+const importOpen = ref(false)
+const historyOpen = ref(false)
+
+const baseColumns = [
+  { title: '序号', key: 'index', width: 56, align: 'center' },
+  { title: '状态', key: 'status', width: 90 },
+  { title: '路线编码', key: 'code', width: 120 },
+  { title: '路线名称', dataIndex: 'name', width: 160 },
+  { title: '适用范围', key: 'applyScope', dataIndex: 'applyScope', width: 100 },
+  { title: '适用对象', key: 'product', width: 120, ellipsis: true },
+  { title: '工序数量', key: 'processCount', width: 88, align: 'right' },
+  { title: '创建人', key: 'creator', dataIndex: 'creator', width: 90 },
+  { title: '创建日期', dataIndex: 'createdAt', width: 160 },
+  { title: '更新人', key: 'updater', dataIndex: 'updater', width: 90 },
+  { title: '更新日期', dataIndex: 'updatedAt', width: 160 },
+  { title: '操作', key: 'actions', width: 220, fixed: 'right' },
+]
+
+const { columnSettings, columnDrawerOpen, displayColumns, tableScrollX, defaultColumnSettings } =
+  useTableColumnSettings('process-route-list-v2', baseColumns, { minScrollX: 1400 })
+
+const filteredList = computed(() => {
+  const base = filterProcessRoutes(processRouteState.routes, applied)
+  if (listTab.value === 'archived') {
+    return base.filter((r) => r.status === '已归档')
+  }
+  // 使用中：含「新建」「使用中」，排除已归档
+  return base.filter((r) => r.status !== '已归档')
+})
+
+function statusColor(status) {
+  if (status === '使用中') return 'processing'
+  if (status === '已归档') return 'warning'
+  return 'default'
+}
+
+function handleSearch() {
+  applied.code = filters.code.trim()
+  applied.name = filters.name.trim()
+}
+
+function handleReset() {
+  filters.code = ''
+  filters.name = ''
+  handleSearch()
+}
+
+function openCreate() {
+  openCreateTab(router, openTab, {
+    path: processRouteCreatePage.newPath,
+    title: processRouteCreatePage.title,
+  })
+}
+
+function openEdit(record) {
+  if (!record?.id) return
+  if (record.status === '已归档') {
+    message.warning('已归档的工艺路线不可编辑，请先取消归档')
+    return
+  }
+  openCreateTab(router, openTab, {
+    path: `/product-process/routing/${record.id}/edit`,
+    title: `编辑工艺路线 ${record.code || record.name || ''}`.trim(),
+  })
+}
+
+function goDetail(record) {
+  router.push(`/product-process/routing/${record.id}`)
+}
+
+function handleArchive(record) {
+  const res = archiveProcessRoute(record.id)
+  if (!res.ok) message.warning(res.message)
+  else message.success('已归档')
+}
+
+function handleUnarchive(record) {
+  const res = unarchiveProcessRoute(record.id)
+  if (!res.ok) message.warning(res.message)
+  else message.success('已取消归档')
+}
+
+function handleClone(record) {
+  const res = cloneProcessRoute(record.id)
+  if (!res.ok) message.warning(res.message)
+  else message.success(`已克隆为 ${res.route.code}`)
+}
+
+function onSaved() {
+  handleSearch()
+}
+</script>
+
+<style lang="less" scoped>
+.process-route-page {
+  padding: 0;
+}
+
+.filter-card,
+.table-card {
+  background: #fff;
+  border: 1px solid var(--divider, #e5e6eb);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.filter-card {
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+
+.toolbar-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.list-status-tabs {
+  margin-bottom: 0;
+  background: #fff;
+  border: 1px solid var(--divider, #e5e6eb);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  padding: 0 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+
+  :deep(.ant-tabs-nav) {
+    margin: 0;
+  }
+
+  :deep(.ant-tabs-nav::before) {
+    border-bottom-color: #f0f0f0;
+  }
+}
+
+.list-status-tabs + .table-card {
+  border-radius: 0 0 6px 6px;
+}
+
+.table-card {
+  width: 100%;
+  min-height: 320px;
+  padding: 8px 12px;
+  box-sizing: border-box;
+}
+
+.link-code {
+  color: #1677ff;
+  cursor: pointer;
+}
+</style>

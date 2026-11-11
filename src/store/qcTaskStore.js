@@ -1,0 +1,814 @@
+import { reactive, watch } from 'vue'
+import dayjs from 'dayjs'
+import { resolveQcGatePolicy } from '@/utils/qcGatePolicy'
+import { matchQcTemplate } from '@/utils/qcTemplateMatchService'
+import {
+  aggregateLineConclusions,
+  ensureFieldsWithSystemFixedItems,
+  normalizeSheetConclusionOptionItems,
+  resolveQcResultFromFieldValues,
+  upsertSheetConclusionField,
+} from '@/utils/qcConclusionField'
+import { normalizeSheetPassRule } from '@/utils/qcTemplateSheetPass'
+import { updatePurchaseReceipt } from '@/store/purchaseReceiptStore'
+import { updateOutsourcingReceipt } from '@/store/outsourcingReceiptStore'
+import { QC_TASK_RESULT, QC_TASK_RESULT_OPTIONS } from '@/constants/qcTaskResult'
+import { cloneMockIncomingQcTasks } from '@/mock/qcTasks'
+import { buildSharedQcTaskSeed } from '@/mock/qcSharedDemoSeed'
+import { getQcTemplateByCode } from '@/store/qcTemplateStore'
+import { persistJson, safeSetItem } from '@/utils/safeStorage'
+
+export { QC_TASK_RESULT, QC_TASK_RESULT_OPTIONS }
+
+const STORAGE_KEY = 'i_doms_qc_tasks'
+const STORAGE_VERSION = 3
+const SEED_VERSION_KEY = 'i_doms_qc_tasks_seed_v'
+const CURRENT_SEED_VERSION = '22'
+
+export const QC_TASK_STATUS = {
+  PENDING: '待质检',
+  COMPLETED: '已完成',
+  CANCELLED: '已终止',
+}
+
+/** 历史「检验中」并入「待质检」（不再保留该状态） */
+function normalizeQcTaskStatus(status) {
+  if (status === '检验中' || status === '检测中') return QC_TASK_STATUS.PENDING
+  return status || QC_TASK_STATUS.PENDING
+}
+
+const QC_NO_PREFIX = {
+  来料质检: 'LLZJ',
+  外协回货检: 'WXHJ',
+  生产过程检: 'GCZJ',
+  成品检: 'CPZJ',
+  出厂质检: 'CCZJ',
+}
+
+function shouldReseed() {
+  return localStorage.getItem(SEED_VERSION_KEY) !== CURRENT_SEED_VERSION
+}
+
+function markSeeded() {
+  safeSetItem(SEED_VERSION_KEY, CURRENT_SEED_VERSION)
+}
+
+/** 落盘瘦身：不存 templateFields / fieldMap（可按 templateCode 回填），避免撑爆 localStorage */
+function slimTasksForStorage(tasks = []) {
+  return (tasks || []).map((t) => {
+    const taskRest = { ...(t || {}) }
+    delete taskRest.templateFields
+    return {
+      ...taskRest,
+      lineItems: (t.lineItems || []).map((l) => {
+        const lineRest = { ...(l || {}) }
+        delete lineRest.templateFields
+        delete lineRest.fieldMap
+        return {
+          ...lineRest,
+          sheetConclusionOptionItems: Array.isArray(l.sheetConclusionOptionItems)
+            ? l.sheetConclusionOptionItems.map((o) => ({ ...o }))
+            : l.sheetConclusionOptionItems,
+          fieldValues: Array.isArray(l.fieldValues) ? l.fieldValues.map((v) => ({ ...v })) : [],
+        }
+      }),
+    }
+  })
+}
+
+function hydrateLineTemplateFields(line = {}) {
+  if (Array.isArray(line.templateFields) && line.templateFields.length) {
+    return line
+  }
+  const tpl = getQcTemplateByCode(line.templateCode)
+  if (!tpl?.fields?.length) return line
+  const sheetConclusionOptionItems = normalizeSheetConclusionOptionItems(
+    line.sheetConclusionOptionItems || tpl.sheetConclusionOptionItems,
+  )
+  return {
+    ...line,
+    sheetPassRule: normalizeSheetPassRule(line.sheetPassRule || tpl.sheetPassRule),
+    sheetConclusionOptionItems,
+    templateId: line.templateId || tpl.id,
+    templateName: line.templateName || tpl.name,
+    templateFields: cloneTemplateFieldsSnapshot(tpl.fields, sheetConclusionOptionItems),
+  }
+}
+
+function hydrateTasksAfterLoad(tasks = []) {
+  return (tasks || []).map((t) => ({
+    ...t,
+    qcStatus: normalizeQcTaskStatus(t.qcStatus),
+    lineItems: (t.lineItems || []).map((l) => hydrateLineTemplateFields(l)),
+  }))
+}
+
+function loadFromStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (
+        (parsed.version === STORAGE_VERSION || parsed.version === 2) &&
+        Array.isArray(parsed.tasks)
+      ) {
+        return hydrateTasksAfterLoad(parsed.tasks)
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
+function mergeSharedDemoTasks(tasks = []) {
+  const shared = buildSharedQcTaskSeed()
+  const rest = (tasks || []).filter((t) => !String(t.id || '').startsWith('shared-'))
+  return [...shared, ...rest]
+}
+
+function initTasks() {
+  if (shouldReseed()) {
+    markSeeded()
+    const seeded = mergeSharedDemoTasks(cloneMockIncomingQcTasks())
+    // 立刻按瘦身格式写入，腾出配额并避免首屏 deep watch 再写膨胀数据
+    persistJson(STORAGE_KEY, {
+      version: STORAGE_VERSION,
+      tasks: slimTasksForStorage(seeded),
+    })
+    return hydrateTasksAfterLoad(seeded)
+  }
+  const loaded = loadFromStorage()
+  if (loaded) {
+    const merged = mergeSharedDemoTasks(loaded)
+    // 补齐同源演示单并回写（不改 seed 版本）
+    persistJson(STORAGE_KEY, {
+      version: STORAGE_VERSION,
+      tasks: slimTasksForStorage(merged),
+    })
+    return hydrateTasksAfterLoad(merged)
+  }
+  return hydrateTasksAfterLoad(mergeSharedDemoTasks(cloneMockIncomingQcTasks()))
+}
+
+function persist() {
+  const ok = persistJson(STORAGE_KEY, {
+    version: STORAGE_VERSION,
+    tasks: slimTasksForStorage(qcTaskState.tasks),
+  })
+  if (ok) return
+  // 仍失败：尝试只留 seed 体积，保证后续可读
+  persistJson(STORAGE_KEY, {
+    version: STORAGE_VERSION,
+    tasks: slimTasksForStorage(cloneMockIncomingQcTasks()),
+  })
+}
+
+export function generateQcTaskNo(bizScope) {
+  const prefixKey = QC_NO_PREFIX[bizScope] || 'QC'
+  const datePart = dayjs().format('YYYYMMDD')
+  const prefix = `${prefixKey}${datePart}`
+  let maxSeq = 0
+  qcTaskState.tasks.forEach((t) => {
+    const no = t.qcNo
+    if (!no || !no.startsWith(prefix)) return
+    const seq = parseInt(no.slice(prefix.length), 10)
+    if (!Number.isNaN(seq)) maxSeq = Math.max(maxSeq, seq)
+  })
+  return `${prefix}${String(maxSeq + 1).padStart(4, '0')}`
+}
+
+export function createQcTaskLineItem(partial = {}) {
+  const sheetConclusionOptionItems = normalizeSheetConclusionOptionItems(
+    partial.sheetConclusionOptionItems,
+  )
+  const templateFields = Array.isArray(partial.templateFields)
+    ? cloneTemplateFieldsSnapshot(partial.templateFields, sheetConclusionOptionItems)
+    : []
+  return {
+    id: partial.id || `qtl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    itemCode: partial.itemCode || '',
+    itemName: partial.itemName || '',
+    specModel: partial.specModel || '',
+    unit: partial.unit || '件',
+    inspectQty: partial.inspectQty ?? partial.qty ?? 0,
+    inspectMethod: partial.inspectMethod || '',
+    lineQcResult: partial.lineQcResult,
+    treatmentPlan: partial.treatmentPlan,
+    acceptInboundQty: partial.acceptInboundQty,
+    concessionQty: partial.concessionQty,
+    returnQty: partial.returnQty,
+    exchangeQty: partial.exchangeQty,
+    fieldValues: Array.isArray(partial.fieldValues) ? [...partial.fieldValues] : [],
+    sourceLineId: partial.sourceLineId,
+    templateId: partial.templateId || '',
+    templateCode: partial.templateCode || '',
+    templateName: partial.templateName || '',
+    templateMatchSource: partial.templateMatchSource || '',
+    ...partial,
+    sheetPassRule: normalizeSheetPassRule(partial.sheetPassRule),
+    sheetConclusionOptionItems,
+    templateFields: Array.isArray(partial.templateFields)
+      ? cloneTemplateFieldsSnapshot(partial.templateFields, sheetConclusionOptionItems)
+      : templateFields,
+  }
+}
+
+/** 冻结模板字段快照到质检行（补齐整单结论字段） */
+export function cloneTemplateFieldsSnapshot(fields = [], sheetConclusionOptionItems) {
+  const list = upsertSheetConclusionField(
+    ensureFieldsWithSystemFixedItems(fields || []),
+    sheetConclusionOptionItems,
+  )
+  return list.map((f) => ({
+    ...f,
+    options: f.options ? [...f.options] : [],
+    optionItems: f.optionItems ? f.optionItems.map((o) => ({ ...o })) : undefined,
+    optionResults: f.optionResults ? { ...f.optionResults } : undefined,
+    children: Array.isArray(f.children) ? f.children.map((c) => ({ ...c })) : [],
+    matrixColumns: Array.isArray(f.matrixColumns) ? f.matrixColumns.map((c) => ({ ...c })) : [],
+    matrixRows: Array.isArray(f.matrixRows) ? f.matrixRows.map((r) => ({ ...r })) : [],
+    matrixAllowAddRow: f.matrixAllowAddRow,
+    keyForSheetPass: Boolean(f.keyForSheetPass),
+  }))
+}
+
+/** 按物料匹配模板并绑定到行（建单时冻结） */
+export function bindQcLineTemplate(linePartial = {}, { bizScope, categoryCode, categoryKey } = {}) {
+  const itemCode = linePartial.itemCode || linePartial.productCode || ''
+  const matched = matchQcTemplate({
+    bizScope,
+    itemCode,
+    categoryCode: categoryCode || linePartial.categoryCode,
+    categoryKey: categoryKey || linePartial.categoryKey,
+  })
+  if (!matched.ok) {
+    return { ok: false, message: matched.message || `物料 ${itemCode || '—'} 未匹配到模板` }
+  }
+  const template = matched.template
+  const sheetConclusionOptionItems = normalizeSheetConclusionOptionItems(
+    template.sheetConclusionOptionItems,
+  )
+  const line = createQcTaskLineItem({
+    ...linePartial,
+    templateId: template.id,
+    templateCode: template.code,
+    templateName: template.name,
+    templateMatchSource: matched.matchSource,
+    templateFields: cloneTemplateFieldsSnapshot(template.fields, sheetConclusionOptionItems),
+    sheetPassRule: normalizeSheetPassRule(template.sheetPassRule),
+    sheetConclusionOptionItems,
+    inspectMethod:
+      linePartial.inspectMethod || resolveInspectMethodFromTemplate(template) || '抽检',
+  })
+  return { ok: true, line, template, matchSource: matched.matchSource }
+}
+
+/** 单头模板摘要：多行模板不一致时标记「多模板」 */
+export function summarizeTaskTemplates(lineItems = []) {
+  const lines = lineItems || []
+  const names = [...new Set(lines.map((l) => l.templateName || l.templateCode).filter(Boolean))]
+  const codes = [...new Set(lines.map((l) => l.templateCode).filter(Boolean))]
+  const first = lines[0]
+  if (names.length <= 1) {
+    return {
+      multiTemplate: false,
+      templateId: first?.templateId || '',
+      templateCode: codes[0] || '',
+      templateName: names[0] || '',
+      templateFields: cloneTemplateFieldsSnapshot(first?.templateFields || []),
+      inspectMethod: first?.inspectMethod || '抽检',
+    }
+  }
+  return {
+    multiTemplate: true,
+    templateId: '',
+    templateCode: codes.join('、'),
+    templateName: '多模板',
+    templateFields: [],
+    inspectMethod: '',
+  }
+}
+
+function resolveInspectMethodFromTemplate(template) {
+  const fields = template?.fields || []
+  const hit =
+    fields.find((f) => f.code === 'QC_INSPECT_METHOD') ||
+    fields.find((f) => String(f.name || '').trim() === '质检方式')
+  const def = hit?.defaultValue
+  if (def === '抽检' || def === '全检') return def
+  return ''
+}
+
+export function createQcTask(partial = {}) {
+  const bizScope = partial.bizScope || '来料质检'
+  const template = partial.template || null
+  // 门控仅跟功能参数按业务类型，不再读工序/模板
+  const gatePolicy =
+    partial.gatePolicy ||
+    resolveQcGatePolicy({
+      bizScope,
+    })
+
+  return {
+    id: partial.id || `qctask-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    qcNo: partial.qcNo || generateQcTaskNo(bizScope),
+    bizScope,
+    qcStatus: normalizeQcTaskStatus(partial.qcStatus || QC_TASK_STATUS.PENDING),
+    qcResult: partial.qcResult || '',
+    templateId: template?.id || partial.templateId || '',
+    templateCode: template?.code || partial.templateCode || '',
+    templateName: template?.name || partial.templateName || '',
+    gatePolicy,
+    inspectMethod: partial.inspectMethod || resolveInspectMethodFromTemplate(template) || '抽检',
+    inspectDate: partial.inspectDate || dayjs().format('YYYY-MM-DD'),
+    sourceType: partial.sourceType || '',
+    sourceDocNo: partial.sourceDocNo || '',
+    sourceDocId: partial.sourceDocId || '',
+    workOrderNo: partial.workOrderNo || '',
+    workOrderId: partial.workOrderId || '',
+    processCode: partial.processCode || '',
+    processName: partial.processName || '',
+    processIndex: partial.processIndex ?? null,
+    scheduleBatchId: partial.scheduleBatchId || '',
+    scheduleBatchNo: partial.scheduleBatchNo ?? null,
+    itemCode: partial.itemCode || '',
+    itemName: partial.itemName || '',
+    specModel: partial.specModel || '',
+    unit: partial.unit || '',
+    supplier: partial.supplier || '',
+    workCenter: partial.workCenter || '',
+    processRouteName: partial.processRouteName || '',
+    scheduleQty: partial.scheduleQty ?? null,
+    inboundOrderNo: partial.inboundOrderNo || '',
+    inboundOrderId: partial.inboundOrderId || '',
+    inboundOrderIds: Array.isArray(partial.inboundOrderIds) ? [...partial.inboundOrderIds] : [],
+    /** web | miniprogram — 录入端，WEB/小程序共用同一任务与提交接口 */
+    entryChannel: partial.entryChannel || '',
+    inspector: partial.inspector || '',
+    inspectedAt: partial.inspectedAt || '',
+    multiTemplate: Boolean(partial.multiTemplate),
+    creator: partial.creator || 'admin1',
+    remark: partial.remark || '',
+    treatmentPlan: partial.treatmentPlan || '',
+    lineItems: Array.isArray(partial.lineItems)
+      ? partial.lineItems.map((l) => createQcTaskLineItem(l))
+      : [],
+    templateFields: Array.isArray(partial.templateFields)
+      ? partial.templateFields.map((f) => ({ ...f, options: f.options ? [...f.options] : [] }))
+      : Array.isArray(template?.fields)
+        ? template.fields.map((f) => ({ ...f, options: f.options ? [...f.options] : [] }))
+        : [],
+    createdAt: partial.createdAt || dayjs().format('YYYY-MM-DD HH:mm:ss'),
+    updatedAt: partial.updatedAt || dayjs().format('YYYY-MM-DD HH:mm:ss'),
+  }
+}
+
+export const qcTaskState = reactive({
+  tasks: initTasks(),
+})
+
+watch(
+  () => qcTaskState.tasks,
+  () => persist(),
+  { deep: true },
+)
+
+export function listQcTasks(filter = {}) {
+  return qcTaskState.tasks.filter((t) => {
+    if (filter.bizScope && t.bizScope !== filter.bizScope) return false
+    if (filter.workOrderNo && t.workOrderNo !== filter.workOrderNo) return false
+    if (filter.workOrderId && t.workOrderId !== filter.workOrderId) return false
+    if (filter.sourceDocId && t.sourceDocId !== filter.sourceDocId) return false
+    if (filter.sourceType && t.sourceType !== filter.sourceType) return false
+    if (filter.qcStatus && t.qcStatus !== filter.qcStatus) return false
+    if (filter.processCode && t.processCode !== filter.processCode) return false
+    if (filter.scheduleBatchId && t.scheduleBatchId !== filter.scheduleBatchId) return false
+    return true
+  })
+}
+
+export function getQcTaskById(id) {
+  return qcTaskState.tasks.find((t) => t.id === id) || null
+}
+
+export function findQcTaskByKey(key = {}) {
+  const {
+    bizScope,
+    sourceType,
+    sourceDocId,
+    sourceLineId,
+    workOrderId,
+    processCode,
+    scheduleBatchId,
+  } = key
+  return (
+    qcTaskState.tasks.find((t) => {
+      if (bizScope && t.bizScope !== bizScope) return false
+      if (sourceType && t.sourceType !== sourceType) return false
+      if (sourceDocId && t.sourceDocId !== sourceDocId) return false
+      if (workOrderId && t.workOrderId !== workOrderId) return false
+      if (processCode && t.processCode !== processCode) return false
+      if (scheduleBatchId && t.scheduleBatchId !== scheduleBatchId) return false
+      if (sourceLineId) {
+        const hit = (t.lineItems || []).some((l) => l.sourceLineId === sourceLineId)
+        if (!hit && t.sourceLineId !== sourceLineId) return false
+      }
+      return true
+    }) || null
+  )
+}
+
+export function addQcTask(partial = {}) {
+  const row = createQcTask(partial)
+  qcTaskState.tasks.unshift(row)
+  return row
+}
+
+export function updateQcTask(id, patch = {}) {
+  const row = getQcTaskById(id)
+  if (!row) return null
+  Object.assign(row, patch, { updatedAt: dayjs().format('YYYY-MM-DD HH:mm:ss') })
+  return row
+}
+
+/** 质检提交后回写关联收货单的质检状态/结果（与收货列表联动） */
+function syncSourceReceiptAfterQcSubmit(task) {
+  if (!task?.sourceDocId) return
+  let receiptQcStatus = ''
+  if (task.qcResult === QC_TASK_RESULT.PASS) receiptQcStatus = '质检通过'
+  else if (task.qcResult === QC_TASK_RESULT.FAIL) receiptQcStatus = '质检不通过'
+  else if (task.qcResult === QC_TASK_RESULT.PARTIAL) receiptQcStatus = '部分通过'
+  if (!receiptQcStatus) return
+  const patch = {
+    qcStatus: receiptQcStatus,
+    qcResult: task.qcResult || '',
+    inspector: task.inspector || '',
+    inspectedAt: task.inspectedAt || '',
+  }
+  if (task.qcNo) patch.qcNo = task.qcNo
+  if (task.bizScope === '外协回货检' || task.sourceType === 'outsourcing_receipt') {
+    updateOutsourcingReceipt(task.sourceDocId, patch)
+    return
+  }
+  if (task.bizScope === '来料质检' || task.sourceType === 'purchase_receipt' || !task.bizScope) {
+    updatePurchaseReceipt(task.sourceDocId, patch)
+    try {
+      const { releaseReceiptQtyByQcResult } = require('@/utils/purchaseReceiptSettle')
+      releaseReceiptQtyByQcResult(task.sourceDocId, task)
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/**
+ * 提交检验：从模板「检验结论」字段挖掘任务级 qcResult，并完成任务
+ * WEB / 小程序共用本接口（entryChannel 区分录入端）
+ */
+export function submitQcTaskInspection(
+  id,
+  { lineItems, inspector = 'admin1', inspectMethod, entryChannel = 'web', remark } = {},
+) {
+  const row = getQcTaskById(id)
+  if (!row) return { ok: false, message: '质检任务不存在' }
+  if (row.qcStatus === QC_TASK_STATUS.CANCELLED) {
+    return { ok: false, message: '已终止任务不可提交' }
+  }
+  if (row.qcStatus === QC_TASK_STATUS.COMPLETED) {
+    return { ok: false, message: '任务已完成' }
+  }
+
+  const nextLines = Array.isArray(lineItems) ? lineItems : row.lineItems || []
+  const lineResults = nextLines.map((line) => {
+    const fields =
+      (Array.isArray(line.templateFields) && line.templateFields.length
+        ? line.templateFields
+        : row.templateFields) || []
+    return resolveQcResultFromFieldValues(fields, line.fieldValues)
+  })
+  if (lineResults.some((r) => !r)) {
+    return { ok: false, message: '请填写各物料的质检结果' }
+  }
+
+  const qcResult = aggregateLineConclusions(lineResults)
+  const summary = summarizeTaskTemplates(nextLines)
+  const headerMethod =
+    inspectMethod ||
+    summary.inspectMethod ||
+    [...new Set(nextLines.map((l) => l.inspectMethod).filter(Boolean))].join('、') ||
+    row.inspectMethod
+
+  Object.assign(row, {
+    lineItems: nextLines.map((line, idx) => ({
+      ...line,
+      lineQcResult: line.lineQcResult || lineResults[idx] || '',
+    })),
+    qcStatus: QC_TASK_STATUS.COMPLETED,
+    qcResult,
+    multiTemplate: summary.multiTemplate,
+    templateId: summary.templateId || row.templateId,
+    templateCode: summary.templateCode || row.templateCode,
+    templateName: summary.templateName || row.templateName,
+    inspectMethod: headerMethod,
+    inspector,
+    inspectedAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+    entryChannel: entryChannel || row.entryChannel || 'web',
+    remark: remark != null ? remark : row.remark,
+    updatedAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+  })
+  syncSourceReceiptAfterQcSubmit(row)
+  return { ok: true, task: row, qcResult }
+}
+
+/** 打开录入页时记录录入端；状态保持「待质检」，提交后变为「已完成」 */
+export function startQcTaskInspection(id, { entryChannel = 'web' } = {}) {
+  const row = getQcTaskById(id)
+  if (!row) return { ok: false, message: '质检任务不存在' }
+  if (row.qcStatus === QC_TASK_STATUS.CANCELLED) {
+    return { ok: false, message: '已终止任务不可检验' }
+  }
+  if (row.qcStatus === QC_TASK_STATUS.COMPLETED) {
+    return { ok: false, message: '任务已完成' }
+  }
+  // 兼容历史「检验中」数据
+  if (row.qcStatus === '检验中' || row.qcStatus === '检测中') {
+    row.qcStatus = QC_TASK_STATUS.PENDING
+  }
+  if (row.qcStatus === QC_TASK_STATUS.PENDING) {
+    row.entryChannel = entryChannel
+    row.updatedAt = dayjs().format('YYYY-MM-DD HH:mm:ss')
+  }
+  return { ok: true, task: row }
+}
+
+export function canInspectQcTask(task) {
+  if (!task) return false
+  const status = normalizeQcTaskStatus(task.qcStatus)
+  return status === QC_TASK_STATUS.PENDING
+}
+
+/** 质检单回写入库单号 */
+export function attachQcTaskInboundOrder(id, { inboundOrderNo, inboundOrderId } = {}) {
+  const row = getQcTaskById(id)
+  if (!row) return null
+  const nos = String(row.inboundOrderNo || '')
+    .split(/[、,，]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const nextNo = String(inboundOrderNo || '').trim()
+  if (nextNo && !nos.includes(nextNo)) nos.push(nextNo)
+  const ids = new Set(row.inboundOrderIds || [])
+  if (inboundOrderId) ids.add(inboundOrderId)
+  if (row.inboundOrderId) ids.add(row.inboundOrderId)
+  Object.assign(row, {
+    inboundOrderNo: nos.join('、'),
+    inboundOrderId: inboundOrderId || row.inboundOrderId || [...ids][0] || '',
+    inboundOrderIds: [...ids],
+    updatedAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+  })
+  return row
+}
+
+/** 质检单回写返工单号 */
+export function attachQcTaskReworkOrder(id, { reworkOrderNo, reworkOrderId } = {}) {
+  const row = getQcTaskById(id)
+  if (!row) return null
+  const nos = String(row.reworkOrderNo || '')
+    .split(/[、,，]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const nextNo = String(reworkOrderNo || '').trim()
+  if (nextNo && !nos.includes(nextNo)) nos.push(nextNo)
+  Object.assign(row, {
+    reworkOrderNo: nos.join('、'),
+    reworkOrderId: reworkOrderId || row.reworkOrderId || '',
+    updatedAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+  })
+  return row
+}
+
+export const QC_TASK_STATUS_OPTIONS = Object.values(QC_TASK_STATUS)
+
+export function filterQcTasks(list = [], filters = {}) {
+  const qcNo = String(filters.qcNo || '').trim()
+  const itemCode = String(filters.itemCode || '').trim()
+  const itemName = String(filters.itemName || '').trim()
+  const sourceDocNo = String(filters.sourceDocNo || '').trim()
+  const workOrderNo = String(filters.workOrderNo || '').trim()
+
+  return (list || []).filter((row) => {
+    if (filters.bizScope && row.bizScope !== filters.bizScope) return false
+    if (filters.qcStatus && row.qcStatus !== filters.qcStatus) return false
+    if (filters.qcResult && row.qcResult !== filters.qcResult) return false
+    if (qcNo && !(row.qcNo || '').includes(qcNo)) return false
+    if (itemCode && !(row.itemCode || '').includes(itemCode)) return false
+    if (itemName && !(row.itemName || '').includes(itemName)) return false
+    if (sourceDocNo && !(row.sourceDocNo || '').includes(sourceDocNo)) return false
+    if (workOrderNo && !(row.workOrderNo || '').includes(workOrderNo)) return false
+    return true
+  })
+}
+
+export function cancelQcTasks(ids = []) {
+  let count = 0
+  ;(ids || []).forEach((id) => {
+    const row = getQcTaskById(id)
+    if (!row) return
+    if (row.qcStatus === QC_TASK_STATUS.COMPLETED) return
+    if (row.qcStatus === QC_TASK_STATUS.CANCELLED) return
+    row.qcStatus = QC_TASK_STATUS.CANCELLED
+    row.updatedAt = dayjs().format('YYYY-MM-DD HH:mm:ss')
+    count += 1
+  })
+  return { ok: true, count }
+}
+
+/** 手动创建质检任务 */
+export function createManualQcTask(payload = {}) {
+  const bizScope = payload.bizScope || '来料质检'
+  const itemCode = String(payload.itemCode || '').trim()
+  if (!itemCode) return { ok: false, message: '请输入物料编码' }
+
+  const inspectQty = Number(payload.inspectQty)
+  if (!Number.isFinite(inspectQty) || inspectQty <= 0) {
+    return { ok: false, message: '检验数量须大于 0' }
+  }
+
+  const built = buildQcTaskFromTemplateMatch({
+    bizScope,
+    templateCode: payload.templateCode,
+    itemCode,
+    inspectMethod: payload.inspectMethod,
+    sourceType: payload.sourceType || 'manual',
+    sourceDocId: payload.sourceDocId || '',
+    sourceDocNo: payload.sourceDocNo || '',
+    workOrderNo: payload.workOrderNo || '',
+    workOrderId: payload.workOrderId || '',
+    processCode: payload.processCode || '',
+    processName: payload.processName || '',
+    itemName: payload.itemName || '',
+    specModel: payload.specModel || '',
+    unit: payload.unit || '件',
+    remark: payload.remark || '',
+    lineItems: [
+      createQcTaskLineItem({
+        sourceLineId: payload.sourceLineId,
+        itemCode,
+        itemName: payload.itemName || '',
+        specModel: payload.specModel || '',
+        unit: payload.unit || '件',
+        inspectQty,
+      }),
+    ],
+  })
+  if (!built.ok) return { ok: false, message: built.message || '创建失败' }
+
+  const task = addQcTask(built.task)
+  return { ok: true, task }
+}
+
+/**
+ * 收货单生成质检单（一单多行；每行独立匹配并冻结质检模板）
+ * 支持来料质检 / 外协回货检
+ * @param {{ receipt, lineIds?: string[], qcNo?: string, remark?: string, bizScope?: string, sourceType?: string }} payload
+ */
+export function createInboundQcFromReceipt(payload = {}) {
+  const receipt = payload.receipt
+  if (!receipt?.id) return { ok: false, message: '收货单无效' }
+
+  const bizScope = payload.bizScope || '来料质检'
+  const sourceType =
+    payload.sourceType || (bizScope === '外协回货检' ? 'outsourcing_receipt' : 'purchase_receipt')
+
+  const allLines = receipt.lineItems || receipt.lines || []
+  const lineIdSet =
+    Array.isArray(payload.lineIds) && payload.lineIds.length
+      ? new Set(payload.lineIds.map(String))
+      : null
+  const selectedLines = allLines.filter((l) => {
+    if (!l) return false
+    if (lineIdSet && !lineIdSet.has(String(l.id))) return false
+    return (Number(l.receiptQty) || Number(l.qty) || 0) > 0
+  })
+  if (!selectedLines.length) return { ok: false, message: '请至少保留一行质检清单' }
+
+  const customNo = String(payload.qcNo || '').trim()
+  if (customNo) {
+    const dup = qcTaskState.tasks.find((t) => t.qcNo === customNo)
+    if (dup) return { ok: false, message: '质检单号已存在' }
+  }
+
+  const boundLines = []
+  for (const line of selectedLines) {
+    const bound = bindQcLineTemplate(
+      {
+        sourceLineId: line.id,
+        itemCode: line.itemCode || line.productCode || '',
+        itemName: line.itemName || line.productName || '',
+        productCode: line.productCode || line.itemCode || '',
+        productName: line.productName || line.itemName || '',
+        specModel: line.specModel || '',
+        material: line.material || line.materialGrade || '',
+        variantSummary: line.variantSummary || '',
+        categoryCode: line.categoryCode || '',
+        categoryKey: line.categoryKey || '',
+        unit: line.unit || '件',
+        purchaseQty: line.purchaseQty ?? line.planQty,
+        receiptQty: line.receiptQty ?? line.qty,
+        receivingWarehouse: line.receivingWarehouse || line.warehouse || '',
+        inboundQcRequirement: line.inboundQcRequirement || '',
+        inspectQty:
+          Number(line.inspectQty) > 0
+            ? Number(line.inspectQty)
+            : Number(line.receiptQty ?? line.qty) || 0,
+      },
+      { bizScope },
+    )
+    if (!bound.ok) return { ok: false, message: bound.message || '模板匹配失败' }
+    boundLines.push(bound.line)
+  }
+
+  const first = boundLines[0]
+  const summary = summarizeTaskTemplates(boundLines)
+  const task = createQcTask({
+    bizScope,
+    sourceType,
+    sourceDocId: receipt.id,
+    sourceDocNo: receipt.receiptNo || '',
+    itemCode: first.itemCode || '',
+    itemName: first.itemName || '',
+    specModel: first.specModel || '',
+    unit: first.unit || '件',
+    supplier: receipt.supplier || '',
+    creator: receipt.purchaser || receipt.creator || 'admin1',
+    remark: payload.remark || '',
+    multiTemplate: summary.multiTemplate,
+    templateId: summary.templateId,
+    templateCode: summary.templateCode,
+    templateName: summary.templateName,
+    templateFields: summary.templateFields,
+    inspectMethod: summary.inspectMethod || first.inspectMethod || '抽检',
+    lineItems: boundLines,
+    qcStatus: QC_TASK_STATUS.PENDING,
+    qcNo: customNo || undefined,
+  })
+
+  const saved = addQcTask(task)
+  return { ok: true, task: saved }
+}
+
+/** @deprecated 使用 createInboundQcFromReceipt；保留兼容采购收货入口 */
+export function createIncomingQcFromReceipt(payload = {}) {
+  return createInboundQcFromReceipt({
+    ...payload,
+    bizScope: '来料质检',
+    sourceType: 'purchase_receipt',
+  })
+}
+
+/** 外协收货生成外协回货检质检单 */
+export function createOutsourcingQcFromReceipt(payload = {}) {
+  return createInboundQcFromReceipt({
+    ...payload,
+    bizScope: '外协回货检',
+    sourceType: 'outsourcing_receipt',
+  })
+}
+
+export function sumTaskInspectQty(task) {
+  const lines = task?.lineItems || []
+  if (!lines.length) return 0
+  return lines.reduce((s, l) => s + (Number(l.inspectQty) || 0), 0)
+}
+
+export function buildQcTaskFromTemplateMatch({
+  bizScope,
+  templateCode,
+  itemCode,
+  categoryCode,
+  processCode,
+  processName,
+  ...rest
+}) {
+  const matched = matchQcTemplate({
+    bizScope,
+    templateCode,
+    itemCode,
+    categoryCode,
+    processCode,
+    processName,
+  })
+  if (!matched.ok) return { ok: false, message: matched.message || '未匹配到模板' }
+  const template = matched.template
+  const task = createQcTask({
+    ...rest,
+    bizScope,
+    processCode,
+    processName,
+    template,
+    templateCode: template.code,
+    inspectMethod: rest.inspectMethod || resolveInspectMethodFromTemplate(template) || '抽检',
+  })
+  return { ok: true, task, matchSource: matched.matchSource }
+}

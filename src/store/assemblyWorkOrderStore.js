@@ -1,0 +1,389 @@
+import { reactive, watch } from 'vue'
+import dayjs from 'dayjs'
+import {
+  buildProcessesFromRoute,
+  buildRouteDispatchSnapshot,
+  getDefaultProductRoute,
+} from '@/mock/processRoutes'
+import { syncWorkOrderBlankingMaterials } from '@/utils/blankingSettleMaterial'
+import {
+  resolveOrderField,
+  generateAssemblyWorkOrderCode,
+  generateAssemblyWorkOrderName,
+} from '@/utils/workOrderNaming'
+import { resolveDefaultWarehouseByProductName } from '@/utils/warehouseResolver'
+import { createLaborDemoAssemblyOrders, isLaborDemoWorkOrder } from '@/mock/laborHourDemoSeed'
+import { ensureProductionPlanOrderTreeDemoAssemblyOrders } from '@/mock/productionPlanOrderTreeSeed'
+import { findWorkItemForPlanRow } from '@/utils/productionPlanMaterial'
+import {
+  normalizeWorkOrderScheduleFields,
+  createScheduleBatch,
+  dispatchScheduleBatch,
+  removeScheduleBatch,
+  touchWorkOrderOperateUpdatedAt,
+  getWorkOrderOperatorName,
+} from '@/utils/workOrderScheduleBatch'
+import { migrateWorkOrderStatusFields, canContinueSchedule } from '@/utils/workOrderStatus'
+import { persistJson } from '@/utils/safeStorage'
+import { normalizeUrgency } from '@/constants/urgency'
+
+function resolvePlanRowBomFields(row, sourceOrder) {
+  const wi = findWorkItemForPlanRow(sourceOrder, row)
+  return {
+    productId: row.productId || wi?.productId || '',
+    bomId: row.bomId || wi?.bomId || '',
+    bomLabel: row.bomName || wi?.bomName || row.bom || '',
+    ebomSnapshot: row.ebomSnapshot || wi?.ebomSnapshot || null,
+    salesLineId: row.salesLineId || wi?.salesLineId || '',
+    bom: row.bom || wi?.bomName || row.productName,
+  }
+}
+
+const STORAGE_KEY = 'i_doms_assembly_work_orders'
+let codeSeq = 1
+
+function loadFromStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed.orders)) {
+        return parsed.orders.map((o) =>
+          migrateWorkOrderStatusFields(normalizeWorkOrderScheduleFields(o)),
+        )
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
+function persist() {
+  persistJson(STORAGE_KEY, { orders: assemblyWorkOrderState.orders })
+}
+
+/** ZZGD + 年月日 + 3位流水 */
+function generateAssemblyCode() {
+  return `ZZGD${dayjs().format('YYYYMMDD')}${String(codeSeq++).padStart(3, '0')}`
+}
+
+function ensureLaborDemoAssemblyOrders(orders) {
+  const demos = createLaborDemoAssemblyOrders()
+  const rest = orders.filter((o) => !isLaborDemoWorkOrder(o.id))
+  const merged = ensureProductionPlanOrderTreeDemoAssemblyOrders([...demos, ...rest])
+  merged.forEach((o) => {
+    if (o.id === 'asm-init-1') {
+      const hasBatches = (o.scheduleBatches || []).length > 0
+      if (!hasBatches && Number(o.planQty) <= 8) {
+        o.planQty = 20
+        o.scheduleQty = 0
+        o.scheduleBatches = []
+        o.activeScheduleBatchId = ''
+        o.remark = o.remark || '演示：计划数量可大于排产，支持分批排产并指定不同执行人'
+        o.processes = (o.processes || []).map((p) => ({ ...p, executors: [] }))
+      }
+    }
+    normalizeWorkOrderScheduleFields(o)
+  })
+  return merged
+}
+
+function createInitialOrders() {
+  const routeName = '装配标准路线'
+  return ensureLaborDemoAssemblyOrders([
+    {
+      id: 'asm-init-1',
+      code: 'ZZGD20250528001',
+      name: '潜水电机总装工单',
+      productName: '潜水电机',
+      orderCategory: '总装工单',
+      status: '待下发',
+      scheduleQty: 0,
+      planQty: 20,
+      workCenter: '总装车间',
+      bom: '潜水电机',
+      warehouse: '成品仓',
+      urgency: '紧急',
+      planDateRange: ['2026-05-30', '2026-06-17'],
+      remark: '演示：计划20，可分批排产并指定不同执行人',
+      processRouteName: routeName,
+      source: 'manual',
+      sourceOrderNo: 'SO202505101',
+      processes: buildProcessesFromRoute(routeName).map((p) => ({ ...p, executors: [] })),
+      scheduleBatches: [],
+      activeScheduleBatchId: '',
+      createdAt: '2025-05-28',
+    },
+    {
+      id: 'asm-init-2',
+      code: 'ZZGD20250527002',
+      name: '立式多级泵总装工单',
+      productName: '立式多级泵',
+      orderCategory: '总装工单',
+      status: '执行中',
+      scheduleQty: 5,
+      planQty: 5,
+      workCenter: '总装车间',
+      bom: '立式多级泵',
+      warehouse: '成品仓',
+      urgency: '特急',
+      planDateRange: ['2026-05-25', '2026-06-10'],
+      remark: '加急总装',
+      processRouteName: routeName,
+      source: 'manual',
+      sourceOrderNo: 'SO202505102',
+      processes: buildProcessesFromRoute(routeName).map((p, i) =>
+        i < 2 ? { ...p, executors: ['王装配', '李总装'] } : p,
+      ),
+      createdAt: '2025-05-27',
+    },
+    {
+      id: 'asm-init-3',
+      code: 'ZZGD20250520003',
+      name: '深井潜水泵总装工单',
+      productName: '深井潜水泵',
+      orderCategory: '总装工单',
+      status: '已完成',
+      scheduleQty: 10,
+      planQty: 10,
+      workCenter: '总装车间',
+      bom: '深井潜水泵',
+      warehouse: '成品仓',
+      urgency: '正常',
+      planDateRange: ['2026-05-01', '2026-05-20'],
+      remark: '',
+      processRouteName: routeName,
+      source: 'manual',
+      sourceOrderNo: 'SO202505103',
+      processes: buildProcessesFromRoute(routeName).map((p) => ({
+        ...p,
+        executors: ['赵工'],
+      })),
+      createdAt: '2025-05-20',
+    },
+  ])
+}
+
+export const assemblyWorkOrderState = reactive({
+  orders: (
+    ensureProductionPlanOrderTreeDemoAssemblyOrders(
+      ensureLaborDemoAssemblyOrders(loadFromStorage() || createInitialOrders()),
+    ) || []
+  ).map((o) => migrateWorkOrderStatusFields(normalizeWorkOrderScheduleFields(o))),
+})
+
+watch(
+  () => assemblyWorkOrderState.orders,
+  () => persist(),
+  { deep: true },
+)
+
+export function addAssemblyWorkOrder(order) {
+  assemblyWorkOrderState.orders.unshift(order)
+}
+
+export function deleteAssemblyWorkOrder(id) {
+  const idx = assemblyWorkOrderState.orders.findIndex((o) => o.id === id)
+  if (idx === -1) return false
+  assemblyWorkOrderState.orders.splice(idx, 1)
+  return true
+}
+
+export function cloneAssemblyWorkOrder(id) {
+  const source = assemblyWorkOrderState.orders.find((o) => o.id === id)
+  if (!source) return null
+  const cloned = JSON.parse(JSON.stringify(source))
+  cloned.id = `asm-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+  cloned.code = generateAssemblyCode()
+  cloned.name = `${source.productName}总装工单`
+  cloned.status = '待下发'
+  cloned.createdAt = dayjs().format('YYYY-MM-DD')
+  cloned.source = 'manual'
+  addAssemblyWorkOrder(cloned)
+  return cloned
+}
+
+export function updateAssemblyWorkOrder(id, patch, options = {}) {
+  const idx = assemblyWorkOrderState.orders.findIndex((o) => o.id === id)
+  if (idx === -1) return null
+  Object.assign(assemblyWorkOrderState.orders[idx], patch)
+  const row = assemblyWorkOrderState.orders[idx]
+  if (options.touchOperateUpdatedAt !== false) {
+    touchWorkOrderOperateUpdatedAt(row)
+  }
+  return row
+}
+
+export function createAssemblyWorkOrderPayload(partial) {
+  const routeName = partial.processRouteName || getDefaultProductRoute(partial.productName)
+  const routeSnap = routeName
+    ? buildRouteDispatchSnapshot(routeName)
+    : { processes: [], stepPolicies: [] }
+  const productName = partial.productName?.trim() || ''
+  const existingCodes = assemblyWorkOrderState.orders.map((o) => o.code)
+  const code = resolveOrderField(partial.code, () => generateAssemblyWorkOrderCode(existingCodes))
+  const name = resolveOrderField(partial.name, () =>
+    generateAssemblyWorkOrderName(productName, partial.orderCategory),
+  )
+  const payload = {
+    id: `asm-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    code,
+    name,
+    productName,
+    orderCategory: partial.orderCategory || '总装工单',
+    status: '待下发',
+    scheduleQty: partial.scheduleQty ?? partial.planQty ?? 0,
+    planQty: partial.planQty ?? 0,
+    workCenter: partial.workCenter || '总装车间',
+    owner: partial.owner || '',
+    creator: partial.creator || partial.owner || getWorkOrderOperatorName(),
+    updater: partial.updater || partial.creator || partial.owner || getWorkOrderOperatorName(),
+    bom: partial.bom || productName,
+    bomId: partial.bomId || '',
+    bomLabel: partial.bomLabel || '',
+    warehouse: partial.warehouse || resolveDefaultWarehouseByProductName(productName) || '',
+    urgency: normalizeUrgency(partial.urgency),
+    planDateRange: partial.planDateRange || [
+      dayjs().format('YYYY-MM-DD'),
+      dayjs().add(14, 'day').format('YYYY-MM-DD'),
+    ],
+    remark: partial.remark || '',
+    processRouteName: routeName,
+    source: partial.source || 'manual',
+    sourceOrderNo: partial.sourceOrderNo || '',
+    salesLineId: partial.salesLineId || '',
+    salesOrderId: partial.salesOrderId || '',
+    materialCode: partial.materialCode || '',
+    productId: partial.productId || '',
+    specModel: partial.specModel || '',
+    material: partial.material || '',
+    drawingNo: partial.drawingNo || '',
+    variantSummary: partial.variantSummary || '',
+    variantValues: partial.variantValues ? { ...partial.variantValues } : {},
+    techParams: partial.techParams || '',
+    matchingRequirements: partial.matchingRequirements || '',
+    customerName: partial.customerName || '',
+    salesperson: partial.salesperson || '',
+    componentLines: partial.componentLines || [],
+    ebomSnapshot: partial.ebomSnapshot || null,
+    processes: routeSnap.processes,
+    stepPolicies: routeSnap.stepPolicies,
+    scheduleBatches: Array.isArray(partial.scheduleBatches) ? partial.scheduleBatches : [],
+    activeScheduleBatchId: partial.activeScheduleBatchId || '',
+    createdAt: dayjs().format('YYYY-MM-DD'),
+    updatedAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+  }
+  syncWorkOrderBlankingMaterials(payload)
+  return payload
+}
+
+export function addAssemblyScheduleBatch(workOrderId, input) {
+  const wo = assemblyWorkOrderState.orders.find((o) => o.id === workOrderId)
+  if (!wo) return { ok: false, message: '工单不存在' }
+  normalizeWorkOrderScheduleFields(wo)
+  return createScheduleBatch(wo, input)
+}
+
+export function dispatchAssemblyScheduleBatch(workOrderId, batchId) {
+  const wo = assemblyWorkOrderState.orders.find((o) => o.id === workOrderId)
+  if (!wo) return { ok: false, message: '工单不存在' }
+  return dispatchScheduleBatch(wo, batchId)
+}
+
+export function removeAssemblyScheduleBatch(workOrderId, batchId) {
+  const wo = assemblyWorkOrderState.orders.find((o) => o.id === workOrderId)
+  if (!wo) return { ok: false, message: '工单不存在' }
+  return removeScheduleBatch(wo, batchId)
+}
+
+export function setActiveAssemblyScheduleBatch(workOrderId, batchId) {
+  const wo = assemblyWorkOrderState.orders.find((o) => o.id === workOrderId)
+  if (!wo) return false
+  wo.activeScheduleBatchId = batchId
+  return true
+}
+
+/** 按销售单号 + 产品名称匹配总装工单 */
+export function findAssemblyOrdersBySalesProduct(salesOrderNo, productName) {
+  if (!salesOrderNo || !productName) return []
+  return assemblyWorkOrderState.orders.filter((wo) => {
+    const source = wo.sourceOrderNo || ''
+    const orderMatched =
+      source === salesOrderNo || source.includes(salesOrderNo) || salesOrderNo.includes(source)
+    return orderMatched && wo.productName === productName
+  })
+}
+
+/** 生产计划保存总装/部装工单后同步创建 */
+export function addAssemblyWorkOrdersFromPlanRows(rows, sourceOrder) {
+  const created = []
+  rows.forEach((row) => {
+    const exists = assemblyWorkOrderState.orders.some(
+      (o) =>
+        o.source === 'production-plan' &&
+        o.orderCategory === row.orderCategory &&
+        o.productName === row.productName &&
+        o.sourceOrderNo === sourceOrder.orderNo,
+    )
+    if (exists) return
+
+    const bomFields = resolvePlanRowBomFields(row, sourceOrder)
+    const wo = createAssemblyWorkOrderPayload({
+      productName: row.productName,
+      orderCategory: row.orderCategory,
+      scheduleQty: row.scheduleQty ?? row.planQty,
+      planQty: row.planQty,
+      workCenter: row.workCenter,
+      bom: bomFields.bom,
+      bomId: bomFields.bomId,
+      bomLabel: bomFields.bomLabel,
+      warehouse: row.warehouse,
+      urgency: row.urgency,
+      remark: row.remark,
+      planDateRange: row.planDateRange,
+      processRouteName: row.processRoute,
+      source: 'production-plan',
+      sourceOrderNo: sourceOrder.orderNo,
+      materialCode: row.code,
+      productId: bomFields.productId,
+      ebomSnapshot: bomFields.ebomSnapshot,
+      salesLineId: bomFields.salesLineId,
+      salesOrderId: sourceOrder.salesOrderId || '',
+      specModel: row.spec || '',
+      material: row.material || '',
+      drawingNo: row.drawingNo || '',
+    })
+    addAssemblyWorkOrder(wo)
+    created.push(wo)
+  })
+  return created
+}
+
+export function filterAssemblyWorkOrders(list, filters) {
+  return list.filter((wo) => {
+    if (filters.code && !wo.code.includes(filters.code)) return false
+    if (filters.name && !wo.name.includes(filters.name)) return false
+    if (filters.salesOrderNo && !(wo.sourceOrderNo || '').includes(filters.salesOrderNo))
+      return false
+    if (filters.productName && !(wo.productName || '').includes(filters.productName)) return false
+    if (filters.materialCode) {
+      const code = String(filters.materialCode)
+      if (!(wo.materialCode || '').includes(code) && !(wo.productCode || '').includes(code)) {
+        return false
+      }
+    }
+    if (filters.specModel && !(wo.specModel || '').includes(filters.specModel)) return false
+    if (filters.drawingNo && !(wo.drawingNo || '').includes(filters.drawingNo)) return false
+    if (filters.status && wo.status !== filters.status) return false
+    if (filters.orderCategory && wo.orderCategory !== filters.orderCategory) return false
+    if (filters.workCenter && wo.workCenter !== filters.workCenter) return false
+    return true
+  })
+}
+
+export function canShowAssemblyDispatchTab(status) {
+  return canContinueSchedule(status)
+}
+
+export { shouldShowWorkOrderDispatchTab } from '@/store/workOrderStore'

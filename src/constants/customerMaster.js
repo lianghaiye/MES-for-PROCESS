@@ -1,0 +1,136 @@
+export const CUSTOMER_GRADE = {
+  NORMAL: '普通',
+  STRATEGIC: '战略',
+  CORE: '核心',
+}
+
+export const customerGradeOptions = [
+  { label: CUSTOMER_GRADE.NORMAL, value: CUSTOMER_GRADE.NORMAL },
+  { label: CUSTOMER_GRADE.STRATEGIC, value: CUSTOMER_GRADE.STRATEGIC },
+  { label: CUSTOMER_GRADE.CORE, value: CUSTOMER_GRADE.CORE },
+]
+
+/** 客户所属销售区域（与销售订单区域取值对齐） */
+export const customerRegionOptions = [
+  { label: '华北', value: '华北' },
+  { label: '华东', value: '华东' },
+  { label: '华南', value: '华南' },
+  { label: '华中', value: '华中' },
+  { label: '西南', value: '西南' },
+  { label: '西北', value: '西北' },
+  { label: '东北', value: '东北' },
+]
+
+export const enterpriseScaleOptions = [
+  { label: '大型', value: '大型' },
+  { label: '中型', value: '中型' },
+  { label: '小型', value: '小型' },
+  { label: '微型', value: '微型' },
+]
+
+export const addressTypeOptions = [
+  { label: '注册地址', value: '注册地址' },
+  { label: '收货地址', value: '收货地址' },
+  { label: '账单地址', value: '账单地址' },
+  { label: '开票地址', value: '开票地址' },
+]
+
+export const settlementMethodOptions = [
+  { label: '现金结算', value: '现金结算' },
+  { label: '银行转账', value: '银行转账' },
+  { label: '承兑汇票', value: '承兑汇票' },
+]
+
+export const settlementCycleOptions = [
+  { label: '月结', value: '月结' },
+  { label: '周结', value: '周结' },
+  { label: '半月结', value: '半月结' },
+  { label: '季结', value: '季结' },
+  { label: '无', value: '无' },
+]
+
+/** 账期起算：从哪一天开始算账期天数（客户默认账期与合同共用） */
+export const paymentTermStartOptions = [
+  { label: '开票日', value: '开票日' },
+  { label: '发货日', value: '发货日' },
+  { label: '验收日', value: '验收日' },
+  { label: '对账日', value: '对账日' },
+  { label: '合同签订日', value: '合同签订日' },
+  { label: '自定义', value: '自定义' },
+]
+
+/** 常用账期天数快捷选项；表单仍可手填其他天数 */
+export const paymentTermDaysOptions = [
+  { label: '0（现结）', value: 0 },
+  { label: '7 天', value: 7 },
+  { label: '15 天', value: 15 },
+  { label: '30 天', value: 30 },
+  { label: '45 天', value: 45 },
+  { label: '60 天', value: 60 },
+  { label: '90 天', value: 90 },
+]
+
+export const settlementTypeOptions = [
+  { label: '先款后货', value: '先款后货' },
+  { label: '先货后款', value: '先货后款' },
+  { label: '预付款+货到付', value: '预付款+货到付' },
+  { label: '预付款+发货付', value: '预付款+发货付' },
+]
+
+export const currencyOptions = [
+  { label: 'CNY', value: 'CNY' },
+  { label: 'USD', value: 'USD' },
+  { label: 'EUR', value: 'EUR' },
+]
+
+export const deliveryMethodOptions = [
+  { label: '送货', value: '送货' },
+  { label: '物流', value: '物流' },
+  { label: '自提', value: '自提' },
+  { label: '快递', value: '快递' },
+]
+
+export const freightBearerOptions = [
+  { label: '买方', value: '买方' },
+  { label: '卖方', value: '卖方' },
+]
+
+export const invoiceTypeOptions = [
+  { label: '增值税专用发票', value: '增值税专用发票' },
+  { label: '增值税普票', value: '增值税普票' },
+  { label: '电子发票', value: '电子发票' },
+]
+
+export const customerDataStatusOptions = [
+  { label: '草稿', value: '草稿' },
+  { label: '待审', value: '待审' },
+  { label: '已审', value: '已审' },
+  { label: '作废', value: '作废' },
+]
+
+export function customerDataStatusColor(status) {
+  const map = {
+    草稿: 'default',
+    待审: 'processing',
+    已审: 'success',
+    作废: 'error',
+  }
+  return map[status] || 'default'
+}
+
+export function customerGradeColor(grade) {
+  const map = {
+    普通: 'default',
+    战略: 'blue',
+    核心: 'gold',
+  }
+  return map[grade] || 'default'
+}
+
+export function customerStatusColor(status) {
+  const map = {
+    启用: 'success',
+    停用: 'default',
+  }
+  return map[status] || 'default'
+}

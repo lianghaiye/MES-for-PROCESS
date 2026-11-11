@@ -1,0 +1,148 @@
+/**
+ * 订单详情 — 退货/异常处理信息（一物料一行）
+ */
+import { purchaseReturnState } from '@/store/purchaseReturnStore'
+import { outsourcingReturnState } from '@/store/outsourcingReturnStore'
+import { formatDateTimeMinute } from '@/utils/dateTimeDisplay'
+import {
+  lineInboundQty,
+  lineUninboundQty,
+  normalizeReturnLineQty,
+} from '@/utils/purchaseReturnStock'
+
+function isActivePurchaseReturn(ret) {
+  if (!ret) return false
+  const status = ret.status || ''
+  return status !== '作废' && status !== '已作废' && status !== '已取消'
+}
+
+function flattenReturns(returns, matchFn, mapLine) {
+  const rows = []
+  ;(returns || []).filter(matchFn).forEach((ret) => {
+    ;(ret.lineItems || []).forEach((line, idx) => {
+      rows.push(mapLine(ret, line, idx))
+    })
+  })
+  return rows
+}
+
+export function listReturnLinesForPurchaseOrder(po) {
+  if (!po) return []
+  void purchaseReturnState.returns
+  return flattenReturns(
+    purchaseReturnState.returns,
+    (r) =>
+      isActivePurchaseReturn(r) &&
+      ((po.id && r.purchaseOrderId === po.id) || (po.orderNo && r.purchaseOrderNo === po.orderNo)),
+    (ret, line, idx) => ({
+      id: `${ret.id}-${line.id || idx}`,
+      returnId: ret.id,
+      returnNo: ret.returnNo || '',
+      poLineId: line.poLineId || '',
+      itemName: line.productName || line.itemName || '',
+      itemCode: line.productCode || line.itemCode || '',
+      purchaseQty: Number(line.purchaseQty) || Number(line.planQty) || 0,
+      qty: Number(line.returnQty) || 0,
+      returnType: normalizeReturnLineQty(line).returnType || '',
+      shipWarehouse: line.shipWarehouse || '',
+      creator: ret.creator || '',
+      createdAt: formatDateTimeMinute(ret.createdAt),
+    }),
+  )
+}
+
+/**
+ * 采购订单行累计退货数量（有效退货单；优先 poLineId，其次产品编号）
+ */
+export function calcPoLineReturnQty(po, line) {
+  return sumPoLineReturnQty(po, line, () => true)
+}
+
+/** 有效未入库退货占用（扣采购待收） */
+export function calcPoLineUninboundReturnQty(po, line) {
+  return sumPoLineReturnQty(po, line, () => true, 'uninbound')
+}
+
+/** 已完成入库退货（确认出库后扣实际入库数量） */
+export function calcPoLineCompletedInboundReturnQty(po, line) {
+  return sumPoLineReturnQty(po, line, (ret) => ret.status === '已完成', 'inbound')
+}
+
+/**
+ * 仅统计「已完成」未入库退货数量（用于待收结清判定；入库退货已从已入库数量扣除）
+ */
+export function calcPoLineCompletedReturnQty(po, line) {
+  return sumPoLineReturnQty(po, line, (ret) => ret.status === '已完成', 'uninbound')
+}
+
+function sumPoLineReturnQty(po, line, retFilter, kind) {
+  if (!po || !line) return 0
+  void purchaseReturnState.returns
+  const lineId = line.id
+  const code = line.productCode || line.itemCode || ''
+  let total = 0
+  ;(purchaseReturnState.returns || []).forEach((ret) => {
+    if (
+      !isActivePurchaseReturn(ret) ||
+      (typeof retFilter === 'function' && !retFilter(ret)) ||
+      !(
+        (po.id && ret.purchaseOrderId === po.id) ||
+        (po.orderNo && ret.purchaseOrderNo === po.orderNo)
+      )
+    ) {
+      return
+    }
+    ;(ret.lineItems || []).forEach((rl) => {
+      const byId = lineId && rl.poLineId && rl.poLineId === lineId
+      const byCode = !rl.poLineId && code && (rl.productCode === code || rl.itemCode === code)
+      if (!(byId || byCode)) return
+      if (kind === 'uninbound') total += lineUninboundQty(rl)
+      else if (kind === 'inbound') total += lineInboundQty(rl)
+      else total += Number(normalizeReturnLineQty(rl).returnQty) || 0
+    })
+  })
+  return total
+}
+
+export function listReturnLinesForOutsourcingOrder(order) {
+  if (!order) return []
+  void outsourcingReturnState.returns
+  return flattenReturns(
+    outsourcingReturnState.returns,
+    (r) =>
+      (order.id && (r.outsourcingOrderId === order.id || r.purchaseOrderId === order.id)) ||
+      (order.orderNo &&
+        (r.outsourcingOrderNo === order.orderNo || r.purchaseOrderNo === order.orderNo)),
+    (ret, line, idx) => {
+      let shipWarehouse = line.shipWarehouse || ''
+      if (!shipWarehouse && Array.isArray(ret.outboundOrders)) {
+        for (const order of ret.outboundOrders) {
+          const hit = (order.lineItems || []).some(
+            (ol) => ol.returnLineId === line.id || ol.productCode === line.productCode,
+          )
+          if (hit && order.shipWarehouse) {
+            shipWarehouse = order.shipWarehouse
+            break
+          }
+        }
+        if (!shipWarehouse) shipWarehouse = ret.outboundOrders[0]?.shipWarehouse || ''
+      }
+      return {
+        id: `${ret.id}-${line.id || idx}`,
+        returnId: ret.id,
+        status: ret.status || '',
+        returnNo: ret.returnNo || '',
+        itemName: line.productName || line.itemName || '',
+        itemCode: line.productCode || line.itemCode || '',
+        planQty: Number(line.planQty) || Number(line.purchaseQty) || 0,
+        qty: Number(line.returnQty) || 0,
+        shipWarehouse,
+        returnType: line.returnType || '',
+        compensationMethod: line.compensationMethod || '',
+        compensationAmount: line.compensationAmount,
+        creator: ret.creator || '',
+        createdAt: formatDateTimeMinute(ret.createdAt),
+      }
+    },
+  )
+}

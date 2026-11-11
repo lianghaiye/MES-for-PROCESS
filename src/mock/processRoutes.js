@@ -1,0 +1,228 @@
+import { getProcessByName, resolveDefaultExecutors } from '@/store/processConfigStore'
+import {
+  buildWorkOrderProcessesFromGrid,
+  syncStepPolicies,
+  COMPLETION_MODE_ALL,
+} from '@/utils/processRouteGrid'
+import { createEmptyWorkOrderProcessExtras } from '@/utils/workOrderProcessDisplay'
+
+function getProcessRouteByNameLazy(name) {
+  // 运行时加载，避免 workOrderStore → processRoutes → processRouteStore 循环依赖
+  // eslint-disable-next-line global-require
+  return require('@/store/processRouteStore').getProcessRouteByName(name)
+}
+
+function getActiveRouteOptionsLazy(filters) {
+  // eslint-disable-next-line global-require
+  return require('@/store/processRouteStore').getActiveRouteOptions(filters)
+}
+
+/** @deprecated 兼容旧工单种子数据 */
+export const processRouteMaster = {
+  机加标准路线: {
+    id: 'route-machining',
+    name: '机加标准路线',
+    steps: [
+      {
+        name: '裁板',
+        code: 'OP-CB-01',
+        icon: 'ScissorOutlined',
+        hasFeeding: false,
+        resourceType: '工人',
+      },
+      {
+        name: '卷制',
+        code: 'OP-JZ-02',
+        icon: 'SyncOutlined',
+        hasFeeding: false,
+        resourceType: '工人',
+      },
+      {
+        name: '机加工',
+        code: 'OP-JG-03',
+        icon: 'ToolOutlined',
+        hasFeeding: false,
+        resourceType: '工人',
+      },
+      {
+        name: '配比',
+        code: 'OP-PB-04',
+        icon: 'ExperimentOutlined',
+        hasFeeding: true,
+        resourceType: '工人小组',
+      },
+      {
+        name: '入库',
+        code: 'OP-RK-05',
+        icon: 'InboxOutlined',
+        hasFeeding: false,
+        resourceType: '工人',
+      },
+    ],
+  },
+  装配标准路线: {
+    id: 'route-assembly',
+    name: '装配标准路线',
+    steps: [
+      {
+        name: '领料',
+        code: 'OP-LL-01',
+        icon: 'ShoppingOutlined',
+        hasFeeding: true,
+        resourceType: '工人小组',
+      },
+      {
+        name: '预装',
+        code: 'OP-YZ-02',
+        icon: 'BuildOutlined',
+        hasFeeding: false,
+        resourceType: '工人',
+      },
+      {
+        name: '总装',
+        code: 'OP-ZZ-03',
+        icon: 'ClusterOutlined',
+        hasFeeding: false,
+        resourceType: '工人小组',
+      },
+      {
+        name: '调试',
+        code: 'OP-TS-04',
+        icon: 'SettingOutlined',
+        hasFeeding: false,
+        resourceType: '工人',
+      },
+      {
+        name: '入库',
+        code: 'OP-RK-05',
+        icon: 'InboxOutlined',
+        hasFeeding: false,
+        resourceType: '工人',
+      },
+    ],
+  },
+}
+
+/** 拆解工单工序（与小程序待办流程对齐） */
+export const disassemblyProcessDefs = [
+  {
+    name: '拆解',
+    code: 'OP-CJ-01',
+    icon: 'ToolOutlined',
+    hasFeeding: false,
+    resourceType: '工人小组',
+  },
+  {
+    name: '拆解质检',
+    code: 'OP-CJ-ZJ',
+    icon: 'AuditOutlined',
+    hasFeeding: false,
+    resourceType: '工人',
+  },
+  {
+    name: '入库',
+    code: 'OP-CJ-RK',
+    icon: 'InboxOutlined',
+    hasFeeding: false,
+    resourceType: '工人',
+  },
+]
+
+/** 从工艺路线生成工单工序 + 步骤完成方式快照 */
+export function buildRouteDispatchSnapshot(routeName) {
+  const route = getProcessRouteByNameLazy(routeName)
+  if (route?.grid) {
+    const stepPolicies = syncStepPolicies(route.grid, route.stepPolicies)
+    return {
+      processes: buildWorkOrderProcessesFromGrid(route.grid, route.id, stepPolicies),
+      stepPolicies,
+    }
+  }
+
+  const legacy = processRouteMaster[routeName] || processRouteMaster['机加标准路线']
+  const processes = legacy.steps.map((step, index) => {
+    const proc = getProcessByName(step.name)
+    return {
+      id: `${legacy.id}-step-${index + 1}`,
+      index: index + 1,
+      stepNo: index + 1,
+      rowNo: 1,
+      completionMode: COMPLETION_MODE_ALL,
+      includeInDispatch: true,
+      name: step.name,
+      processCode: proc?.code || step.code,
+      processId: proc?.id,
+      icon: step.icon,
+      hasFeeding: step.hasFeeding,
+      isBlanking: Boolean(proc?.isBlanking),
+      resourceType: proc?.resourceType || step.resourceType || '工人',
+      executors: resolveDefaultExecutors(proc),
+      ...createEmptyWorkOrderProcessExtras(),
+      opOutsource: Boolean(proc?.operations?.opOutsource) || step.name === '机加工',
+      feedingMaterials: step.hasFeeding
+        ? [
+            {
+              id: `feed-${Date.now()}-${index}`,
+              materialId: undefined,
+              materialName: '',
+              qty: null,
+            },
+          ]
+        : [],
+    }
+  })
+  return {
+    processes,
+    stepPolicies: processes.map((p) => ({
+      stepNo: p.stepNo,
+      completionMode: COMPLETION_MODE_ALL,
+    })),
+  }
+}
+
+export function buildProcessesFromRoute(routeName) {
+  return buildRouteDispatchSnapshot(routeName).processes
+}
+
+/** 将路线快照写入工单（工序 + stepPolicies） */
+export function applyRouteSnapshotToWorkOrder(workOrder, routeName) {
+  if (!workOrder || !routeName) return false
+  const snap = buildRouteDispatchSnapshot(routeName)
+  workOrder.processRouteName = routeName
+  workOrder.processes = snap.processes
+  workOrder.stepPolicies = snap.stepPolicies
+  return true
+}
+
+export function buildDisassemblyProcesses() {
+  return disassemblyProcessDefs.map((step, index) => {
+    const proc = getProcessByName(step.name)
+    return {
+      id: `route-disassembly-step-${index + 1}`,
+      index: index + 1,
+      name: step.name,
+      processCode: proc?.code || step.code,
+      processId: proc?.id,
+      icon: step.icon,
+      hasFeeding: step.hasFeeding,
+      isBlanking: Boolean(proc?.isBlanking),
+      resourceType: proc?.resourceType || step.resourceType,
+      executors: resolveDefaultExecutors(proc),
+      ...createEmptyWorkOrderProcessExtras(),
+      opOutsource: Boolean(proc?.operations?.opOutsource),
+      feedingMaterials: [],
+    }
+  })
+}
+
+export function getDefaultProductRoute(productName) {
+  if (productName?.includes('电机') || productName?.includes('装配')) return '离心泵标准装配路线'
+  if (productName?.includes('泵体') || productName?.includes('机加')) return '泵体机加路线'
+  const opts = getActiveRouteOptionsLazy({ productName })
+  return opts[0] || '离心泵标准装配路线'
+}
+
+/** 兼容旧引用：转发到 processRouteStore（惰性加载防循环依赖） */
+export function getActiveRouteOptions(filters) {
+  return getActiveRouteOptionsLazy(filters)
+}

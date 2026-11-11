@@ -1,0 +1,832 @@
+<template>
+  <div class="sales-line-page">
+    <div class="filter-card">
+      <a-form :model="filters" layout="inline" class="filter-form horizontal-form">
+        <a-row :gutter="[12, 8]" style="width: 100%">
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item label="销售单号">
+              <a-input
+                v-model:value="filters.orderNo"
+                allow-clear
+                placeholder="请输入"
+                size="small"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item label="客户名称">
+              <a-select
+                v-model:value="filters.customerName"
+                allow-clear
+                placeholder="请选择"
+                size="small"
+                :options="customerOpts"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item label="产品名称">
+              <a-input
+                v-model:value="filters.productName"
+                allow-clear
+                placeholder="请输入"
+                size="small"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item label="产品编码">
+              <a-input
+                v-model:value="filters.productCode"
+                allow-clear
+                placeholder="请输入"
+                size="small"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item label="业务员">
+              <a-select
+                v-model:value="filters.salesperson"
+                allow-clear
+                placeholder="请选择"
+                size="small"
+                show-search
+                :options="salespersonOpts"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item label="订单状态">
+              <a-select
+                v-model:value="filters.progressStatus"
+                allow-clear
+                placeholder="请选择"
+                size="small"
+                :options="progressStatusOpts"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item label="行发货状态">
+              <a-select
+                v-model:value="filters.lineDeliveryStatus"
+                allow-clear
+                placeholder="请选择"
+                size="small"
+                :options="lineDeliveryStatusOpts"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item label="业务类型">
+              <a-select
+                v-model:value="filters.businessType"
+                allow-clear
+                placeholder="请选择"
+                size="small"
+                :options="businessTypeOpts"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item label="交付方式">
+              <a-select
+                v-model:value="filters.deliveryMode"
+                allow-clear
+                placeholder="请选择"
+                size="small"
+                :options="deliveryModeOpts"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item label="交货日期">
+              <a-range-picker
+                v-model:value="filters.deliveryDateRange"
+                size="small"
+                style="width: 100%"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item label="SN 码">
+              <a-input
+                v-model:value="filters.snCode"
+                allow-clear
+                placeholder="完整 SN 或片段"
+                size="small"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item label=" ">
+              <a-space :size="12">
+                <a-checkbox v-model:checked="filters.snFuzzy">模糊匹配</a-checkbox>
+              </a-space>
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item class="filter-actions-item" label=" ">
+              <a-space :size="8">
+                <a-button type="primary" size="small" @click="handleSearch">
+                  <SearchOutlined />
+                  搜索
+                </a-button>
+                <a-button size="small" @click="handleReset">
+                  <ReloadOutlined />
+                  重置
+                </a-button>
+              </a-space>
+            </a-form-item>
+          </a-col>
+        </a-row>
+      </a-form>
+    </div>
+
+    <div class="toolbar-row list-action-card">
+      <a-space :size="8">
+        <a-button size="small" @click="exportModalOpen = true">导出</a-button>
+      </a-space>
+      <a-space :size="4" class="toolbar-icons">
+        <a-tooltip title="刷新">
+          <a-button type="text" size="small" @click="handleSearch">
+            <ReloadOutlined />
+          </a-button>
+        </a-tooltip>
+        <TableColumnSettingButton @click="columnDrawerOpen = true" />
+      </a-space>
+    </div>
+
+    <a-alert type="info" show-icon class="summary-bar" :banner="false">
+      <template #message>
+        <span>
+          当前表格已选择 <strong>{{ selectedRowKeys.length }}</strong> 项
+          <a-button type="link" size="small" @click="selectedRowKeys = []">清空</a-button>
+          共计 {{ filteredRows.length }} 条明细，销售数量合计：{{
+            formatQty(summary.salesQty)
+          }}，已发数量合计：{{ formatQty(summary.shippedQty) }}，含税总价合计：￥{{
+            formatMoney(summary.totalPriceInTax)
+          }}。
+        </span>
+      </template>
+    </a-alert>
+
+    <div class="table-card">
+      <a-table
+        :columns="mergedDisplayColumns"
+        :data-source="pagedRows"
+        row-key="id"
+        size="small"
+        bordered
+        :scroll="{ x: tableScrollX }"
+        :pagination="false"
+        :row-selection="rowSelection"
+      >
+        <template #bodyCell="{ column, record, index }">
+          <template v-if="column.key === 'index'">
+            {{ (pagination.current - 1) * pagination.pageSize + index + 1 }}
+          </template>
+          <template v-else-if="column.key === 'orderNo'">
+            <a class="link-code" @click.prevent="openDetail(record)">{{ record.orderNo }}</a>
+          </template>
+          <template v-else-if="column.key === 'progressStatus'">
+            <a-tag :color="salesOrderStatusColor(record.progressStatus)">{{
+              record.progressStatus
+            }}</a-tag>
+          </template>
+          <template v-else-if="column.key === 'lineDeliveryStatus'">
+            <a-tag :color="salesDeliveryStatusColor(record.lineDeliveryStatus)">{{
+              record.lineDeliveryStatus || '未发货'
+            }}</a-tag>
+          </template>
+          <template v-else-if="column.key === 'productName'">
+            <span>{{ record.productName || '—' }}</span>
+            <a-tag v-if="record.cancelled" color="default" class="cancelled-tag">已取消</a-tag>
+          </template>
+          <template v-else-if="column.key === 'industrialSn'">
+            <template v-if="!record.snTotal">
+              <span>—</span>
+            </template>
+            <template v-else>
+              <a class="link-code" @click.prevent="openSnDrawer(record)">{{
+                record.snSummaryText
+              }}</a>
+              <a-tag v-if="isSnHitRow(record)" color="processing" size="small" class="sn-hit-tag"
+                >命中</a-tag
+              >
+            </template>
+          </template>
+          <template v-else-if="column.key === 'shipInfo'">
+            <template v-if="!record.shipTotal">
+              <span>—</span>
+            </template>
+            <template v-else>
+              <a class="link-code" @click.prevent="openShipDrawer(record)">{{
+                record.shipSummaryText
+              }}</a>
+            </template>
+          </template>
+          <template v-else-if="column.key === 'salesQty'">
+            {{ formatQty(record.salesQty) }}
+          </template>
+          <template v-else-if="column.key === 'shippedQty'">
+            {{ formatQty(record.shippedQty) }}
+          </template>
+          <template v-else-if="column.key === 'unshippedQty'">
+            {{ formatQty(record.unshippedQty) }}
+          </template>
+          <template v-else-if="column.key === 'stockTakeQty'">
+            {{ formatQty(record.stockTakeQty) }}
+          </template>
+          <template v-else-if="column.key === 'preferStockTakeQty'">
+            {{
+              record.preferStockTakeQty == null || record.preferStockTakeQty === ''
+                ? '—'
+                : formatQty(record.preferStockTakeQty)
+            }}
+          </template>
+          <template v-else-if="column.key === 'planProduceQty'">
+            {{ formatQty(record.planProduceQty) }}
+          </template>
+          <template v-else-if="column.key === 'unitPriceInTax'">
+            {{ formatMoney(record.unitPriceInTax) }}
+          </template>
+          <template v-else-if="column.key === 'totalPriceInTax'">
+            {{ formatMoney(record.totalPriceInTax) }}
+          </template>
+          <template v-else-if="column.key === 'unitPriceExTax'">
+            {{ formatMoney(record.unitPriceExTax) }}
+          </template>
+          <template v-else-if="column.key === 'totalPriceExTax'">
+            {{ formatMoney(record.totalPriceExTax) }}
+          </template>
+          <template v-else-if="column.key === 'lineDiscountAmount'">
+            {{ formatMoney(record.lineDiscountAmount) }}
+          </template>
+          <template v-else-if="column.key === 'lineDiscountRate'">
+            {{ formatDiscountRate(record.lineDiscountRate) }}
+          </template>
+          <template v-else-if="column.key === 'stockFulfillmentMode'">
+            {{ record.stockFulfillmentModeLabel || '—' }}
+          </template>
+        </template>
+      </a-table>
+
+      <div class="table-pagination">
+        <a-pagination
+          v-model:current="pagination.current"
+          v-model:pageSize="pagination.pageSize"
+          :total="filteredRows.length"
+          size="small"
+          show-size-changer
+          :page-size-options="['10', '20', '50', '100']"
+          :show-total="(t) => `共 ${t} 条`"
+        />
+      </div>
+    </div>
+
+    <TableColumnSettingDrawer
+      v-model:open="columnDrawerOpen"
+      v-model:settings="columnSettings"
+      :default-settings="defaultColumnSettings"
+    />
+
+    <ExportExcelModal
+      v-model:open="exportModalOpen"
+      v-model:settings="exportFieldSettings"
+      :default-settings="defaultExportFieldSettings"
+      :filtered-count="filteredRows.length"
+      :selected-count="selectedRowKeys.length"
+      @export="doExport"
+    />
+
+    <SalesLineSnDrawer
+      v-model:open="snDrawerOpen"
+      :line-row="snDrawerRow"
+      :highlight-label-codes="snHighlightCodes"
+    />
+
+    <SalesLineShipDrawer v-model:open="shipDrawerOpen" :line-row="shipDrawerRow" />
+  </div>
+</template>
+
+<script setup>
+import { computed, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { ReloadOutlined, SearchOutlined } from '@ant-design/icons-vue'
+import { message } from 'ant-design-vue'
+import { useTabs } from '@/composables/useTabs'
+import { useTableColumnSettings } from '@/composables/useTableColumnSettings'
+import { functionParamState, isSalesOrderDiscountEnabled } from '@/store/functionParamStore'
+import { filterColumnsBySalesOrderDiscount } from '@/utils/salesOrderPricing'
+import { useListExport } from '@/composables/useListExport'
+import TableColumnSettingDrawer from '@/components/TableColumnSettingDrawer.vue'
+import TableColumnSettingButton from '@/components/TableColumnSettingButton.vue'
+import ExportExcelModal from '@/components/ExportExcelModal.vue'
+import SalesLineSnDrawer from '@/views/sales/components/SalesLineSnDrawer.vue'
+import SalesLineShipDrawer from '@/views/sales/components/SalesLineShipDrawer.vue'
+import { salesOrderState } from '@/store/salesOrderStore'
+import { industrialLabelState } from '@/store/industrialLabelStore'
+import {
+  businessTypeOptions,
+  customerOptions,
+  deliveryModeOptions,
+  progressStatusOptions,
+  salespersonOptions,
+} from '@/mock/salesOrderOptions'
+import {
+  buildSalesOrderLineRowSpans,
+  compareSalesOrderLinesDefault,
+  filterSalesOrderLines,
+  flattenSalesOrderLines,
+  SALES_LINE_DELIVERY_STATUS_OPTIONS,
+  SALES_LINE_ORDER_MERGE_KEYS,
+} from '@/utils/salesOrderLineList'
+import { salesOrderLineExportFields } from '@/utils/exportFields/salesOrderLineExport'
+import { salesDeliveryStatusColor, salesOrderStatusColor } from '@/utils/salesOrderStatus'
+import { lookupSalesBySn, summarizeLineLabels } from '@/utils/salesSnLookup'
+import { summarizeLineShipInfo } from '@/utils/salesLineShipInfo'
+
+const router = useRouter()
+const { openTab } = useTabs()
+
+const filters = reactive({
+  orderNo: '',
+  customerName: undefined,
+  productName: '',
+  productCode: '',
+  salesperson: undefined,
+  progressStatus: undefined,
+  lineDeliveryStatus: undefined,
+  businessType: undefined,
+  deliveryMode: undefined,
+  deliveryDateRange: null,
+  snCode: '',
+  snFuzzy: false,
+})
+const appliedFilters = ref({ ...filters, snMatchedLineIds: null })
+const snMatchedLabelCodes = ref([])
+const snDrawerOpen = ref(false)
+const snDrawerRow = ref(null)
+const shipDrawerOpen = ref(false)
+const shipDrawerRow = ref(null)
+const selectedRowKeys = ref([])
+const pagination = reactive({ current: 1, pageSize: 10 })
+
+const customerOpts = customerOptions.map((c) => ({ label: c.label, value: c.value }))
+const salespersonOpts = salespersonOptions.map((v) => ({ label: v, value: v }))
+const progressStatusOpts = progressStatusOptions.map((v) => ({ label: v, value: v }))
+const lineDeliveryStatusOpts = SALES_LINE_DELIVERY_STATUS_OPTIONS.map((v) => ({
+  label: v,
+  value: v,
+}))
+const businessTypeOpts = businessTypeOptions.map((v) => ({ label: v, value: v }))
+const deliveryModeOpts = deliveryModeOptions.map((v) => ({ label: v, value: v }))
+
+const baseColumns = [
+  { title: '序号', key: 'index', width: 56, align: 'center', fixed: 'left' },
+  { title: '销售单号', key: 'orderNo', dataIndex: 'orderNo', width: 140, fixed: 'left' },
+  {
+    title: '订单状态',
+    key: 'progressStatus',
+    dataIndex: 'progressStatus',
+    width: 90,
+    fixed: 'left',
+  },
+  {
+    title: '客户名称',
+    key: 'customerName',
+    dataIndex: 'customerName',
+    width: 140,
+    ellipsis: true,
+    fixed: 'left',
+  },
+  {
+    title: '产品名称',
+    key: 'productName',
+    dataIndex: 'productName',
+    width: 140,
+    ellipsis: true,
+  },
+  {
+    title: '产品编码',
+    key: 'productCode',
+    dataIndex: 'productCode',
+    width: 130,
+    ellipsis: true,
+  },
+  { title: '业务类型', key: 'businessType', dataIndex: 'businessType', width: 110 },
+  { title: '规格型号', key: 'specModel', dataIndex: 'specModel', width: 100, ellipsis: true },
+  { title: '材质', key: 'material', dataIndex: 'material', width: 80, ellipsis: true },
+  {
+    title: '变体属性',
+    key: 'variantAttr',
+    dataIndex: 'variantSummary',
+    width: 160,
+    ellipsis: true,
+  },
+  { title: '图号', key: 'drawingNo', dataIndex: 'drawingNo', width: 100, ellipsis: true },
+  { title: '技术参数', key: 'techParams', dataIndex: 'techParams', width: 120, ellipsis: true },
+  {
+    title: '配套要求',
+    key: 'matchingRequirements',
+    dataIndex: 'matchingRequirements',
+    width: 120,
+    ellipsis: true,
+  },
+  { title: '销售数量', key: 'salesQty', dataIndex: 'salesQty', width: 90, align: 'right' },
+  { title: '合同编号', key: 'contractNo', dataIndex: 'contractNo', width: 130, ellipsis: true },
+  { title: '已发数量', key: 'shippedQty', dataIndex: 'shippedQty', width: 90, align: 'right' },
+  { title: '未发数量', key: 'unshippedQty', dataIndex: 'unshippedQty', width: 90, align: 'right' },
+  {
+    title: '行发货状态',
+    key: 'lineDeliveryStatus',
+    dataIndex: 'lineDeliveryStatus',
+    width: 100,
+  },
+  { title: '交付方式', key: 'deliveryMode', dataIndex: 'deliveryMode', width: 100 },
+  { title: '发货信息', key: 'shipInfo', width: 110 },
+  { title: '工业 SN', key: 'industrialSn', width: 130 },
+  {
+    title: '库存履约',
+    key: 'stockFulfillmentMode',
+    dataIndex: 'stockFulfillmentModeLabel',
+    width: 120,
+  },
+  {
+    title: '占用现货数',
+    key: 'preferStockTakeQty',
+    dataIndex: 'preferStockTakeQty',
+    width: 110,
+    align: 'right',
+  },
+  {
+    title: '现货占用',
+    key: 'stockTakeQty',
+    dataIndex: 'stockTakeQty',
+    width: 88,
+    align: 'right',
+  },
+  {
+    title: '排产数量',
+    key: 'planProduceQty',
+    dataIndex: 'planProduceQty',
+    width: 88,
+    align: 'right',
+  },
+  { title: '交货日期', key: 'deliveryDate', dataIndex: 'deliveryDate', width: 110 },
+  { title: '单位', key: 'unit', dataIndex: 'unit', width: 70 },
+  {
+    title: '外部工号',
+    key: 'externalJobNo',
+    dataIndex: 'externalJobNo',
+    width: 120,
+    ellipsis: true,
+  },
+  { title: 'Bom名称', key: 'bomName', dataIndex: 'bomName', width: 110, ellipsis: true },
+  { title: 'Bom版本', key: 'bomVersion', dataIndex: 'bomVersion', width: 90 },
+  {
+    title: '单价（不含税）',
+    key: 'unitPriceExTax',
+    dataIndex: 'unitPriceExTax',
+    width: 120,
+    align: 'right',
+  },
+  {
+    title: '单价（含税）',
+    key: 'unitPriceInTax',
+    dataIndex: 'unitPriceInTax',
+    width: 110,
+    align: 'right',
+  },
+  { title: '税率(%)', key: 'taxRate', dataIndex: 'taxRate', width: 80, align: 'right' },
+  {
+    title: '总价（不含税）',
+    key: 'totalPriceExTax',
+    dataIndex: 'totalPriceExTax',
+    width: 110,
+    align: 'right',
+  },
+  {
+    title: '总价（含税）',
+    key: 'totalPriceInTax',
+    dataIndex: 'totalPriceInTax',
+    width: 100,
+    align: 'right',
+  },
+  {
+    title: '行折扣(%)',
+    key: 'lineDiscountRate',
+    dataIndex: 'lineDiscountRate',
+    width: 90,
+    align: 'right',
+  },
+  {
+    title: '行优惠金额',
+    key: 'lineDiscountAmount',
+    dataIndex: 'lineDiscountAmount',
+    width: 100,
+    align: 'right',
+  },
+  { title: '包装形式', key: 'packagingForm', dataIndex: 'packagingForm', width: 90 },
+  {
+    title: '补充说明',
+    key: 'supplementDesc',
+    dataIndex: 'supplementDesc',
+    width: 100,
+    ellipsis: true,
+  },
+  { title: '业务员', key: 'salesperson', dataIndex: 'salesperson', width: 90 },
+  { title: '区域', key: 'region', dataIndex: 'region', width: 90 },
+  { title: '创建时间', key: 'createdAt', dataIndex: 'createdAt', width: 140 },
+  { title: '创建人', key: 'creator', dataIndex: 'creator', width: 90 },
+]
+
+const {
+  columnSettings,
+  columnDrawerOpen,
+  displayColumns: rawDisplayColumns,
+  tableScrollX: rawTableScrollX,
+  defaultColumnSettings,
+} = useTableColumnSettings('sales-order-line-list-v5', baseColumns, {
+  minScrollX: 3930,
+})
+
+const displayColumns = computed(() => {
+  void functionParamState.params.enableSalesOrderDiscount
+  return filterColumnsBySalesOrderDiscount(rawDisplayColumns.value, isSalesOrderDiscountEnabled())
+})
+const tableScrollX = computed(() =>
+  Math.max(
+    rawTableScrollX.value || 0,
+    displayColumns.value.reduce((sum, col) => sum + (Number(col.width) || 0), 0),
+  ),
+)
+
+const allLineRows = computed(() => flattenSalesOrderLines(salesOrderState.orders))
+
+function enrichRowSnSummary(row) {
+  void industrialLabelState.labels
+  const sum = summarizeLineLabels(row.lineId)
+  return {
+    ...row,
+    snTotal: sum.total,
+    snMounted: sum.mounted,
+    snSummaryText: sum.summaryText,
+  }
+}
+
+function enrichRowShipInfo(row) {
+  void salesOrderState.orders
+  const order = salesOrderState.orders.find((o) => o.id === row.orderId)
+  const sum = summarizeLineShipInfo(order, row.lineId)
+  return {
+    ...row,
+    shipTotal: sum.total,
+    shipSummaryText: sum.summaryText,
+  }
+}
+
+const filteredRows = computed(() => {
+  const f = { ...appliedFilters.value }
+  if (f.deliveryDateRange?.length === 2) {
+    f.deliveryDateRange = [
+      f.deliveryDateRange[0].format('YYYY-MM-DD'),
+      f.deliveryDateRange[1].format('YYYY-MM-DD'),
+    ]
+  } else {
+    f.deliveryDateRange = null
+  }
+  return [...filterSalesOrderLines(allLineRows.value, f)]
+    .sort(compareSalesOrderLinesDefault)
+    .map(enrichRowSnSummary)
+    .map(enrichRowShipInfo)
+})
+
+const snHighlightCodes = computed(() => {
+  const codes = snMatchedLabelCodes.value || []
+  const lineId = snDrawerRow.value?.lineId
+  if (!lineId || !codes.length) return codes
+  return codes.filter((code) => {
+    const lbl = (industrialLabelState.labels || []).find(
+      (l) => String(l.labelCode || '').toLowerCase() === String(code || '').toLowerCase(),
+    )
+    return lbl?.salesLineId === lineId
+  })
+})
+
+const pagedRows = computed(() => {
+  const start = (pagination.current - 1) * pagination.pageSize
+  return filteredRows.value.slice(start, start + pagination.pageSize)
+})
+
+/** 当前页内同订单合并：销售单号/状态/客户/业务员/区域/创建人/创建时间 */
+const pageOrderRowSpans = computed(() => buildSalesOrderLineRowSpans(pagedRows.value))
+
+const orderMergeKeySet = new Set(SALES_LINE_ORDER_MERGE_KEYS)
+
+const mergedDisplayColumns = computed(() =>
+  displayColumns.value.map((col) => {
+    if (!orderMergeKeySet.has(col.key)) return col
+    return {
+      ...col,
+      customCell: (_record, index) => ({
+        rowSpan: pageOrderRowSpans.value[index] ?? 1,
+        style: { verticalAlign: 'middle' },
+      }),
+    }
+  }),
+)
+
+const summary = computed(() => {
+  const list = filteredRows.value
+  return {
+    salesQty: list.reduce((s, r) => s + (Number(r.salesQty) || 0), 0),
+    shippedQty: list.reduce((s, r) => s + (Number(r.shippedQty) || 0), 0),
+    totalPriceInTax: list.reduce((s, r) => s + (Number(r.totalPriceInTax) || 0), 0),
+  }
+})
+
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedRowKeys.value,
+  onChange: (keys) => {
+    selectedRowKeys.value = keys
+  },
+}))
+
+const { exportModalOpen, exportFieldSettings, defaultExportFieldSettings, doExport } =
+  useListExport({
+    storageKey: 'sales-order-line-list-v3',
+    fieldDefinitions: salesOrderLineExportFields,
+    getFilteredRows: () => filteredRows.value,
+    getSelectedRows: () => filteredRows.value.filter((r) => selectedRowKeys.value.includes(r.id)),
+    fileNamePrefix: '销售明细',
+  })
+
+function formatQty(val) {
+  if (val == null || val === '') return '—'
+  const n = Number(val)
+  if (!Number.isFinite(n)) return '—'
+  return String(n)
+}
+
+function formatMoney(val) {
+  if (val == null || val === '') return '—'
+  const n = Number(val)
+  if (!Number.isFinite(n)) return '—'
+  return n.toFixed(2)
+}
+
+/** 行折扣存 0~1 小数，展示为百分比 */
+function formatDiscountRate(val) {
+  if (val == null || val === '') return '—'
+  const n = Number(val)
+  if (!Number.isFinite(n)) return '—'
+  if (n >= 0 && n <= 1) return `${(n * 100).toFixed((n * 100) % 1 === 0 ? 0 : 2)}`
+  return String(n)
+}
+
+function handleSearch() {
+  let snMatchedLineIds = null
+  snMatchedLabelCodes.value = []
+  if (filters.snCode?.trim()) {
+    const res = lookupSalesBySn(filters.snCode, { fuzzy: filters.snFuzzy })
+    if (!res.ok) {
+      message.warning(res.message)
+      snMatchedLineIds = new Set()
+    } else {
+      snMatchedLineIds = new Set(res.salesLineIds)
+      snMatchedLabelCodes.value = (res.matchedLabels || []).map((l) => l.labelCode).filter(Boolean)
+    }
+  }
+  appliedFilters.value = {
+    ...filters,
+    snCode: filters.snCode?.trim() || '',
+    snMatchedLineIds,
+  }
+  pagination.current = 1
+  selectedRowKeys.value = []
+}
+
+function handleReset() {
+  filters.orderNo = ''
+  filters.customerName = undefined
+  filters.productName = ''
+  filters.productCode = ''
+  filters.salesperson = undefined
+  filters.progressStatus = undefined
+  filters.lineDeliveryStatus = undefined
+  filters.businessType = undefined
+  filters.deliveryMode = undefined
+  filters.deliveryDateRange = null
+  filters.snCode = ''
+  filters.snFuzzy = false
+  handleSearch()
+}
+
+function isSnHitRow(record) {
+  const set = appliedFilters.value?.snMatchedLineIds
+  return set instanceof Set && set.has(record.lineId)
+}
+
+function openSnDrawer(record) {
+  snDrawerRow.value = record
+  snDrawerOpen.value = true
+}
+
+function openShipDrawer(record) {
+  shipDrawerRow.value = record
+  shipDrawerOpen.value = true
+}
+
+function openDetail(record) {
+  if (!record?.orderId) return
+  const path = `/sales/orders/${record.orderId}`
+  openTab(path, `销售订单 ${record.orderNo || ''}`)
+  router.push({ name: 'sales-orders-detail', params: { id: record.orderId } })
+}
+</script>
+
+<style lang="less" scoped>
+.sales-line-page {
+  margin: -12px;
+  padding: 12px;
+  background: var(--page-bg, #f0f2f5);
+  min-height: calc(100vh - 112px);
+}
+
+.filter-card,
+.table-card {
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.filter-card {
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+
+.horizontal-form {
+  width: 100%;
+
+  :deep(.ant-form-item) {
+    width: 100%;
+    margin-bottom: 0;
+  }
+
+  :deep(.ant-form-item-row) {
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+
+  :deep(.ant-form-item-label > label) {
+    height: 24px;
+    line-height: 24px;
+    font-size: 13px;
+  }
+
+  .filter-actions-item {
+    :deep(.ant-form-item-label) {
+      display: none;
+    }
+  }
+}
+
+.summary-bar {
+  margin-bottom: 8px;
+  padding: 6px 12px;
+
+  :deep(.ant-alert-message) {
+    font-size: 13px;
+  }
+}
+
+.table-card {
+  padding: 8px 12px 12px;
+}
+
+.table-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.link-code {
+  color: #1677ff;
+  cursor: pointer;
+
+  &:hover {
+    color: #4096ff;
+  }
+}
+
+.cancelled-tag {
+  margin-left: 6px;
+}
+
+.sn-hit-tag {
+  margin-left: 6px;
+}
+</style>

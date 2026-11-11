@@ -1,0 +1,414 @@
+<template>
+  <div class="wo-info-tab">
+    <div class="tab-head">
+      <div class="tab-title">排产信息</div>
+      <span v-if="batchGroups.length" class="tab-summary">
+        共 {{ batchGroups.length }} 个批次 · {{ totalRowCount }} 条工序任务
+      </span>
+    </div>
+
+    <a-empty v-if="!batchGroups.length" description="暂无排产批次，请在「工单下发」中排产并下发" />
+
+    <div
+      v-for="group in batchGroups"
+      :key="group.batchId"
+      class="batch-block"
+      :class="{ 'is-active': group.batchId === activeBatchId }"
+    >
+      <div class="batch-header">
+        <div class="batch-title">
+          <span class="batch-no">批次 #{{ group.batchNo }}</span>
+          <a-tag :color="batchStatusColor(group.status)">{{ group.status }}</a-tag>
+          <a-tag v-if="group.batchId === activeBatchId" color="blue">当前批次</a-tag>
+        </div>
+        <div class="batch-meta">
+          <span
+            >排产数量 <b>{{ group.qty }}</b></span
+          >
+          <span
+            >工序任务 <b>{{ group.processCount }}</b></span
+          >
+          <span>下发时间 {{ group.dispatchedAt }}</span>
+        </div>
+      </div>
+
+      <a-table
+        size="small"
+        bordered
+        row-key="id"
+        :columns="columns"
+        :data-source="group.rows"
+        :pagination="false"
+        :scroll="{ x: 1600 }"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'processConfig'">
+            <div v-if="record.processConfigTags?.length" class="config-tags">
+              <a-tag
+                v-for="item in record.processConfigTags"
+                :key="item.label"
+                :color="item.color"
+                class="config-tag"
+              >
+                {{ item.label }}
+              </a-tag>
+            </div>
+            <span v-else class="muted">—</span>
+          </template>
+          <template v-else-if="column.key === 'status'">
+            <a-tag :color="scheduleTaskStatusColor(record.status)">{{ record.status }}</a-tag>
+          </template>
+          <template v-else-if="column.key === 'reworkQty'">
+            <a-tag v-if="pendingReworkOf(record) > 0" color="orange">
+              {{ pendingReworkOf(record) }}
+            </a-tag>
+            <span v-else class="muted">0</span>
+          </template>
+          <template v-else-if="column.key === 'outsourceStatus'">
+            <a-tag
+              v-if="record.isOutsourceProcess"
+              :color="outsourceStatusColor(record.outsourceStatus)"
+            >
+              {{ record.outsourceStatus || '未生成' }}
+            </a-tag>
+            <span v-else class="muted">—</span>
+          </template>
+          <template v-else-if="column.key === 'actions'">
+            <a-space :size="8" wrap>
+              <a v-if="!record.isOutsourceProcess" class="action-link" @click="onGenTask(record)">
+                生成任务
+              </a>
+              <template v-if="!record.isOutsourceProcess">
+                <a class="action-link" @click="openEditExecutor(record)">修改执行人</a>
+                <a class="action-link" @click="onResetStatus(record)">重置状态</a>
+                <a
+                  v-if="record.status !== '已终止'"
+                  class="action-link danger"
+                  @click="onTerminateTask(record)"
+                >
+                  终止
+                </a>
+              </template>
+              <a
+                v-if="canCreateProcessOutsourceOrder(record)"
+                class="action-link"
+                @click="onCreateProcessOutsource(record)"
+              >
+                生成工序外协单
+              </a>
+            </a-space>
+          </template>
+        </template>
+      </a-table>
+    </div>
+
+    <a-modal
+      v-model:open="executorModalOpen"
+      title="修改执行人"
+      ok-text="确定"
+      cancel-text="取消"
+      destroy-on-close
+      @ok="saveExecutor"
+    >
+      <div v-if="editingRow" class="executor-edit">
+        <div class="executor-meta">
+          批次 #{{ editingRow.batchNo }} · {{ editingRow.processName }} · {{ editingRow.taskNo }}
+        </div>
+        <ExecutorTagPicker
+          :executors="editingExecutors"
+          :resource-type="editingResourceType"
+          @update:executors="(v) => (editingExecutors = v)"
+        />
+      </div>
+    </a-modal>
+  </div>
+</template>
+
+<script setup>
+import { computed, ref } from 'vue'
+import { Modal, message } from 'ant-design-vue'
+import ExecutorTagPicker from './ExecutorTagPicker.vue'
+import {
+  buildWorkOrderScheduleInfoBatchGroups,
+  scheduleTaskStatusColor,
+} from '@/utils/workOrderRelatedInfo'
+import { batchStatusColor } from '@/utils/workOrderScheduleBatch'
+import { resetWorkOrderScheduleTask, terminateWorkOrderScheduleTask } from '@/utils/workOrderStatus'
+import { outsourcingOrderState } from '@/store/outsourcingOrderStore'
+import { getProcessPendingReworkQty, reworkOrderState } from '@/store/reworkOrderStore'
+
+const props = defineProps({
+  workOrder: { type: Object, required: true },
+})
+
+const emit = defineEmits(['action'])
+
+const batchGroups = computed(() => {
+  // 依赖外协订单变化，补单后刷新「外协状态」
+  void outsourcingOrderState.orders.length
+  return buildWorkOrderScheduleInfoBatchGroups(props.workOrder)
+})
+const totalRowCount = computed(() =>
+  batchGroups.value.reduce((s, g) => s + (g.rows?.length || 0), 0),
+)
+const activeBatchId = computed(() => props.workOrder?.activeScheduleBatchId || '')
+
+const executorModalOpen = ref(false)
+const editingRow = ref(null)
+const editingExecutors = ref([])
+const editingResourceType = ref('工人')
+
+const columns = [
+  { title: '顺序', dataIndex: 'seq', width: 64, fixed: 'left' },
+  { title: '工序名', dataIndex: 'processName', width: 100, fixed: 'left' },
+  { title: '工序配置', key: 'processConfig', width: 120 },
+  { title: '状态', key: 'status', width: 90 },
+  { title: '任务编号', dataIndex: 'taskNo', width: 180, ellipsis: true },
+  { title: '执行者', dataIndex: 'executor', width: 90 },
+  { title: '排产数量', dataIndex: 'scheduleQty', width: 88, align: 'right' },
+  { title: '报工数量', dataIndex: 'reportQty', width: 88, align: 'right' },
+  { title: '良品数', dataIndex: 'goodQty', width: 80, align: 'right' },
+  { title: '不良品数', dataIndex: 'badQty', width: 88, align: 'right' },
+  { title: '返工数', key: 'reworkQty', width: 80, align: 'right' },
+  { title: '报工时长', dataIndex: 'reportDuration', width: 90 },
+  { title: '报工时间', dataIndex: 'reportedAt', width: 140 },
+  { title: '外协状态', key: 'outsourceStatus', width: 100 },
+  { title: '操作', key: 'actions', width: 300, fixed: 'right' },
+]
+
+function pendingReworkOf(record) {
+  void reworkOrderState.orders
+  return getProcessPendingReworkQty(props.workOrder?.id, record.processName, record.batchId)
+}
+
+function isBatchCompleted(status) {
+  return status === '完成' || status === '已完成'
+}
+
+function canCreateProcessOutsourceOrder(record) {
+  if (!record?.isOutsourceProcess || !record.processLead) return false
+  if (isBatchCompleted(record.batchStatus)) return false
+  if (record.batchStatus === '待下发') return false
+  return (record.outsourceStatus || '未生成') === '未生成'
+}
+
+function outsourceStatusColor(status) {
+  if (!status || status === '未生成') return 'default'
+  if (status === '已作废') return 'default'
+  if (status === '已完成') return 'success'
+  if (status === '待提交' || status === '待审核') return 'warning'
+  return 'processing'
+}
+
+function onCreateProcessOutsource(record) {
+  emit('action', {
+    key: 'create-process-outsource',
+    workOrder: props.workOrder,
+    record,
+  })
+}
+
+function onGenTask(record) {
+  emit('action', { key: 'gen-task', workOrder: props.workOrder, record })
+  message.success(`已为任务 ${record.taskNo} 生成小程序任务（演示）`)
+}
+
+function onResetStatus(record) {
+  Modal.confirm({
+    title: '重置状态',
+    content: '重置状态会将任务状态重置，报工数量清零，是否确认？',
+    okText: '确认',
+    cancelText: '取消',
+    onOk: () => {
+      const result = resetWorkOrderScheduleTask(props.workOrder, record)
+      if (!result.ok) {
+        message.error(result.message || '重置失败')
+        return Promise.reject()
+      }
+      emit('action', {
+        key: 'reset-status',
+        workOrder: props.workOrder,
+        record,
+        patch: result.patch,
+      })
+      message.success(
+        result.resetCount
+          ? `已重置 ${result.resetCount} 条任务状态并清零报工数量`
+          : '已重置任务状态并清零报工数量',
+      )
+    },
+  })
+}
+
+function onTerminateTask(record) {
+  Modal.confirm({
+    title: '终止任务',
+    content: `确定终止任务「${record.taskNo || record.processName}」？终止后状态将变为「已终止」。`,
+    okText: '确认终止',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: () => {
+      const result = terminateWorkOrderScheduleTask(props.workOrder, record)
+      if (!result.ok) {
+        message.error(result.message || '终止失败')
+        return Promise.reject()
+      }
+      emit('action', {
+        key: 'terminate-task',
+        workOrder: props.workOrder,
+        record,
+        patch: result.patch,
+      })
+      message.success('任务已终止')
+    },
+  })
+}
+
+function openEditExecutor(record) {
+  editingRow.value = record
+  editingExecutors.value = record.executor && record.executor !== '—' ? [record.executor] : []
+  const batch = (props.workOrder.scheduleBatches || []).find((b) => b.id === record.batchId)
+  const assignment = (batch?.processAssignments || []).find(
+    (a) => a.processName === record.processName,
+  )
+  editingResourceType.value = assignment?.resourceType || '工人'
+  if (assignment?.executors?.length) {
+    editingExecutors.value = [...assignment.executors]
+  }
+  executorModalOpen.value = true
+}
+
+function saveExecutor() {
+  const record = editingRow.value
+  if (!record) {
+    executorModalOpen.value = false
+    return
+  }
+  if (!editingExecutors.value.length) {
+    message.warning('请至少选择一名执行人')
+    return Promise.reject()
+  }
+  const batch = (props.workOrder.scheduleBatches || []).find((b) => b.id === record.batchId)
+  if (!batch) {
+    message.error('排产批次不存在')
+    return Promise.reject()
+  }
+  const assignment = (batch.processAssignments || []).find(
+    (a) => a.processName === record.processName,
+  )
+  if (assignment) {
+    assignment.executors = [...editingExecutors.value]
+  }
+  emit('action', {
+    key: 'edit-executor',
+    workOrder: props.workOrder,
+    record: { ...record, executors: [...editingExecutors.value] },
+  })
+  message.success('执行人已更新')
+  executorModalOpen.value = false
+}
+</script>
+
+<style lang="less" scoped>
+.wo-info-tab {
+  .tab-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .tab-title {
+    font-weight: 600;
+    font-size: 14px;
+  }
+
+  .tab-summary {
+    font-size: 12px;
+    color: rgba(0, 0, 0, 0.45);
+  }
+
+  .batch-block {
+    margin-bottom: 16px;
+    border: 1px solid #f0f0f0;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fff;
+
+    &.is-active {
+      border-color: #91caff;
+      box-shadow: 0 0 0 1px rgba(22, 119, 255, 0.08);
+    }
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  .batch-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+    padding: 10px 12px;
+    background: #fafafa;
+    border-bottom: 1px solid #f0f0f0;
+  }
+
+  .batch-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .batch-no {
+    font-weight: 600;
+    font-size: 13px;
+    color: #1f1f1f;
+  }
+
+  .batch-meta {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 12px 16px;
+    font-size: 12px;
+    color: rgba(0, 0, 0, 0.55);
+
+    b {
+      color: rgba(0, 0, 0, 0.85);
+      font-weight: 600;
+    }
+  }
+
+  .config-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .config-tag {
+    margin: 0;
+  }
+
+  .muted {
+    color: rgba(0, 0, 0, 0.25);
+  }
+
+  .action-link {
+    font-size: 12px;
+
+    &.danger {
+      color: #ff4d4f;
+    }
+  }
+
+  .executor-edit {
+    .executor-meta {
+      margin-bottom: 12px;
+      color: rgba(0, 0, 0, 0.65);
+      font-size: 13px;
+    }
+  }
+}
+</style>

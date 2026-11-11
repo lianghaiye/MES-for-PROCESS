@@ -1,0 +1,837 @@
+<template>
+  <div class="product-bom-detail-page">
+    <a-spin :spinning="loading">
+      <template v-if="record">
+        <div class="detail-page-head">
+          <div class="head-left">
+            <a-tooltip
+              v-if="activeTab === 'detail'"
+              :title="leftSidebarCollapsed ? '展开结构树' : '收起结构树'"
+            >
+              <a-button type="text" size="small" class="head-tree-toggle-btn" @click="toggleLeft">
+                <MenuUnfoldOutlined v-if="leftSidebarCollapsed" />
+                <MenuFoldOutlined v-else />
+              </a-button>
+            </a-tooltip>
+            <a-tabs v-model:active-key="activeTab" class="detail-tabs">
+              <a-tab-pane key="detail" :tab="isShipBom ? '附件明细' : 'BOM明细'" />
+              <a-tab-pane v-if="!isShipBom" key="versions" tab="历史版本" />
+              <a-tab-pane key="logs" tab="操作记录" />
+            </a-tabs>
+          </div>
+          <a-space class="head-actions">
+            <a-button
+              v-if="activeTab === 'detail'"
+              type="primary"
+              @click="overviewModalOpen = true"
+            >
+              概览
+            </a-button>
+            <a-button v-if="activeTab === 'detail' && !isShipBom" @click="relationOpen = true">
+              查看关联BOM
+            </a-button>
+            <a-button v-if="activeTab === 'detail'" @click="printModalOpen = true">
+              <PrinterOutlined />
+              打印
+            </a-button>
+            <a-button :disabled="!isShipBom && !canEdit" @click="handleEdit">编辑</a-button>
+            <a-button v-if="isShipBom" @click="handleToggleShipStatus">
+              {{ isShipAttachmentEnabled(record) ? '停用' : '启用' }}
+            </a-button>
+            <a-button v-else-if="isArchivedBom" type="primary" @click="handleReEnable">
+              启用
+            </a-button>
+            <a-button v-else :disabled="record.status === '已归档'" @click="handleArchive">
+              归档
+            </a-button>
+            <a-button @click="handleBack">返回列表</a-button>
+          </a-space>
+        </div>
+
+        <template v-if="activeTab === 'detail'">
+          <div class="detail-tab-body">
+            <div class="page-body">
+              <aside
+                v-show="!leftSidebarCollapsed"
+                class="left-panel"
+                :style="{ width: `${leftPanelWidth}px` }"
+              >
+                <BomTreePanel
+                  readonly
+                  hide-import-template
+                  :flat-nodes="flatNodes"
+                  :line-items="lineItems"
+                  :selected-node-id="selectedNodeId"
+                  :root-meta="detailRootMeta"
+                  @select-node="selectedNodeId = $event"
+                />
+              </aside>
+              <div
+                v-show="!leftSidebarCollapsed"
+                class="panel-resizer"
+                @mousedown.prevent="onResizeMouseDown"
+              />
+              <main class="right-panel">
+                <DetailSectionCard title="基础信息" class="info-card">
+                  <BomBasicInfoSection :bom="record" />
+                </DetailSectionCard>
+                <DetailSectionCard v-if="!isShipBom" title="根件信息" class="info-card">
+                  <BomRootProductEditor
+                    readonly
+                    :item-type="record.itemType || 'product'"
+                    :item-id="String(record.itemId || '')"
+                    :item-name="record.itemName || ''"
+                    :item-code="record.itemCode || ''"
+                    :spec-model="record.specModel || ''"
+                    :material="record.material || ''"
+                    :drawing-no="record.drawingNo || ''"
+                    :process-route="record.processRoute || ''"
+                    :tech-params="record.techParams || ''"
+                    :matching-requirements="record.matchingRequirements || record.remark || ''"
+                    @open-detail="openDetailRootItem"
+                  />
+                </DetailSectionCard>
+                <DetailSectionCard title="物料明细" class="table-section">
+                  <BomMaterialTable
+                    readonly
+                    :flat-nodes="flatNodes"
+                    :line-items="lineItems"
+                    :column-settings="columnSettings"
+                    :context-node-id="selectedNodeId"
+                    :root-item-label="detailRootItemLabel"
+                    :summary-meta="detailSummaryMeta"
+                    empty-variant="no-children"
+                  />
+                </DetailSectionCard>
+              </main>
+            </div>
+          </div>
+        </template>
+
+        <template v-else-if="activeTab === 'versions'">
+          <DetailSectionCard
+            :title="`${isShipBom ? '版本变更' : 'BOM 版本变更'}`"
+            class="versions-tab-card"
+          >
+            <BomVersionHistoryPanel
+              :version-group-id="record.versionGroupId"
+              :current-bom="record"
+              @view-bom="handleVersionViewBom"
+              @compare="handleVersionCompare"
+            />
+          </DetailSectionCard>
+        </template>
+
+        <template v-else-if="activeTab === 'logs'">
+          <DetailSectionCard title="操作记录">
+            <a-table
+              :columns="logColumns"
+              :data-source="operationLogs"
+              row-key="id"
+              size="small"
+              bordered
+              :pagination="false"
+            />
+          </DetailSectionCard>
+        </template>
+
+        <BomOverviewModal
+          v-model:open="overviewModalOpen"
+          :flat-nodes="flatNodes"
+          :line-items="lineItems"
+          :root-item-name="record.itemName"
+          :overview-info="overviewInfo"
+        />
+        <BomPrintModal
+          v-model:open="printModalOpen"
+          :flat-nodes="flatNodes"
+          :line-items="lineItems"
+          :root-item-name="record.itemName"
+          :overview-info="overviewInfo"
+          :column-settings="overviewColumnSettings"
+        />
+        <BomRelationDrawer v-model:open="relationOpen" :bom="record" :line-items="lineItems" />
+
+        <BomArchiveReferenceModal
+          v-model:open="archiveRefOpen"
+          :item-name="record?.itemName || ''"
+          :bom-name="record?.bomName || ''"
+          :version="record?.version || ''"
+          :refs="archiveParentRefs"
+          @confirm="onArchiveRefConfirm"
+        />
+
+        <QcTemplateConflictModal
+          v-model:open="shipConflictOpen"
+          title="随货配件冲突"
+          entity-label="随货配件"
+          :kind="shipConflictKind"
+          :conflicts="shipConflictRows"
+          :current-template-name="record?.bomName || ''"
+          @confirm="onShipConflictConfirm"
+          @cancel="pendingShipEnable = false"
+        />
+        <BomVersionCompareModal
+          v-model:open="versionCompareOpen"
+          :old-bom="compareOldBom"
+          :new-bom="compareNewBom"
+          :title="versionCompareTitle"
+        />
+      </template>
+      <a-empty
+        v-else-if="!loading"
+        :description="isShipAttachmentPath(route.path) ? '未找到该随货配件' : '未找到该 BOM'"
+      />
+    </a-spin>
+  </div>
+</template>
+
+<script>
+export default { name: 'ProductBomDetailView' }
+</script>
+
+<script setup>
+import DetailSectionCard from '@/components/DetailSectionCard.vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { Modal, message } from 'ant-design-vue'
+import { PrinterOutlined, MenuUnfoldOutlined, MenuFoldOutlined } from '@ant-design/icons-vue'
+import { getVersionsInGroup } from '@/mock/productBom'
+import { buildBomOperationLogs } from '@/mock/bomOperationLogs'
+import {
+  defaultBomColumnSettings,
+  isShipBomType,
+  normalizeBomType,
+  normalizeBomMaterialColumnSettings,
+} from '@/mock/bomMaterialColumns'
+import {
+  bomWorkspaceDetailPath,
+  bomWorkspaceEditPath,
+  bomWorkspaceListPath,
+  isShipAttachmentPath,
+  SHIP_ATTACHMENT_DISPLAY_NAME,
+  shipAttachmentDetailPath,
+} from '@/utils/shipAttachmentNav'
+import { defaultBomOverviewColumnSettings } from '@/mock/bomOverviewColumns'
+import { mergeColumnSettings } from '@/utils/tableColumnSettings'
+import { isBomEditable, isBomArchived, isBomActive } from '@/mock/productBomOptions'
+import {
+  getProductBomById,
+  archiveProductBom,
+  enableProductBom,
+  productBomState,
+  enableShipAttachment,
+  disableShipAttachment,
+} from '@/store/productBomStore'
+import { isShipAttachmentEnabled } from '@/utils/shipAttachmentScope'
+import { deliveryOrderState } from '@/store/deliveryOrderStore'
+import { salesOrderState } from '@/store/salesOrderStore'
+import QcTemplateConflictModal from '@/views/quality/components/QcTemplateConflictModal.vue'
+import { findParentBomReferences } from '@/utils/bomVersionReference'
+import { loadBomDetailStructure } from '@/utils/bomImport'
+import { getRootTreeId, ROOT_ID } from '@/utils/bomTree'
+import { tabStore, useTabs } from '@/composables/useTabs'
+import { openCreateTab } from '@/utils/openCreateTab'
+import { useBomSplitLayout } from '@/composables/useBomSplitLayout'
+import BomTreePanel from './components/BomTreePanel.vue'
+import BomBasicInfoSection from './components/BomBasicInfoSection.vue'
+import BomRootProductEditor from './components/BomRootProductEditor.vue'
+import BomMaterialTable from './components/BomMaterialTable.vue'
+import BomVersionHistoryPanel from './components/BomVersionHistoryPanel.vue'
+import BomOverviewModal from './components/BomOverviewModal.vue'
+import BomPrintModal from './components/BomPrintModal.vue'
+import BomRelationDrawer from './components/BomRelationDrawer.vue'
+import BomArchiveReferenceModal from './components/BomArchiveReferenceModal.vue'
+import BomVersionCompareModal from '@/components/BomVersionCompareModal.vue'
+
+const route = useRoute()
+const router = useRouter()
+const { openTab, closeTab } = useTabs()
+
+const loading = ref(false)
+const record = ref(null)
+const flatNodes = ref([])
+const lineItems = ref([])
+const selectedNodeId = ref(ROOT_ID)
+const activeTab = ref('detail')
+const overviewModalOpen = ref(false)
+const printModalOpen = ref(false)
+const relationOpen = ref(false)
+const archiveRefOpen = ref(false)
+const archiveParentRefs = ref([])
+const versionCompareOpen = ref(false)
+const compareOldBom = ref(null)
+const compareNewBom = ref(null)
+const versionCompareTitle = ref('')
+const shipConflictOpen = ref(false)
+const shipConflictKind = ref('single')
+const shipConflictRows = ref([])
+const pendingShipEnable = ref(false)
+const columnSettings = ref(
+  normalizeBomMaterialColumnSettings(JSON.parse(JSON.stringify(defaultBomColumnSettings))),
+)
+const overviewColumnSettings = ref(loadOverviewColumnSettings())
+
+function loadOverviewColumnSettings() {
+  try {
+    const raw = localStorage.getItem('i_doms_table_col_bom-overview-list')
+    if (raw) {
+      return mergeColumnSettings(defaultBomOverviewColumnSettings, JSON.parse(raw))
+    }
+  } catch {
+    /* ignore */
+  }
+  return JSON.parse(JSON.stringify(defaultBomOverviewColumnSettings))
+}
+
+const { leftSidebarCollapsed, leftPanelWidth, toggleLeft, onResizeMouseDown } = useBomSplitLayout({
+  scopeKey: 'bom-detail',
+})
+
+const logColumns = [
+  { title: '操作时间', dataIndex: 'operatedAt', width: 160 },
+  { title: '操作人', dataIndex: 'operator', width: 100 },
+  { title: '操作类型', dataIndex: 'action', width: 100 },
+  { title: '说明', dataIndex: 'remark', ellipsis: true },
+]
+
+const isShipBom = computed(() => isShipBomType(record.value?.bomType))
+
+const detailRootMeta = computed(() => {
+  const bom = record.value
+  if (!bom) return { code: '', name: '', specModel: '', supplyForm: '', subItemCount: 0 }
+  const rootId = getRootTreeId(flatNodes.value)
+  return {
+    code: bom.itemCode,
+    name: bom.itemName,
+    specModel: bom.specModel,
+    supplyForm: '',
+    subItemCount: lineItems.value.filter((l) => l.parentTreeId === rootId).length,
+  }
+})
+
+const detailRootItemLabel = computed(() => {
+  const bom = record.value
+  if (!bom) return ''
+  const parts = [bom.itemCode, bom.itemName].filter(Boolean)
+  return parts.length ? parts.join(' ') : bom.bomName || ''
+})
+
+const detailSummaryMeta = computed(() => {
+  const bom = record.value
+  if (!bom) return { version: '—', effectiveAt: '—', creator: '—' }
+  return {
+    version: bom.version || '—',
+    effectiveAt: formatDisplayDate(bom.effectiveAt),
+    creator: bom.creator || '—',
+  }
+})
+
+function openDetailRootItem() {
+  const bom = record.value
+  if (!bom?.itemId) {
+    message.info('未绑定产品')
+    return
+  }
+  if (bom.itemType === 'spu') {
+    message.info('产品族暂无独立详情页')
+    return
+  }
+  openCreateTab(router, openTab, {
+    path: `/product-process/products/${bom.itemId}`,
+    title: bom.itemName || '产品详情',
+  })
+}
+
+const versionList = computed(() => {
+  if (!record.value?.versionGroupId) return record.value ? [record.value] : []
+  return getVersionsInGroup(productBomState.boms, record.value.versionGroupId)
+})
+
+const operationLogs = computed(() => buildBomOperationLogs(record.value))
+
+const overviewInfo = computed(() => {
+  const bom = record.value
+  if (!bom) {
+    return {
+      bomNo: '—',
+      specModel: '—',
+      version: '—',
+      material: '—',
+      drawingNo: '—',
+      techParams: '—',
+      matchingRequirements: '—',
+    }
+  }
+  return {
+    bomNo: bom.bomNo || '—',
+    specModel: bom.specModel || '—',
+    version: bom.version || '—',
+    material: bom.material || '—',
+    drawingNo: bom.drawingNo || '—',
+    techParams: bom.techParams || '—',
+    matchingRequirements: bom.matchingRequirements || bom.remark || '—',
+  }
+})
+
+const canEdit = computed(() => isBomEditable(record.value))
+const isArchivedBom = computed(() => isBomArchived(record.value))
+
+function formatDisplayDate(val) {
+  if (!val) return '—'
+  return String(val).split(' ')[0]
+}
+
+function loadDetail() {
+  const id = route.params.id
+  loading.value = true
+  const bom = getProductBomById(id)
+  record.value = bom ? { ...bom } : null
+  if (bom) {
+    const structure = loadBomDetailStructure(bom)
+    flatNodes.value = structure.flatNodes
+    lineItems.value = structure.lineItems
+    selectedNodeId.value = structure.flatNodes.find((n) => n.isRoot)?.id || ROOT_ID
+
+    const tab = tabStore.tabs.find((t) => t.path === route.path)
+    if (tab) tab.title = bom.bomName || (isShipBomType(bom.bomType) ? '随货配件详情' : 'BOM详情')
+  }
+  loading.value = false
+  if (bom && isShipBomType(bom.bomType) && !isShipAttachmentPath(route.path)) {
+    router.replace(shipAttachmentDetailPath(bom.id))
+    return
+  }
+  if (bom && !isShipBomType(bom.bomType) && isShipAttachmentPath(route.path)) {
+    router.replace(`/product-process/bom/${bom.id}`)
+  }
+}
+
+watch(() => route.params.id, loadDetail, { immediate: true })
+
+function openBomDetail(row) {
+  if (row.id === record.value?.id) return
+  const path = bomWorkspaceDetailPath(row)
+  openTab(path, row.bomName || (isShipBomType(row.bomType) ? '随货配件详情' : 'BOM详情'))
+  router.push(path)
+}
+
+function findBomByVersion(version) {
+  if (!version) return null
+  return versionList.value.find((b) => b.version === version) || null
+}
+
+function handleVersionViewBom(item) {
+  const bomId = item.bomId
+  if (!bomId) {
+    message.info('未找到该版本 BOM')
+    return
+  }
+  if (bomId === record.value?.id) return
+  const bom = getProductBomById(bomId)
+  if (!bom) {
+    message.info('未找到该版本 BOM')
+    return
+  }
+  openBomDetail(bom)
+}
+
+function handleVersionCompare(item) {
+  const newBom = item.bomId ? getProductBomById(item.bomId) : findBomByVersion(item.version)
+  const oldBom = item.compareBomId
+    ? getProductBomById(item.compareBomId)
+    : findBomByVersion(item.compareVersion)
+  if (!newBom || !oldBom) {
+    message.info('暂无可对比的版本数据')
+    return
+  }
+  compareOldBom.value = oldBom
+  compareNewBom.value = newBom
+  versionCompareTitle.value = `${record.value?.itemName || record.value?.bomName || 'BOM'} · ${item.compareVersion} → ${item.version}`
+  versionCompareOpen.value = true
+}
+
+function handleEdit() {
+  if (!record.value) return
+  if (!isShipBom.value && !canEdit.value) {
+    message.info('当前状态的 BOM 不可编辑')
+    return
+  }
+  const path = bomWorkspaceEditPath(record.value)
+  openTab(
+    path,
+    `编辑${isShipBom.value ? SHIP_ATTACHMENT_DISPLAY_NAME : 'BOM'}·${record.value.bomName || ''}`,
+  )
+  router.push(path)
+}
+
+function isShipAttachmentReferenced(row) {
+  const id = String(row?.id || '')
+  if (!id) return false
+  const inDelivery = (deliveryOrderState.orders || []).some((o) =>
+    (o.shipAttachments || []).some((a) => String(a.sourceBomId) === id),
+  )
+  if (inDelivery) return true
+  return (salesOrderState.orders || []).some((so) =>
+    (so.deliveryApplications || []).some((app) =>
+      (app.shipAttachments || []).some((a) => String(a.sourceBomId) === id),
+    ),
+  )
+}
+
+function handleToggleShipStatus() {
+  const row = record.value
+  if (!row) return
+  if (isShipAttachmentEnabled(row)) {
+    const referenced = isShipAttachmentReferenced(row)
+    Modal.confirm({
+      title: '停用确认',
+      content: referenced
+        ? '当前随货配件已被引用，停用后，发货将按优先级匹配已启用的随货配件。是否确认停用？'
+        : `确定要停用随货配件「${row.bomName}」吗？`,
+      onOk: () => {
+        const res = disableShipAttachment(row.id, { force: true })
+        if (!res.ok) {
+          message.warning(res.message || '操作失败')
+          return
+        }
+        loadDetail()
+        message.success('已停用')
+      },
+    })
+    return
+  }
+  const res = enableShipAttachment(row.id)
+  if (res.needConflict) {
+    pendingShipEnable.value = true
+    shipConflictKind.value = res.conflict.kind
+    shipConflictRows.value = res.conflict.conflicts || []
+    shipConflictOpen.value = true
+    return
+  }
+  if (!res.ok) {
+    message.warning(res.message || '启用失败')
+    return
+  }
+  loadDetail()
+  message.success('已启用')
+}
+
+function onShipConflictConfirm(resolution) {
+  if (!pendingShipEnable.value || !record.value) return
+  const res = enableShipAttachment(record.value.id, { conflictResolution: resolution })
+  pendingShipEnable.value = false
+  if (!res.ok) {
+    message.warning(res.message || '启用失败')
+    return
+  }
+  loadDetail()
+  message.success('已启用')
+}
+
+function findActiveBomsForCurrentItem() {
+  const bom = record.value
+  if (!bom) return []
+  const bomType = normalizeBomType(bom.bomType)
+  return productBomState.boms.filter(
+    (b) =>
+      b.itemType === bom.itemType &&
+      b.itemId === bom.itemId &&
+      b.id !== bom.id &&
+      isBomActive(b) &&
+      normalizeBomType(b.bomType) === bomType,
+  )
+}
+
+function doReEnable() {
+  if (!record.value) return
+  const res = enableProductBom(record.value.id)
+  if (res?.error) {
+    message.warning(res.error)
+    return
+  }
+  loadDetail()
+  const archivedHint = res.archivedActives?.length
+    ? `，已同步归档同产品生效 BOM（版本 ${res.archivedActives
+        .map((a) => a.version || a.bomNo)
+        .filter(Boolean)
+        .join('、')}）`
+    : ''
+  message.success(`已重新启用${archivedHint}`)
+}
+
+function handleReEnable() {
+  if (!record.value || !isArchivedBom.value) return
+  const actives = findActiveBomsForCurrentItem()
+  if (actives.length) {
+    const versions = actives
+      .map((a) => a.version || a.bomNo)
+      .filter(Boolean)
+      .join('、')
+    Modal.confirm({
+      title: '再次启用确认',
+      content: `该产品已有生效 BOM（版本 ${versions}），启用后将同步归档。确认继续？`,
+      onOk: () => doReEnable(),
+    })
+    return
+  }
+  Modal.confirm({
+    title: '再次启用确认',
+    content: `确定重新启用 BOM「${record.value.bomName}」吗？`,
+    onOk: () => doReEnable(),
+  })
+}
+
+function handleArchive() {
+  if (!record.value) return
+  const refs = findParentBomReferences(record.value)
+  if (refs.length) {
+    archiveParentRefs.value = refs
+    archiveRefOpen.value = true
+    return
+  }
+  Modal.confirm({
+    title: '确认归档',
+    content: `确定归档${isShipBom.value ? '随货配件' : 'BOM'}「${record.value.bomName}」吗？`,
+    onOk: () => {
+      const res = archiveProductBom(record.value.id)
+      if (!res) {
+        message.warning('归档失败')
+        return
+      }
+      loadDetail()
+      message.success('已归档')
+    },
+  })
+}
+
+function onArchiveRefConfirm({ removeRefs = [], keepSelfRefs = [] }) {
+  if (!record.value) return
+  const res = archiveProductBom(record.value.id, {
+    removeRefs,
+    keepSelfRefs,
+  })
+  if (!res) {
+    message.warning('归档失败')
+    return
+  }
+  loadDetail()
+  const parts = ['已归档']
+  if (res.removedCount) parts.push(`已从母件移除 ${res.removedCount} 处`)
+  if (res.keptCount) parts.push(`已保留本级 ${res.keptCount} 处`)
+  message.success(parts.join('，'))
+}
+
+function handleBack() {
+  const detailPath = route.path
+  const listPath = bomWorkspaceListPath(record.value)
+  const closingActive = tabStore.activePath === detailPath
+  closeTab(detailPath)
+  router.push(closingActive ? tabStore.activePath || listPath : listPath)
+}
+</script>
+
+<style lang="less" scoped>
+.product-bom-detail-page {
+  margin: -12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100% + 24px);
+  max-height: calc(100% + 24px);
+  overflow: hidden;
+  background: var(--page-bg, #f0f2f5);
+
+  :deep(.ant-spin-nested-loading),
+  :deep(.ant-spin-container) {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+.detail-tab-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.detail-page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: #fff;
+  padding: 0 12px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
+
+  .head-left {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .head-tree-toggle-btn {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    color: rgba(0, 0, 0, 0.65);
+  }
+
+  .head-actions {
+    flex-shrink: 0;
+    padding: 8px 0;
+  }
+}
+
+.detail-tabs {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  padding: 0;
+  margin-bottom: 0;
+  border-radius: 0;
+
+  :deep(.ant-tabs-nav) {
+    margin-bottom: 0;
+  }
+}
+
+.page-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0;
+  padding: 0 8px 8px;
+  overflow: hidden;
+}
+
+.left-panel {
+  flex: 0 0 auto;
+  align-self: stretch;
+  height: 100%;
+  min-height: 0;
+  min-width: 200px;
+  max-width: 520px;
+  overflow: hidden;
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+
+  :deep(.bom-tree-panel) {
+    flex: 1;
+    height: 100%;
+    min-height: 0;
+  }
+}
+
+.panel-resizer {
+  flex: 0 0 6px;
+  align-self: stretch;
+  margin: 0 2px;
+  cursor: col-resize;
+  border-radius: 3px;
+  position: relative;
+
+  &:hover,
+  &:active {
+    background: rgba(22, 119, 255, 0.12);
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 2px;
+    height: 36px;
+    border-radius: 1px;
+    background: #d9d9d9;
+  }
+}
+
+.right-panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section-card {
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  padding: 12px 16px;
+  flex-shrink: 0;
+
+  .section-title {
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+}
+
+.info-card {
+  .info-block + .info-block {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed #f0f0f0;
+  }
+}
+
+.table-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+
+  :deep(.bom-material-table) {
+    height: auto;
+  }
+}
+
+.versions-tab-card {
+  margin: 0 8px 8px;
+}
+
+.link {
+  color: #1677ff;
+  cursor: pointer;
+}
+
+@media (max-width: 992px) {
+  .page-body {
+    flex-direction: column;
+  }
+
+  .left-panel {
+    width: 100% !important;
+    max-width: none;
+    min-height: 240px;
+  }
+
+  .panel-resizer {
+    display: none;
+  }
+}
+</style>

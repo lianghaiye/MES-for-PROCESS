@@ -1,0 +1,192 @@
+---
+description: i-doms-web 详情页规范（页头、操作按钮、胶囊 Tab、只读区块、子表）
+globs: i-doms-web/**/*Detail*.vue
+alwaysApply: true
+---
+
+# 详情页规范
+
+详情页用于展示**一条完整记录的只读信息**，并承载该记录的主要操作入口。
+
+与新增/编辑页分工：只读 + 业务动作 → 详情；填写保存 → `form-page-shell.mdc`。
+
+## 对齐与卡片间距
+
+| 项 | 约定 |
+|----|------|
+| 与全局标签 | 标题栏 / 内容白盒与 `GlobalTabs` **左右对齐**（页根 `margin:-12` + `padding:12`） |
+| 卡片间距 | 详情区块白盒之间垂直间距统一 **8px**（`DetailSectionCard` / `.section-card`） |
+
+参考：`SalesOrderDetailView.vue`、`ProductBomDetailView.vue`、`QcTaskDetailView.vue`、`WorkOrderProductionSections.vue`；胶囊 Tab 样式见 `detail-tabs-pill.less`。
+
+## 页头
+
+| 项 | 约定 |
+|----|------|
+| 左侧 | 返回箭头 `←` + **标题**（单号 / 名称，**20px / 600**）+ **状态标签** |
+| 右侧 | 操作按钮组（右对齐） |
+
+状态继续用 **`a-tag`**（功能色），可并列多个（如进度状态 + 发货状态）。
+
+## 操作按钮组
+
+- 位于标题**右侧**
+- 包含该记录可执行的核心操作，如：反审、申请发货、价格变更、完成、作废、打印、返回列表
+- 按钮随状态显隐（无权限 / 不可执行则不展示）
+- 超过 **6~8 个**收入 **「更多 ▾」**（同 `list-toolbar.mdc` 收纳规则）
+
+```vue
+<div class="page-header">
+  <div class="header-left">
+    <a-button type="text" size="small" @click="handleBack"><ArrowLeftOutlined /></a-button>
+    <span class="order-no">{{ record.docNo }}</span>
+    <a-tag :color="statusColor(record.status)">{{ record.status }}</a-tag>
+  </div>
+  <a-space :size="8">
+    <!-- 核心操作 ≤ 6~8 -->
+    <a-button size="small" @click="handleBack">返回列表</a-button>
+  </a-space>
+</div>
+```
+
+## 胶囊 Tab
+
+当详情包含**多个子维度**时使用，例如：
+
+概览｜发货信息｜入库信息｜采购｜生产｜EBOM｜审批信息｜附件…
+
+| 项 | 约定 |
+|----|------|
+| 样式 | 胶囊 Tab（`detail-tabs-pill`） |
+| 顺序 | **固定**，不随用户拖拽改序 |
+| 当前 Tab | **高亮** |
+| 数量角标 | 可用 `发货信息 (N)` 或 badge |
+
+```vue
+<a-tabs v-model:active-key="activeTab" class="detail-tabs detail-tabs-pill">
+  <a-tab-pane key="overview" tab="概览" />
+  <a-tab-pane key="shipping" :tab="`发货信息 (${count})`" />
+  …
+</a-tabs>
+```
+
+单维度详情可不使用 Tab，直接铺区块。
+
+## 基本信息区块
+
+| 项 | 约定 |
+|----|------|
+| 容器 | **白色卡片**（内层可再包一层浅边框面板，对齐工单详情） |
+| 标题 | **16px / 600** |
+| **顶部 meta 栏** | 创建/质检等审计字段横排在最上；下接 **虚线分隔**（`1px dashed #e8e8e8`），再铺业务字段 |
+| 字段 | **3~4 列**栅格；`字段名：字段值` 只读文本（可用 `a-form` inline + `a-col :span="6"`，同 `WorkOrderProductionSections`） |
+| **label** | **text-2** `#4e5969`（比值浅）；meta 栏 label 约 **13px / 0.45 透明度** |
+| **值** | **text-1** `#1f2329`（或 `rgba(0,0,0,0.88)`），左对齐 |
+| 长文本（备注） | **占整行**（`span: 24`） |
+| 禁止 | **带边框两列表格**展示元数据；与明细 `a-table` 区分开 |
+
+### Meta 栏字段（按业务取舍）
+
+| 页面 | 顶部 meta（示例） |
+|------|-------------------|
+| 生产/总装工单 | 状态、排产旁显、创建日期、创建人、更新时间、更新人… |
+| **质检详情** | **创建人、创建时间、质检人、质检时间、录入端**（勿再塞进下方四列） |
+
+参考：`WorkOrderProductionSections.vue`（`show-meta-bar`）、`QcTaskDetailView.vue`。
+
+抽屉内轻量详情的基本信息细则见 `drawer-layout.mdc`「只读基本信息区」。
+
+## 质检详情 · 生成入库单
+
+适用于来料质检 / 外协回货检详情（`QcTaskDetailView`）：
+
+| 项 | 约定 |
+|----|------|
+| 位置 | 页头**右上角**操作区（与「质检」「返回列表」同组） |
+| 显隐 | **尚未关联入库单**（无 `inboundOrderNo` / `inboundOrderId`），且质检已完成、`evaluateQcInboundGate` 通过时展示 |
+| 行为 | 与列表「生成入库单」同一套弹窗与回写（`GenerateInboundOrderModal` / `OutsourcingGenerateInboundModal` + `attachQcTaskInboundOrder`） |
+| 已入库 | 已有入库单号则**不展示**该按钮 |
+
+## 内容区块展开 / 收起（强制）
+
+详情页**每一个有内容的区块**（基本信息、价格汇总、库存提醒、各类明细/子表、审批、附件等）均须支持展开 / 收起。
+
+| 项 | 约定 |
+|----|------|
+| 组件 | 优先 `@DetailSectionCard.vue`（`section-card` + 标题行 + 折叠） |
+| 按钮位置 | 区块标题行**右侧** |
+| 样式 | **蓝色文字链**（`a-button type="link" size="small"`）+ **▾ / ▴** |
+| 文案 | 展开态：`收起 ▴`；收起态：`展开 ▾` |
+| 默认 | **默认展开**；标题行右侧可另放业务操作（`#actions`），折叠按钮仍在最右 |
+| 禁止 | ❌ 用图标按钮或灰色次按钮代替文字链；❌ 有内容区块无折叠入口 |
+
+```vue
+<DetailSectionCard title="基本信息">
+  <SalesOrderBasicInfoSection :order="order" />
+</DetailSectionCard>
+
+<DetailSectionCard title="销售明细">
+  <template #actions>
+    <a-button size="small">导出</a-button>
+  </template>
+  <a-table … />
+</DetailSectionCard>
+```
+
+## 汇总 / 子表区块
+
+- 每个子表前有**独立标题**，**可折叠**（同上）
+- 子表操作按钮在标题行右侧（`#actions`）或子表**左上方**，收纳规则同工具栏（≤6~8，超出「更多」）
+- 子表本身只读；行内「详情」链接可跳转关联单据
+
+## 只读样式
+
+| 项 | 约定 |
+|----|------|
+| label | **14px / text-2**（`#4e5969`），比值稍浅 |
+| 值文字 | **14px / text-1**（`#1f2329`） |
+| 空值 | **—** |
+| 金额 / 数量 | **右对齐**；小数位一致 |
+| 状态 | **标签组件**，不用纯色文字代替 |
+| 布尔 | 「是 / 否」文字 |
+
+## 页面结构总览
+
+```
+← SO2024001  [已审核] [部分发货]     反审｜申请发货｜…｜打印｜返回列表
+[概览] [发货信息] [入库] [采购] [生产] [EBOM] [审批] …
+└─ 基本信息（白卡）
+     ├─ meta 栏：创建人 / 创建时间 / …（虚线分隔）
+     └─ 3~4 列业务字段
+└─ 价格汇总 / 明细子表（可折叠）
+```
+
+质检详情示例：
+
+```
+← ZJ…  [已完成] [质检通过]     生成入库单｜质检｜返回列表
+└─ 基本信息
+     ├─ meta：创建人｜创建时间｜质检人｜质检时间｜录入端
+     └─ 质检单号 / 类型 / 状态 / 结果 / 供应商 / …
+└─ 质检明细（子表）
+```
+
+## 避免
+
+- ❌ 详情页做成可直接改字段的大表单（应跳转编辑页）
+- ❌ 操作按钮超过 8 个仍全部平铺
+- ❌ Tab 顺序每进一次页面都变
+- ❌ 空值显示空白或 `null` / `undefined`
+- ❌ 状态用纯文本不用 Tag
+- ❌ 基本信息用 bordered 表格；label 与值同色无层级
+- ❌ 创建人/质检人等审计字段与业务字段混排在同一栅格、无 meta 栏
+- ❌ 质检详情已有入库单仍展示「生成入库单」
+
+## 与其他规范
+
+| 场景 | 规则 |
+|------|------|
+| 新增 / 编辑页壳 | `form-page-shell.mdc` |
+| 列表工具栏收纳 | `list-toolbar.mdc` |
+| 轻量预览对照列表 | 抽屉 `drawer-layout.mdc` |
+| 折叠表单组织 | `form-collapsible-card.mdc` |

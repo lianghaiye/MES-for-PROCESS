@@ -1,0 +1,641 @@
+/**
+ * 表单横向布局：标签与输入控件同一行排列（用于弹窗、筛选区等）
+ * 使用方式：<a-form layout="inline" class="horizontal-form"> + a-row/a-col
+ */
+.horizontal-form {
+  .ant-form-item {
+    width: 100%;
+    margin-bottom: 0;
+    margin-inline-end: 0;
+  }
+
+  .ant-form-item-row {
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+
+  .ant-form-item-label {
+    flex: 0 0 auto;
+    padding-bottom: 0;
+
+    > label {
+      height: 32px;
+      line-height: 32px;
+      font-size: 13px;
+      white-space: nowrap;
+
+      &::after {
+        margin-inline: 2px 6px;
+      }
+    }
+  }
+
+  .ant-form-item-control {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ant-input,
+  .ant-select,
+  .ant-picker,
+  .ant-input-number,
+  .ant-input-affix-wrapper,
+  .ant-input-group {
+    width: 100%;
+  }
+
+  /* TextArea：禁止沿用 small Input 的固定高度，避免只剩字数统计条 */
+  textarea.ant-input,
+  .ant-input-textarea .ant-input,
+  .ant-input-textarea textarea {
+    width: 100%;
+    height: auto !important;
+    min-height: 54px;
+    line-height: 1.5715 !important;
+    resize: vertical;
+  }
+
+  .ant-input-textarea,
+  .ant-input-textarea-show-count {
+    width: 100%;
+  }
+
+  .remark-item .ant-form-item-label {
+    flex: 0 0 68px;
+    align-self: flex-start;
+
+    > label {
+      height: auto;
+      line-height: 22px;
+      padding-top: 4px;
+    }
+  }
+
+  .remark-item .ant-form-item-row {
+    align-items: flex-start;
+  }
+}
+
+/**
+ * 列表筛选区白底卡片盒子（对齐 list-search-area.mdc）
+ * 各页 scoped 可覆盖 padding/margin；描边与背景由此统一兜底
+ */
+.filter-card {
+  margin-bottom: 8px;
+  padding: 12px 16px;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--divider, #e5e6eb);
+  border-radius: 8px;
+}
+
+/**
+ * 列表表格区白底卡片：左右 12px（对齐 list-table-box.mdc）
+ * 不含卡片/分栏视图的 .list-card；各页 scoped 可覆盖上下或整侧 padding
+ */
+.table-card {
+  padding-left: 12px;
+  padding-right: 12px;
+  box-sizing: border-box;
+}
+
+/**
+ * 列表操作栏白盒：对齐生产管理 split-action-card
+ * 兼容 .toolbar-row / .list-action-card / .split-action-card
+ */
+.list-action-card,
+.toolbar-row,
+.split-action-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  background: #fff;
+  border: 1px solid var(--divider, #e5e6eb);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  box-sizing: border-box;
+  min-height: 48px;
+
+  > .ant-space,
+  > .split-action-left,
+  > .split-action-right,
+  > .toolbar-icons {
+    display: inline-flex !important;
+    align-items: center !important;
+    align-self: center;
+    margin-bottom: 0 !important;
+    line-height: 1;
+  }
+
+  .split-action-left,
+  .toolbar-left {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .split-action-right,
+  .toolbar-icons {
+    flex-shrink: 0;
+    margin-left: auto;
+    gap: 8px;
+    color: rgba(0, 0, 0, 0.45);
+  }
+
+  .ant-space-item {
+    display: inline-flex !important;
+    align-items: center !important;
+    line-height: 1;
+  }
+
+  /* 统一中号高度，避免左侧 small 按钮相对右侧 radio 偏矮/显偏下 */
+  .ant-btn {
+    height: 32px !important;
+    padding-inline: 15px;
+    font-size: 14px;
+    border-radius: 6px;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center;
+    line-height: 1 !important;
+  }
+
+  .ant-btn.ant-btn-icon-only,
+  .ant-btn.ant-btn-text,
+  .ant-btn.ant-btn-link {
+    width: 32px;
+    min-width: 32px;
+    padding-inline: 0;
+  }
+
+  .ant-btn > .anticon {
+    display: inline-flex;
+    align-items: center;
+    line-height: 1;
+  }
+
+  .ant-radio-group,
+  .layout-mode-switch {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .ant-radio-button-wrapper {
+    height: 32px !important;
+    line-height: 30px !important;
+    padding-inline: 12px;
+    font-size: 14px;
+  }
+}
+
+/**
+ * 列表筛选：一行 5 个（覆盖各页 a-row/a-col 栅格）
+ * - 条件 ≥5 出现展开/收起（默认收起）
+ * - 5～9（is-filter-compact）：收起最多 4 个，按钮在第一行末尾；展开后第 5 个起按序铺满，按钮在第二行/最后一行末尾
+ * - ≥10：收起最多 9 个，按钮钉在第二行末尾；展开后按钮落在最后一行末尾
+ * 已使用 ListFilterBar 的页面不受影响
+ */
+.filter-card .filter-form.horizontal-form > .ant-row.list-filter-grid-row,
+.filter-card .filter-form.horizontal-form > .ant-row {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px 8px;
+  width: 100%;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  row-gap: 6px;
+}
+
+.filter-card .filter-form.horizontal-form > .ant-row > .ant-col {
+  max-width: none !important;
+  width: auto !important;
+  flex: none !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* 操作按钮：右对齐第 5 列；展开时随条件流到最后一行末尾 */
+.filter-card
+  .filter-form.horizontal-form
+  > .ant-row
+  > .ant-col.ant-col-24:has(.filter-actions-item),
+.filter-card .filter-form.horizontal-form > .ant-row > .ant-col:has(.filter-actions-item),
+.filter-card .filter-form.horizontal-form > .ant-row > .ant-col:has(.filter-footer),
+.filter-card .filter-form.horizontal-form > .ant-row > .ant-col:has(.filter-actions) {
+  grid-column: 5;
+  grid-row: auto;
+  align-self: center;
+  display: flex !important;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+/* 收起（≥10）：按钮钉在第二行末尾（前 9 个条件 + 按钮） */
+.filter-card
+  .filter-form.horizontal-form
+  > .ant-row.is-filter-collapsed:not(.is-filter-compact)
+  > .ant-col.ant-col-24:has(.filter-actions-item),
+.filter-card
+  .filter-form.horizontal-form
+  > .ant-row.is-filter-collapsed:not(.is-filter-compact)
+  > .ant-col:has(.filter-actions-item),
+.filter-card
+  .filter-form.horizontal-form
+  > .ant-row.is-filter-collapsed:not(.is-filter-compact)
+  > .ant-col:has(.filter-footer),
+.filter-card
+  .filter-form.horizontal-form
+  > .ant-row.is-filter-collapsed:not(.is-filter-compact)
+  > .ant-col:has(.filter-actions) {
+  grid-row: 2;
+}
+
+/* 收起（5～9 紧凑）：按钮钉在第一行末尾（前 4 个条件 + 按钮） */
+.filter-card
+  .filter-form.horizontal-form
+  > .ant-row.is-filter-collapsed.is-filter-compact
+  > .ant-col.ant-col-24:has(.filter-actions-item),
+.filter-card
+  .filter-form.horizontal-form
+  > .ant-row.is-filter-collapsed.is-filter-compact
+  > .ant-col:has(.filter-actions-item),
+.filter-card
+  .filter-form.horizontal-form
+  > .ant-row.is-filter-collapsed.is-filter-compact
+  > .ant-col:has(.filter-footer),
+.filter-card
+  .filter-form.horizontal-form
+  > .ant-row.is-filter-collapsed.is-filter-compact
+  > .ant-col:has(.filter-actions) {
+  grid-row: 1;
+}
+
+/* 条件不足 5 个时：按钮与条件同行（第 1 行第 5 列） */
+.filter-card
+  .filter-form.horizontal-form
+  > .ant-row
+  > .ant-col.ant-col-24:has(.filter-actions-item):nth-child(-n + 5),
+.filter-card
+  .filter-form.horizontal-form
+  > .ant-row
+  > .ant-col:has(.filter-actions-item):nth-child(-n + 5),
+.filter-card
+  .filter-form.horizontal-form
+  > .ant-row
+  > .ant-col:has(.filter-footer):nth-child(-n + 5),
+.filter-card
+  .filter-form.horizontal-form
+  > .ant-row
+  > .ant-col:has(.filter-actions):nth-child(-n + 5) {
+  grid-row: 1;
+}
+
+.filter-card
+  .filter-form.horizontal-form
+  > .ant-row
+  > .ant-col:has(.filter-actions-item)
+  .filter-actions-item,
+.filter-card .filter-form.horizontal-form > .ant-row > .ant-col:has(.filter-footer) .filter-footer,
+.filter-card
+  .filter-form.horizontal-form
+  > .ant-row
+  > .ant-col:has(.filter-actions)
+  .filter-actions {
+  margin-bottom: 0;
+  width: auto;
+  max-width: 100%;
+}
+
+.filter-card
+  .filter-form.horizontal-form
+  > .ant-row
+  > .ant-col:has(.filter-actions-item)
+  .ant-form-item-control-input-content,
+.filter-card
+  .filter-form.horizontal-form
+  > .ant-row
+  > .ant-col:has(.filter-footer)
+  .ant-form-item-control-input-content,
+.filter-card
+  .filter-form.horizontal-form
+  > .ant-row
+  > .ant-col:has(.filter-actions)
+  .ant-form-item-control-input-content {
+  display: flex !important;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.filter-card
+  .filter-form.horizontal-form
+  > .ant-row
+  > .ant-col:has(.filter-actions-item)
+  .ant-space,
+.filter-card .filter-form.horizontal-form > .ant-row > .ant-col:has(.filter-footer) .ant-space,
+.filter-card .filter-form.horizontal-form > .ant-row > .ant-col:has(.filter-actions) .ant-space {
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+
+/* 自动增强的展开/收起：蓝色文字链 + ▾/▴（对齐 ListFilterBar / 工单页） */
+.list-filter-auto-toggle {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 0 4px !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #1677ff !important;
+  font-size: 14px;
+  line-height: 1.2;
+  height: auto !important;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.list-filter-auto-toggle:hover {
+  color: #4096ff !important;
+}
+
+.list-filter-auto-toggle-icon {
+  font-size: 12px;
+  line-height: 1;
+  transform: translateY(-0.5px);
+}
+
+/* 收起（≥10）：隐藏第 10 个及以后的条件 */
+.filter-card
+  .filter-form.horizontal-form
+  > .ant-row.is-filter-collapsed:not(.is-filter-compact)
+  > .ant-col:not(:has(.filter-actions-item)):not(:has(.filter-footer)):not(
+    :has(.filter-actions)
+  ):nth-child(n + 10) {
+  display: none !important;
+}
+
+/* 收起（5～9 紧凑）：隐藏第 5 个及以后的条件 */
+.filter-card
+  .filter-form.horizontal-form
+  > .ant-row.is-filter-collapsed.is-filter-compact
+  > .ant-col:not(:has(.filter-actions-item)):not(:has(.filter-footer)):not(
+    :has(.filter-actions)
+  ):nth-child(n + 5) {
+  display: none !important;
+}
+
+@media (max-width: 1199px) {
+  .filter-card .filter-form.horizontal-form > .ant-row.list-filter-grid-row,
+  .filter-card .filter-form.horizontal-form > .ant-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .filter-card .filter-form.horizontal-form > .ant-row > .ant-col:has(.filter-actions-item),
+  .filter-card .filter-form.horizontal-form > .ant-row > .ant-col:has(.filter-footer),
+  .filter-card .filter-form.horizontal-form > .ant-row > .ant-col:has(.filter-actions) {
+    grid-column: 3;
+    grid-row: auto;
+  }
+
+  .filter-card
+    .filter-form.horizontal-form
+    > .ant-row.is-filter-collapsed
+    > .ant-col:has(.filter-actions-item),
+  .filter-card
+    .filter-form.horizontal-form
+    > .ant-row.is-filter-collapsed
+    > .ant-col:has(.filter-footer),
+  .filter-card
+    .filter-form.horizontal-form
+    > .ant-row.is-filter-collapsed
+    > .ant-col:has(.filter-actions),
+  .filter-card
+    .filter-form.horizontal-form
+    > .ant-row.is-filter-collapsed.is-filter-compact
+    > .ant-col:has(.filter-actions-item),
+  .filter-card
+    .filter-form.horizontal-form
+    > .ant-row.is-filter-collapsed.is-filter-compact
+    > .ant-col:has(.filter-footer),
+  .filter-card
+    .filter-form.horizontal-form
+    > .ant-row.is-filter-collapsed.is-filter-compact
+    > .ant-col:has(.filter-actions) {
+    grid-row: 2;
+  }
+
+  .filter-card
+    .filter-form.horizontal-form
+    > .ant-row
+    > .ant-col:has(.filter-actions-item):nth-child(-n + 3),
+  .filter-card
+    .filter-form.horizontal-form
+    > .ant-row
+    > .ant-col:has(.filter-footer):nth-child(-n + 3),
+  .filter-card
+    .filter-form.horizontal-form
+    > .ant-row
+    > .ant-col:has(.filter-actions):nth-child(-n + 3) {
+    grid-row: 1;
+  }
+
+  .filter-card
+    .filter-form.horizontal-form
+    > .ant-row.is-filter-collapsed
+    > .ant-col:not(:has(.filter-actions-item)):not(:has(.filter-footer)):not(
+      :has(.filter-actions)
+    ):nth-child(n + 6) {
+    display: none !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .filter-card .filter-form.horizontal-form > .ant-row.list-filter-grid-row,
+  .filter-card .filter-form.horizontal-form > .ant-row {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+
+  .filter-card .filter-form.horizontal-form > .ant-row > .ant-col:has(.filter-actions-item),
+  .filter-card .filter-form.horizontal-form > .ant-row > .ant-col:has(.filter-footer),
+  .filter-card .filter-form.horizontal-form > .ant-row > .ant-col:has(.filter-actions) {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .filter-card
+    .filter-form.horizontal-form
+    > .ant-row.is-filter-collapsed
+    > .ant-col:not(:has(.filter-actions-item)):not(:has(.filter-footer)):not(
+      :has(.filter-actions)
+    ):nth-child(n + 10) {
+    display: none !important;
+  }
+}
+
+/* 内联筛选（无 a-row）：同样一行 5 个 */
+.filter-card .filter-form.list-filter-inline-grid {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px 8px;
+  width: 100%;
+  align-items: center;
+}
+
+.filter-card .filter-form.list-filter-inline-grid > .ant-form-item {
+  width: 100% !important;
+  margin-inline-end: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+.filter-card .filter-form.list-filter-inline-grid > .ant-form-item .ant-input,
+.filter-card .filter-form.list-filter-inline-grid > .ant-form-item .ant-select,
+.filter-card .filter-form.list-filter-inline-grid > .ant-form-item .ant-picker,
+.filter-card .filter-form.list-filter-inline-grid > .ant-form-item .ant-input-affix-wrapper {
+  width: 100% !important;
+}
+
+/* 操作区：默认右对齐第 5 列；条件≥5 展开时落在第二行末尾 */
+.filter-card .filter-form.list-filter-inline-grid > .ant-form-item:has(.ant-space),
+.filter-card .filter-form.list-filter-inline-grid > .ant-form-item.filter-actions-item,
+.filter-card .filter-form.list-filter-inline-grid > .ant-form-item.filter-actions,
+.filter-card .filter-form.list-filter-inline-grid > .ant-form-item:not(:has(.ant-form-item-label)) {
+  grid-column: 5;
+  grid-row: 2;
+  justify-self: stretch;
+  display: flex !important;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.filter-card
+  .filter-form.list-filter-inline-grid
+  > .ant-form-item:has(.ant-space)
+  .ant-form-item-control-input-content,
+.filter-card
+  .filter-form.list-filter-inline-grid
+  > .ant-form-item.filter-actions-item
+  .ant-form-item-control-input-content,
+.filter-card
+  .filter-form.list-filter-inline-grid
+  > .ant-form-item.filter-actions
+  .ant-form-item-control-input-content {
+  display: flex !important;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+/* 条件不足 5 个：按钮与条件同行 */
+.filter-card
+  .filter-form.list-filter-inline-grid
+  > .ant-form-item:has(.ant-space):nth-child(-n + 5),
+.filter-card
+  .filter-form.list-filter-inline-grid
+  > .ant-form-item.filter-actions-item:nth-child(-n + 5),
+.filter-card .filter-form.list-filter-inline-grid > .ant-form-item.filter-actions:nth-child(-n + 5),
+.filter-card
+  .filter-form.list-filter-inline-grid
+  > .ant-form-item:not(:has(.ant-form-item-label)):nth-child(-n + 5) {
+  grid-row: 1;
+}
+
+/* 收起（≥10）：隐藏第 10 个起的条件；按钮在第二行 */
+.filter-card
+  .filter-form.list-filter-inline-grid.is-filter-collapsed:not(.is-filter-compact)
+  > .ant-form-item:not(.filter-actions-item):not(.filter-actions):not(:has(.ant-space)):nth-child(
+    n + 10
+  ) {
+  display: none !important;
+}
+
+/* 收起（5～9 紧凑）：隐藏第 5 个起的条件；按钮在第一行末尾 */
+.filter-card
+  .filter-form.list-filter-inline-grid.is-filter-collapsed.is-filter-compact
+  > .ant-form-item:not(.filter-actions-item):not(.filter-actions):not(:has(.ant-space)):nth-child(
+    n + 5
+  ) {
+  display: none !important;
+}
+
+.filter-card
+  .filter-form.list-filter-inline-grid.is-filter-collapsed.is-filter-compact
+  > .ant-form-item:has(.ant-space),
+.filter-card
+  .filter-form.list-filter-inline-grid.is-filter-collapsed.is-filter-compact
+  > .ant-form-item.filter-actions-item,
+.filter-card
+  .filter-form.list-filter-inline-grid.is-filter-collapsed.is-filter-compact
+  > .ant-form-item.filter-actions,
+.filter-card
+  .filter-form.list-filter-inline-grid.is-filter-collapsed.is-filter-compact
+  > .ant-form-item:not(:has(.ant-form-item-label)) {
+  grid-row: 1;
+}
+
+@media (max-width: 1199px) {
+  .filter-card .filter-form.list-filter-inline-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .filter-card .filter-form.list-filter-inline-grid > .ant-form-item:has(.ant-space),
+  .filter-card .filter-form.list-filter-inline-grid > .ant-form-item.filter-actions-item,
+  .filter-card .filter-form.list-filter-inline-grid > .ant-form-item.filter-actions,
+  .filter-card
+    .filter-form.list-filter-inline-grid
+    > .ant-form-item:not(:has(.ant-form-item-label)) {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  .filter-card
+    .filter-form.list-filter-inline-grid
+    > .ant-form-item:has(.ant-space):nth-child(-n + 3),
+  .filter-card
+    .filter-form.list-filter-inline-grid
+    > .ant-form-item.filter-actions-item:nth-child(-n + 3),
+  .filter-card
+    .filter-form.list-filter-inline-grid
+    > .ant-form-item.filter-actions:nth-child(-n + 3),
+  .filter-card
+    .filter-form.list-filter-inline-grid
+    > .ant-form-item:not(:has(.ant-form-item-label)):nth-child(-n + 3) {
+    grid-row: 1;
+  }
+
+  .filter-card
+    .filter-form.list-filter-inline-grid.is-filter-collapsed.is-filter-compact
+    > .ant-form-item:has(.ant-space),
+  .filter-card
+    .filter-form.list-filter-inline-grid.is-filter-collapsed.is-filter-compact
+    > .ant-form-item.filter-actions-item,
+  .filter-card
+    .filter-form.list-filter-inline-grid.is-filter-collapsed.is-filter-compact
+    > .ant-form-item.filter-actions,
+  .filter-card
+    .filter-form.list-filter-inline-grid.is-filter-collapsed.is-filter-compact
+    > .ant-form-item:not(:has(.ant-form-item-label)) {
+    grid-row: 2;
+  }
+}
+
+@media (max-width: 767px) {
+  .filter-card .filter-form.list-filter-inline-grid {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+
+  .filter-card .filter-form.list-filter-inline-grid > .ant-form-item:has(.ant-space),
+  .filter-card .filter-form.list-filter-inline-grid > .ant-form-item.filter-actions-item,
+  .filter-card .filter-form.list-filter-inline-grid > .ant-form-item.filter-actions,
+  .filter-card
+    .filter-form.list-filter-inline-grid
+    > .ant-form-item:not(:has(.ant-form-item-label)) {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}

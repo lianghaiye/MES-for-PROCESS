@@ -1,0 +1,67 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          HUSKY: 0
+
+      - name: Build
+        run: npm run build
+        env:
+          # Pages runner 默认堆偏小，生产构建易 OOM；与本地 8G 对齐
+          NODE_OPTIONS: --max-old-space-size=6144
+          VUE_APP_BUILD_SHA: ${{ github.sha }}
+          VUE_APP_BUILD_TIME: ${{ github.run_number }}
+          # 演示站问答：仓库 Secrets 配公网代理地址（勿把 PAT 写进前端）
+          # 例：https://i-doms-agent-proxy.onrender.com
+          VUE_APP_AGENT_BASE_URL: ${{ secrets.VUE_APP_AGENT_BASE_URL }}
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

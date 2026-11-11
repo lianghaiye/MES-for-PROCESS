@@ -1,0 +1,2931 @@
+<template>
+  <FormCreateShell
+    :page-mode="pageMode"
+    :open="open"
+    :title="shellTitle"
+    width="96%"
+    :mask-closable="false"
+    destroy-on-close
+    class="create-sales-order-modal"
+    @cancel="handleCancel"
+    @update:open="(val) => emit('update:open', val)"
+  >
+    <div class="so-form-shell">
+      <div class="form-layout">
+        <div class="section-block modal-basic-card" :class="{ 'is-collapsed': basicInfoCollapsed }">
+          <div class="section-title-row">
+            <span class="section-title">基本信息</span>
+            <a-button type="link" size="small" class="collapse-btn" @click="toggleBasicInfo">
+              {{ basicInfoCollapsed ? '展开' : '收起' }}
+              <DownOutlined v-if="basicInfoCollapsed" />
+              <UpOutlined v-else />
+            </a-button>
+          </div>
+          <a-form v-show="!basicInfoCollapsed" layout="inline" class="header-form horizontal-form">
+            <a-row :gutter="[12, 8]" style="width: 100%">
+              <a-col :span="6">
+                <a-form-item label="销售单号">
+                  <a-input
+                    v-model:value="form.orderNo"
+                    placeholder="留空则系统自动生成"
+                    allow-clear
+                    size="small"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item label="紧急度" required>
+                  <a-select v-model:value="form.urgency" size="small" :options="urgencyOpts" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item label="合同类型" required>
+                  <a-select
+                    v-model:value="form.contractType"
+                    size="small"
+                    :options="contractTypeOpts"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item label="合同编号">
+                  <ContractSelect
+                    v-model="form.contractNo"
+                    size="small"
+                    :lock-contract-type="
+                      form.contractType === '临时合同' ? '' : form.contractType || ''
+                    "
+                    :preferred-customer-name="form.customerName || ''"
+                    cash-direction="收入"
+                    :placeholder="
+                      form.contractType === '临时合同'
+                        ? '可直接输入临时合同编号'
+                        : '搜索选择生效收入合同，也可直接输入编号'
+                    "
+                    @change="onContractNoChange"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item label="结算币种" required>
+                  <a-select
+                    v-model:value="form.settlementCurrency"
+                    size="small"
+                    :options="currencyOpts"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item label="订单类型" required>
+                  <a-select v-model:value="form.orderType" size="small" :options="orderTypeOpts" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item label="客户名称" required>
+                  <CustomerSelect
+                    v-model="form.customerName"
+                    size="small"
+                    placeholder="请搜索或选择客户名称"
+                    @change="onCustomerChange"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item label="联系人">
+                  <a-select
+                    v-model:value="form.contactPerson"
+                    size="small"
+                    placeholder="请选择 联系人"
+                    allow-clear
+                    :options="contactOpts"
+                    @change="onContactChange"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item label="联系人电话">
+                  <a-input
+                    v-model:value="form.contactPhone"
+                    size="small"
+                    placeholder="请输入 联系人电话"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item label="交货地址">
+                  <a-input
+                    v-model:value="form.deliveryAddress"
+                    size="small"
+                    placeholder="请输入 交货地址"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item label="交货方式" required>
+                  <a-select
+                    v-model:value="form.deliveryMethod"
+                    size="small"
+                    :options="deliveryMethodOpts"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item label="技术规范编码">
+                  <a-input
+                    v-model:value="form.techSpecCode"
+                    size="small"
+                    placeholder="请输入 技术规范编码"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item label="交货日期">
+                  <a-date-picker
+                    v-model:value="form.reminderDate"
+                    size="small"
+                    style="width: 100%"
+                    placeholder="请选择 交货日期"
+                    @change="onHeaderDeliveryDateChange"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item label="业务员">
+                  <a-select
+                    v-model:value="form.salesperson"
+                    size="small"
+                    :options="salespersonOpts"
+                    show-search
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item label="结算类型">
+                  <a-select
+                    v-model:value="form.settlementType"
+                    size="small"
+                    allow-clear
+                    placeholder="请选择 结算类型"
+                    :options="settlementTypeOpts"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item label="付款比例">
+                  <a-select
+                    v-model:value="form.paymentRatio"
+                    size="small"
+                    allow-clear
+                    placeholder="请选择 付款比例"
+                    :options="paymentRatioOpts"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item label="首付/定金金额">
+                  <a-input-number
+                    v-model:value="form.downPaymentAmount"
+                    size="small"
+                    :min="0"
+                    :precision="2"
+                    style="width: 100%"
+                    placeholder="请输入 首付/定金金额"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="24">
+                <a-form-item label="备注" class="remark-item">
+                  <a-textarea
+                    v-model:value="form.remark"
+                    :rows="2"
+                    :maxlength="1000"
+                    show-count
+                    placeholder="请输入 备注"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </a-form>
+        </div>
+
+        <div v-if="customerDiscountHint && !basicInfoCollapsed" class="discount-hint">
+          {{ customerDiscountHint }}
+        </div>
+
+        <div class="price-summary-card">
+          <div class="price-summary-header" @click="priceSummaryCollapsed = !priceSummaryCollapsed">
+            <span class="section-title">价格汇总</span>
+            <span class="header-amounts">
+              <span class="header-amount-item">
+                最终成交额（含税）
+                <strong>￥{{ formatMoney(orderAmount) }}</strong>
+              </span>
+              <span class="header-amount-item">
+                最终成交额（不含税）
+                <strong>￥{{ formatMoney(orderPricing.amountExTax) }}</strong>
+              </span>
+              <span class="header-amount-item">
+                销售总额（含税）
+                <strong>￥{{ formatMoney(orderPricing.lineAmountInTax) }}</strong>
+              </span>
+              <span class="header-amount-item">
+                销售总额（不含税）
+                <strong>￥{{ formatMoney(orderPricing.lineAmountExTax) }}</strong>
+              </span>
+            </span>
+            <DownOutlined :class="{ rotated: priceSummaryCollapsed }" class="collapse-icon" />
+          </div>
+          <div v-show="!priceSummaryCollapsed" class="price-summary-body">
+            <div v-if="salesDiscountEnabled" class="summary-amounts-strip">
+              <span class="amount-chip discount">
+                行优惠（合计）
+                <strong>-￥{{ formatMoney(orderPricing.lineDiscountTotal) }}</strong>
+              </span>
+              <span class="amount-chip discount">
+                整单优惠
+                <strong>-￥{{ formatMoney(orderPricing.orderDiscountTotal) }}</strong>
+              </span>
+            </div>
+            <a-form
+              v-if="salesDiscountEnabled"
+              layout="inline"
+              size="small"
+              class="discount-inline-form"
+            >
+              <a-form-item label="折扣策略">
+                <a-radio-group
+                  v-model:value="form.discountStrategy"
+                  size="small"
+                  @change="syncOrderDiscountRate"
+                >
+                  <a-radio :value="DISCOUNT_STRATEGIES.NONE">
+                    {{ DISCOUNT_STRATEGY_LABELS[DISCOUNT_STRATEGIES.NONE] }}
+                  </a-radio>
+                  <a-radio :value="DISCOUNT_STRATEGIES.LINE">
+                    {{ DISCOUNT_STRATEGY_LABELS[DISCOUNT_STRATEGIES.LINE] }}
+                  </a-radio>
+                  <a-radio :value="DISCOUNT_STRATEGIES.ORDER">
+                    {{ DISCOUNT_STRATEGY_LABELS[DISCOUNT_STRATEGIES.ORDER] }}
+                  </a-radio>
+                  <a-radio :value="DISCOUNT_STRATEGIES.STACK" disabled>
+                    {{ DISCOUNT_STRATEGY_LABELS[DISCOUNT_STRATEGIES.STACK] }}
+                  </a-radio>
+                </a-radio-group>
+              </a-form-item>
+              <a-form-item label="整单折扣(%)">
+                <a-input-number
+                  v-model:value="form.orderDiscountPercent"
+                  size="small"
+                  :min="1"
+                  :max="100"
+                  :precision="2"
+                  :disabled="orderDiscountFieldsDisabled"
+                  style="width: 88px"
+                  @change="syncOrderDiscountRate"
+                />
+              </a-form-item>
+              <a-form-item label="整单减免(元)">
+                <a-input-number
+                  v-model:value="form.orderDiscountAmount"
+                  size="small"
+                  :min="0"
+                  :precision="2"
+                  disabled
+                  style="width: 100px"
+                />
+              </a-form-item>
+              <a-form-item label="优惠原因" class="discount-reason-item">
+                <a-input
+                  v-model:value="form.orderDiscountReason"
+                  size="small"
+                  placeholder="如：老客户合作、批量采购"
+                  style="width: 200px"
+                />
+              </a-form-item>
+            </a-form>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section-header" @click="detailCollapsed = !detailCollapsed">
+            <span class="section-title">销售明细</span>
+            <DownOutlined :class="{ rotated: detailCollapsed }" class="collapse-icon" />
+          </div>
+
+          <div v-show="!detailCollapsed" class="detail-section-body">
+            <div class="detail-toolbar">
+              <a-space wrap>
+                <a-button type="primary" @click="openProductPicker">
+                  <PlusOutlined />
+                  选择产品
+                </a-button>
+                <a-button @click="addManualProductLine">
+                  <PlusOutlined />
+                  添加产品
+                </a-button>
+                <a-button class="tax-toggle-btn" @click="toggleTaxMode">
+                  切换为：{{ taxModeExcluding ? '计算含税' : '计算不含税' }}
+                </a-button>
+                <a-button @click="openStockRemindDrawer()">查看库存提醒</a-button>
+                <span class="tax-hint">{{ taxModeHint }}</span>
+              </a-space>
+              <a-popover trigger="click" placement="bottomRight">
+                <template #title>列设置</template>
+                <template #content>
+                  <a-checkbox-group v-model:value="visibleColumnKeys" class="column-settings">
+                    <a-row>
+                      <a-col v-for="col in settingColumnDefs" :key="col.key" :span="12">
+                        <a-checkbox :value="col.key" :disabled="fixedColumnKeys.includes(col.key)">
+                          {{ col.title }}
+                        </a-checkbox>
+                      </a-col>
+                    </a-row>
+                  </a-checkbox-group>
+                </template>
+                <a-button type="text" class="column-setting-btn">
+                  <AppstoreOutlined />
+                </a-button>
+              </a-popover>
+            </div>
+
+            <a-table
+              :columns="displayColumns"
+              :data-source="form.lineItems"
+              row-key="id"
+              size="small"
+              bordered
+              :pagination="false"
+              :scroll="{ x: tableScrollX }"
+              class="sales-line-table"
+              locale="{ emptyText: '暂无数据' }"
+            >
+              <template #headerCell="{ column }">
+                <div class="header-cell">
+                  <span class="header-title">{{ column.title }}</span>
+                  <span
+                    v-if="column.key !== 'index'"
+                    class="resize-handle"
+                    @mousedown.prevent="(e) => startColumnResize(e, column.key)"
+                  />
+                </div>
+              </template>
+
+              <template #bodyCell="{ column, record, index }">
+                <template v-if="column.key === 'index'">{{ index + 1 }}</template>
+
+                <template v-else-if="column.key === 'businessType'">
+                  <a-select
+                    v-model:value="record.businessType"
+                    size="small"
+                    style="width: 100%"
+                    :options="lineBusinessTypeOpts(record)"
+                    @change="(val) => onBusinessTypeChange(record, val)"
+                  />
+                </template>
+
+                <template v-else-if="column.key === 'productName'">
+                  <a-input
+                    v-if="record.isManualLine"
+                    v-model:value="record.productName"
+                    size="small"
+                    placeholder="请输入产品名称"
+                  />
+                  <span v-else class="readonly-cell">{{ record.productName || '—' }}</span>
+                </template>
+
+                <template v-else-if="column.key === 'productCode'">
+                  <a-input
+                    v-if="record.isManualLine"
+                    v-model:value="record.productCode"
+                    size="small"
+                    placeholder="请输入产品编码"
+                  />
+                  <span v-else class="readonly-cell">{{ record.productCode || '—' }}</span>
+                </template>
+
+                <template v-else-if="column.key === 'specModel'">
+                  <a-input
+                    v-if="record.isManualLine"
+                    v-model:value="record.specModel"
+                    size="small"
+                  />
+                  <a
+                    v-else-if="isSpuLine(record)"
+                    class="variant-field-link"
+                    @click.prevent="openVariantConfig(record)"
+                  >
+                    {{ record.specModel || '点击配置' }}
+                  </a>
+                  <span v-else>{{ record.specModel || '—' }}</span>
+                </template>
+
+                <template v-else-if="column.key === 'material'">
+                  <a-input
+                    v-if="record.isManualLine"
+                    v-model:value="record.material"
+                    size="small"
+                  />
+                  <a
+                    v-else-if="isSpuLine(record)"
+                    class="variant-field-link"
+                    @click.prevent="openVariantConfig(record)"
+                  >
+                    {{ record.material || '点击配置' }}
+                  </a>
+                  <span v-else>{{ record.material || '—' }}</span>
+                </template>
+
+                <template v-else-if="column.key === 'variantAttr'">
+                  <a
+                    v-if="isSpuLine(record)"
+                    class="variant-field-link"
+                    @click.prevent="openVariantConfig(record)"
+                  >
+                    {{ lineVariantDisplay(record) || '—' }}
+                  </a>
+                  <template v-else>
+                    <a-tooltip
+                      v-if="lineVariantDisplay(record)"
+                      :title="lineVariantDisplay(record)"
+                    >
+                      <span>{{ lineVariantDisplay(record) }}</span>
+                    </a-tooltip>
+                    <span v-else>—</span>
+                  </template>
+                </template>
+
+                <template v-else-if="column.key === 'drawingNo'">
+                  <span v-if="!record.isManualLine" class="readonly-cell">{{
+                    record.drawingNo || '—'
+                  }}</span>
+                  <a-input
+                    v-else
+                    v-model:value="record.drawingNo"
+                    size="small"
+                    placeholder="图号"
+                  />
+                </template>
+
+                <template v-else-if="column.key === 'techParams'">
+                  <SalesLineLongTextCell
+                    :value="record.techParams"
+                    @edit="openLongTextEdit(record, 'techParams')"
+                  />
+                </template>
+
+                <template v-else-if="column.key === 'matchingRequirements'">
+                  <SalesLineLongTextCell
+                    :value="record.matchingRequirements"
+                    @edit="openLongTextEdit(record, 'matchingRequirements')"
+                  />
+                </template>
+
+                <template v-else-if="column.key === 'salesQty'">
+                  <a-input-number
+                    v-model:value="record.salesQty"
+                    size="small"
+                    :min="0"
+                    :precision="4"
+                    :formatter="inputNumberFormatter"
+                    :parser="inputNumberParser"
+                    style="width: 100%"
+                    @change="onLineFieldChange(record)"
+                  />
+                </template>
+
+                <template v-else-if="column.key === 'needIndustrialLabel'">
+                  <a-checkbox v-model:checked="record.needIndustrialLabel" />
+                </template>
+
+                <template v-else-if="column.key === 'deliveryMode'">
+                  <a-select
+                    v-model:value="record.deliveryMode"
+                    size="small"
+                    style="width: 100%"
+                    :options="deliveryModeOpts"
+                  />
+                </template>
+
+                <template v-else-if="column.key === 'stockFulfillmentMode'">
+                  <a-select
+                    v-model:value="record.stockFulfillmentMode"
+                    size="small"
+                    style="width: 100%"
+                    :options="stockFulfillmentModeOpts"
+                    @change="(val) => onStockFulfillmentModeChange(record, val)"
+                  />
+                </template>
+
+                <template v-else-if="column.key === 'preferStockTakeQty'">
+                  <a-input-number
+                    v-if="isPreferStockMode(record)"
+                    v-model:value="record.preferStockTakeQty"
+                    size="small"
+                    :min="0"
+                    :max="Number(record.salesQty ?? record.qty) || undefined"
+                    :precision="0"
+                    placeholder="填写要用的现货数量，空则尽量占满"
+                    style="width: 100%"
+                  />
+                  <span v-else class="readonly-cell">—</span>
+                </template>
+
+                <template v-else-if="column.key === 'deliveryDate'">
+                  <a-date-picker
+                    :value="lineDateValue(record.deliveryDate)"
+                    size="small"
+                    style="width: 100%"
+                    @change="(d) => onLineDateChange(record, d)"
+                  />
+                </template>
+
+                <template v-else-if="column.key === 'bomName'">
+                  <span class="readonly-cell">{{ record.bomName || '—' }}</span>
+                </template>
+
+                <template v-else-if="column.key === 'bomVersion'">
+                  <span class="readonly-cell">{{ record.bomVersion || '—' }}</span>
+                </template>
+
+                <template v-else-if="column.key === 'unit'">
+                  <a-input v-model:value="record.unit" size="small" />
+                </template>
+
+                <template v-else-if="column.key === 'externalJobNo'">
+                  <SalesLineLongTextCell
+                    :value="record.externalJobNo"
+                    :max-preview-len="16"
+                    @edit="openLongTextEdit(record, 'externalJobNo')"
+                  />
+                </template>
+
+                <template v-else-if="column.key === 'lineDiscountPercent'">
+                  <a-input-number
+                    v-if="showLineDiscount"
+                    :value="getLineDiscountPercent(record)"
+                    size="small"
+                    :min="1"
+                    :max="100"
+                    :precision="2"
+                    style="width: 100%"
+                    :disabled="isContractPriceLocked(record)"
+                    @update:value="(v) => setLineDiscountPercent(record, v)"
+                  />
+                  <span v-else>—</span>
+                </template>
+
+                <template v-else-if="column.key === 'lineDiscountAmount'">
+                  {{ formatMoney(record.lineDiscountAmount) }}
+                </template>
+
+                <template v-else-if="column.key === 'taxRate'">
+                  <a-input-number
+                    v-model:value="record.taxRate"
+                    size="small"
+                    :min="0"
+                    :max="100"
+                    :precision="2"
+                    style="width: 100%"
+                    @change="onLineFieldChange(record)"
+                  />
+                </template>
+
+                <template v-else-if="column.key === 'unitPriceExTax'">
+                  <a-input-number
+                    v-model:value="record.unitPriceExTax"
+                    size="small"
+                    :min="0"
+                    :precision="4"
+                    :formatter="inputNumberFormatter"
+                    :parser="inputNumberParser"
+                    :disabled="!taxModeExcluding || isContractPriceLocked(record)"
+                    style="width: 100%"
+                    @change="onUnitPriceExTaxChange(record)"
+                  />
+                </template>
+
+                <template v-else-if="column.key === 'unitPriceInTax'">
+                  <a-input-number
+                    v-model:value="record.unitPriceInTax"
+                    size="small"
+                    :min="0"
+                    :precision="4"
+                    :formatter="inputNumberFormatter"
+                    :parser="inputNumberParser"
+                    :disabled="taxModeExcluding || isContractPriceLocked(record)"
+                    style="width: 100%"
+                    @change="onUnitPriceInTaxChange(record)"
+                  />
+                </template>
+
+                <template v-else-if="column.key === 'totalPriceExTax'">
+                  {{ formatMoney(record.totalPriceExTax) }}
+                </template>
+
+                <template v-else-if="column.key === 'totalPriceInTax'">
+                  {{ formatMoney(record.totalPriceInTax) }}
+                </template>
+
+                <template v-else-if="column.key === 'packagingForm'">
+                  <SalesLineLongTextCell
+                    :value="record.packagingForm"
+                    @edit="openLongTextEdit(record, 'packagingForm')"
+                  />
+                </template>
+
+                <template v-else-if="column.key === 'supplementDesc'">
+                  <SalesLineLongTextCell
+                    :value="record.supplementDesc"
+                    @edit="openLongTextEdit(record, 'supplementDesc')"
+                  />
+                </template>
+
+                <template v-else-if="column.key === 'lineAttachment'">
+                  <a-upload
+                    class="line-attachment-upload"
+                    :file-list="lineUploadFileList(record)"
+                    :before-upload="(file) => beforeLineUpload(record, file)"
+                    multiple
+                    @remove="(file) => onLineFileRemove(record, file)"
+                  >
+                    <a-button type="link" size="small" class="line-upload-btn">
+                      <UploadOutlined />
+                      上传附件
+                    </a-button>
+                  </a-upload>
+                </template>
+
+                <template v-else-if="column.key === 'action'">
+                  <a-space :size="0" wrap>
+                    <a-button type="link" size="small" @click="openLineEdit(record)">编辑</a-button>
+                    <a-button type="link" size="small" danger @click="removeLine(index)"
+                      >删除</a-button
+                    >
+                    <a-button type="link" size="small" @click="cloneLine(index)">克隆</a-button>
+                  </a-space>
+                </template>
+
+                <template v-else>
+                  {{ record[column.dataIndex] ?? '-' }}
+                </template>
+              </template>
+            </a-table>
+            <div class="fulfillment-hint">
+              库存履约说明：优先现货 —
+              自由备货能覆盖则不排产，缺口才进生产计划；可填「占用现货数」控制用多少现货，其余排产（空则尽量占满）；强制按单生产/采购
+              — 全量排产且不新占自由备货；仅现货 —
+              只占用自由备货且不排产，库存不足仍可审核通过（缺口记缺货）。审核时确认占用与排产结果。
+            </div>
+          </div>
+        </div>
+
+        <div v-if="showShipAccessoriesSection" class="section-block ship-accessory-section">
+          <div class="section-title">随货配件</div>
+          <p class="ship-accessory-tip">
+            审核通过时按库存履约转单：优先现货只转缺口；强制按单生产/采购即使库存足够也全量转采购/生产/外协。外购与外购销售合并一张采购申请。
+          </p>
+          <SalesOrderShipAccessorySection
+            :order="form"
+            :allow-convert-purchase="false"
+            @change="onShipAccessoriesChange"
+          />
+        </div>
+
+        <div class="stock-remind-section" :class="{ 'is-collapsed': stockRemindCollapsed }">
+          <div class="stock-remind-header" @click="stockRemindCollapsed = !stockRemindCollapsed">
+            <span class="section-title">库存提醒</span>
+            <DownOutlined :class="{ rotated: stockRemindCollapsed }" class="collapse-icon" />
+          </div>
+          <div v-show="!stockRemindCollapsed" class="stock-remind-body">
+            <p class="stock-remind-tip">按当前现存量与他单软占用计算，便于下单前判断是否缺货。</p>
+            <SalesOrderStockRemindPanel :order="stockRemindOrder" />
+          </div>
+        </div>
+
+        <a-drawer
+          v-model:open="stockRemindDrawerOpen"
+          title="库存提醒"
+          placement="right"
+          :width="960"
+          :destroy-on-close="false"
+        >
+          <p class="stock-remind-tip">
+            按当前现存量与他单软占用计算，便于下单前判断是否缺货。
+            <template v-if="stockRemindFocusLine">
+              当前聚焦：{{ stockRemindFocusLine.productName || stockRemindFocusLine.productCode }}
+            </template>
+          </p>
+          <SalesOrderStockRemindPanel
+            :order="stockRemindOrder"
+            :focus-line-id="stockRemindFocusLineId"
+          />
+          <div v-if="shipAccessoryGapHint" class="ship-acc-stock-hint">
+            {{ shipAccessoryGapHint }}
+          </div>
+        </a-drawer>
+
+        <div class="section-block attachment-section">
+          <div class="section-title">图片文档信息</div>
+          <a-form layout="horizontal" class="attachment-form horizontal-form">
+            <a-form-item label="文件上传">
+              <div class="upload-field">
+                <a-upload v-model:file-list="fileList" :before-upload="beforeUpload" multiple>
+                  <a-button type="primary" size="small">
+                    <UploadOutlined />
+                    点击上传
+                  </a-button>
+                </a-upload>
+                <div class="upload-hint">支持上传各类型文件，大小不超过 200MB</div>
+              </div>
+            </a-form-item>
+          </a-form>
+        </div>
+      </div>
+    </div>
+
+    <SelectBomMaterialModal
+      v-model:open="productPickerOpen"
+      title="添加产品/物料"
+      picker-default-item-type="产品"
+      :include-spu-templates="true"
+      @selected="onSalesProductsSelected"
+    />
+
+    <ConfigureSalesSpuVariantModal
+      v-model:open="variantConfigOpen"
+      :spu-id="variantConfigSpuId"
+      :initial-variant-values="variantConfigInitialValues"
+      :allow-back="false"
+      confirm-text="确定"
+      @confirm="onVariantConfigConfirm"
+    />
+
+    <a-modal
+      v-model:open="longTextEdit.open"
+      :title="`编辑${longTextEdit.title}`"
+      :width="longTextEdit.singleLine ? 480 : 640"
+      :mask-closable="false"
+      destroy-on-close
+      @ok="confirmLongTextEdit"
+      @cancel="longTextEdit.open = false"
+    >
+      <a-input
+        v-if="longTextEdit.singleLine"
+        v-model:value="longTextEdit.draft"
+        allow-clear
+        :placeholder="`请输入${longTextEdit.title}（选填）`"
+        :maxlength="100"
+        show-count
+      />
+      <a-textarea
+        v-else
+        v-model:value="longTextEdit.draft"
+        :rows="10"
+        :placeholder="`请输入${longTextEdit.title}`"
+        show-count
+        :maxlength="5000"
+      />
+    </a-modal>
+
+    <SalesOrderLineEditModal
+      v-model:open="lineEditOpen"
+      :line="lineEditTarget"
+      :tax-mode-excluding="taxModeExcluding"
+      :discount-strategy="salesDiscountEnabled ? form.discountStrategy : DISCOUNT_STRATEGIES.NONE"
+      :customer-name="form.customerName"
+      :contract-no="form.contractNo"
+      @saved="onLineEditSaved"
+    />
+
+    <a-modal
+      v-model:open="contractLinePickOpen"
+      title="从标准合同带入明细"
+      width="min(1200px, 94vw)"
+      :mask-closable="false"
+      destroy-on-close
+      class="contract-line-pick-modal"
+      @cancel="skipImportContractLines"
+    >
+      <a-alert
+        type="info"
+        show-icon
+        class="contract-pick-alert"
+        :message="contractPickAlertMessage"
+      />
+      <div class="contract-picker-body">
+        <div class="contract-table-panel">
+          <a-table
+            size="small"
+            bordered
+            row-key="pickKey"
+            :columns="contractPickColumns"
+            :data-source="contractPickPagedRows"
+            :pagination="false"
+            :row-selection="contractPickRowSelection"
+            :scroll="{ x: 720, y: 360 }"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'unitPriceExTax'">
+                {{ formatQty(record.unitPriceExTax) }}
+              </template>
+              <template v-else-if="column.key === 'qty'">
+                {{ formatQty(record.qty) }}
+              </template>
+            </template>
+          </a-table>
+          <div class="contract-table-pager">
+            <a-pagination
+              v-model:current="contractPickPage.current"
+              v-model:page-size="contractPickPage.pageSize"
+              size="small"
+              :total="contractPickRows.length"
+              show-size-changer
+              :page-size-options="['10', '20', '50']"
+              :show-total="(t) => `共 ${t} 条`"
+            />
+          </div>
+        </div>
+        <div class="contract-selected-panel">
+          <div class="contract-selected-head">
+            <span class="contract-selected-title"
+              >已选 {{ contractPickSelectedRows.length }} 项</span
+            >
+            <a-button
+              v-if="contractPickSelectedRows.length"
+              type="link"
+              size="small"
+              class="contract-clear-btn"
+              @click="clearContractPickSelection"
+            >
+              清空
+            </a-button>
+          </div>
+          <div v-if="contractPickSelectedRows.length" class="contract-selected-list">
+            <div
+              v-for="item in contractPickSelectedRows"
+              :key="item.pickKey"
+              class="contract-selected-item"
+            >
+              <div class="contract-selected-main">
+                <span class="contract-selected-code">{{ item.productCode || '—' }}</span>
+                <span class="contract-selected-name" :title="item.productName">{{
+                  item.productName || '—'
+                }}</span>
+                <span class="contract-selected-meta">
+                  {{ formatQty(item.qty) }} {{ item.unit || '' }} · 未税
+                  {{ formatQty(item.unitPriceExTax) }}
+                </span>
+              </div>
+              <a-button
+                type="text"
+                size="small"
+                class="contract-remove-btn"
+                @click="removeContractPickRow(item.pickKey)"
+              >
+                <CloseOutlined />
+              </a-button>
+            </div>
+          </div>
+          <a-empty
+            v-else
+            :image="false"
+            description="请从左侧选择"
+            class="contract-selected-empty"
+          />
+        </div>
+      </div>
+      <template #footer>
+        <a-button @click="skipImportContractLines">取消</a-button>
+        <a-button
+          type="primary"
+          :disabled="!contractPickSelectedRows.length"
+          @click="confirmContractLinePick"
+        >
+          带入所选{{
+            contractPickSelectedRows.length ? ` (${contractPickSelectedRows.length})` : ''
+          }}
+        </a-button>
+      </template>
+    </a-modal>
+
+    <template #footer>
+      <a-button size="small" @click="handleCancel">取消</a-button>
+      <a-button type="primary" size="small" @click="handleSave">保存</a-button>
+    </template>
+  </FormCreateShell>
+</template>
+
+<script setup>
+import { computed, reactive, ref, watch } from 'vue'
+import { message, Modal, Upload } from 'ant-design-vue'
+import dayjs from 'dayjs'
+import {
+  PlusOutlined,
+  DownOutlined,
+  UpOutlined,
+  AppstoreOutlined,
+  UploadOutlined,
+  CloseOutlined,
+} from '@ant-design/icons-vue'
+import { formatQty, inputNumberFormatter, inputNumberParser } from '@/utils/numberFormat'
+import {
+  contractTypeOptions,
+  settlementCurrencyOptions,
+  orderTypeOptions,
+  deliveryMethodOptions,
+  deliveryModeOptions,
+  settlementTypeOptions,
+  paymentRatioOptions,
+  salespersonOptions,
+} from '@/mock/salesOrderOptions'
+import { getUrgencyOptions } from '@/constants/urgency'
+import { createLineItem } from '@/mock/salesOrders'
+import { productInfoState } from '@/store/productInfoStore'
+import { materialInfoState } from '@/store/materialInfoStore'
+import { getOwnActiveBomForItem } from '@/store/productBomStore'
+import { BOM_FULFILLMENT_PATH } from '@/constants/salesOrderFulfillment'
+import {
+  addSalesOrder,
+  generateSalesOrderNo,
+  recalcOrderAmounts,
+  salesOrderState,
+  updateSalesOrder,
+} from '@/store/salesOrderStore'
+import {
+  functionParamState,
+  isSalesOrderDiscountEnabled,
+  isShipAttachmentDecidedAtOrder,
+} from '@/store/functionParamStore'
+import SalesOrderShipAccessorySection from './SalesOrderShipAccessorySection.vue'
+import { summarizeShipAccessoryGaps } from '@/utils/salesOrderShipAccessories'
+import { ensureStockTransferDemoMocksForOrder } from '@/store/salesStockAllocationStore'
+import {
+  STOCK_FULFILLMENT_MODE,
+  STOCK_FULFILLMENT_MODE_OPTIONS,
+  normalizeStockFulfillmentMode,
+} from '@/utils/salesStockFulfillment'
+import { getCustomerOptions, getCustomerByName } from '@/store/customerStore'
+import { CONTRACT_CASH_DIRECTION } from '@/constants/salesContract'
+import { checkContractQuotaWarning, getSalesContractByNo } from '@/store/salesContractStore'
+import { resolveSalesLinePrice } from '@/utils/customerPrice'
+import {
+  DISCOUNT_STRATEGIES,
+  DISCOUNT_STRATEGY_LABELS,
+  filterColumnsBySalesOrderDiscount,
+  ensureLinePricingFields,
+  normalizeDiscountRate,
+  recalcSalesLinePricing,
+  applyOrderAmounts,
+  calcOrderAmounts,
+  formatDiscountRatePercent,
+  isOrderDiscountDisabled,
+  isLineDiscountDisabled,
+} from '@/utils/salesOrderPricing'
+import SelectBomMaterialModal from '@/views/product-process/components/SelectBomMaterialModal.vue'
+import CustomerSelect from './CustomerSelect.vue'
+import ContractSelect from './ContractSelect.vue'
+import SalesLineLongTextCell from './SalesLineLongTextCell.vue'
+import SalesOrderLineEditModal from './SalesOrderLineEditModal.vue'
+import ConfigureSalesSpuVariantModal from './ConfigureSalesSpuVariantModal.vue'
+import SalesOrderStockRemindPanel from './SalesOrderStockRemindPanel.vue'
+import FormCreateShell from '@/components/FormCreateShell.vue'
+import { useFormCreateModal } from '@/composables/useFormCreateModal.js'
+import {
+  deriveOrderBusinessType,
+  normalizeSalesLineBusiness,
+  CUSTOM_SALES_BUSINESS_TYPE,
+  MAINTENANCE_SERVICE_BUSINESS_TYPE,
+} from '@/utils/salesOrderBusiness'
+import {
+  isSpuLine,
+  lineVariantSummary,
+  createSpuLineDraft,
+  applySalesLineResolvedConfig,
+  validateSalesLinesSkuResolved,
+} from '@/utils/spuLineResolve'
+
+const props = defineProps({
+  open: { type: Boolean, default: false },
+  pageMode: { type: Boolean, default: false },
+  listPath: { type: String, default: '' },
+  editRecord: { type: Object, default: null },
+})
+
+const emit = defineEmits(['update:open', 'saved'])
+
+const isEdit = computed(() => Boolean(props.editRecord?.id))
+const { isActive, shellTitle, handleCancel, closeAfterSave } = useFormCreateModal(props, emit, {
+  listPath: '/sales/orders',
+  getTitle: () => (isEdit.value ? '编辑销售订单' : '新增销售订单'),
+})
+/** 默认按含税单价录入（明细列「单价（含税）」） */
+const taxModeExcluding = ref(false)
+const basicInfoCollapsed = ref(false)
+const detailCollapsed = ref(false)
+const priceSummaryCollapsed = ref(true)
+/** 默认展开，便于录入时查看现货/他单占用 */
+const stockRemindCollapsed = ref(false)
+const stockRemindDrawerOpen = ref(false)
+const stockRemindFocusLineId = ref('')
+const stockRemindFocusLine = computed(() =>
+  (form.lineItems || []).find((l) => String(l.id) === String(stockRemindFocusLineId.value)),
+)
+const productPickerOpen = ref(false)
+const variantConfigOpen = ref(false)
+const variantConfigSpuId = ref('')
+const variantConfigInitialValues = ref(null)
+const variantConfigTargetLine = ref(null)
+const lineEditOpen = ref(false)
+const lineEditTarget = ref(null)
+const fileList = ref([])
+const contractLinePickOpen = ref(false)
+const contractPickContract = ref(null)
+const contractPickRows = ref([])
+const contractPickKeys = ref([])
+const contractPickSelectedRows = ref([])
+const contractPickPage = reactive({ current: 1, pageSize: 10 })
+const contractPickColumns = [
+  { title: '物料编码', dataIndex: 'productCode', width: 130, ellipsis: true },
+  { title: '名称', dataIndex: 'productName', width: 160, ellipsis: true },
+  { title: '规格', dataIndex: 'specModel', width: 120, ellipsis: true },
+  { title: '数量', key: 'qty', dataIndex: 'qty', width: 88, align: 'right' },
+  { title: '单位', dataIndex: 'unit', width: 64 },
+  {
+    title: '未税单价',
+    key: 'unitPriceExTax',
+    dataIndex: 'unitPriceExTax',
+    width: 100,
+    align: 'right',
+  },
+]
+const contractPickPagedRows = computed(() => {
+  const start = (contractPickPage.current - 1) * contractPickPage.pageSize
+  return contractPickRows.value.slice(start, start + contractPickPage.pageSize)
+})
+const contractPickRowSelection = computed(() => ({
+  selectedRowKeys: contractPickKeys.value,
+  onChange: onContractPickKeysChange,
+  preserveSelectedRowKeys: true,
+}))
+const contractPickAlertMessage = computed(() => {
+  const no = contractPickContract.value?.contractNo || ''
+  const existing = hasMeaningfulSalesLines()
+  return existing
+    ? `合同 ${no} · 左侧勾选明细，右侧为已选（默认全选）。带入所选将覆盖当前销售明细，取消则保留。`
+    : `合同 ${no} · 左侧勾选明细，右侧为已选（默认全选）`
+})
+
+const LONG_TEXT_FIELD_LABELS = {
+  techParams: '技术参数',
+  matchingRequirements: '配套要求',
+  packagingForm: '包装形式',
+  supplementDesc: '补充说明',
+  externalJobNo: '外部工号',
+}
+
+const SINGLE_LINE_EDIT_FIELDS = new Set(['externalJobNo'])
+
+const longTextEdit = reactive({
+  open: false,
+  title: '',
+  fieldKey: '',
+  record: null,
+  draft: '',
+  singleLine: false,
+})
+
+const MAX_FILE_SIZE = 200 * 1024 * 1024
+
+/** 销售明细固定列：不可隐藏、左侧冻结 */
+const fixedColumnKeys = ['index', 'productName', 'productCode', 'action']
+
+const columnDefs = [
+  { key: 'index', title: '序号', width: 56, fixed: 'left' },
+  {
+    key: 'productName',
+    title: '产品名称',
+    dataIndex: 'productName',
+    width: 140,
+    ellipsis: true,
+    fixed: 'left',
+  },
+  {
+    key: 'productCode',
+    title: '产品编码',
+    dataIndex: 'productCode',
+    width: 130,
+    ellipsis: true,
+    fixed: 'left',
+  },
+  { key: 'businessType', title: '业务类型', width: 130 },
+  { key: 'specModel', title: '规格型号', dataIndex: 'specModel', width: 120 },
+  { key: 'material', title: '材质', dataIndex: 'material', width: 100 },
+  {
+    key: 'variantAttr',
+    title: '变体属性',
+    dataIndex: 'variantSummary',
+    width: 160,
+    ellipsis: true,
+  },
+  { key: 'drawingNo', title: '图号', dataIndex: 'drawingNo', width: 100, ellipsis: true },
+  { key: 'techParams', title: '技术参数', width: 120, ellipsis: true },
+  { key: 'matchingRequirements', title: '配套要求', width: 120, ellipsis: true },
+  { key: 'salesQty', title: '销售数量', width: 90 },
+  { key: 'deliveryMode', title: '交付方式', width: 100 },
+  { key: 'stockFulfillmentMode', title: '库存履约', width: 168 },
+  { key: 'preferStockTakeQty', title: '占用现货数', width: 118 },
+  { key: 'deliveryDate', title: '交货日期', width: 120 },
+  { key: 'unit', title: '单位', width: 70 },
+  {
+    key: 'externalJobNo',
+    title: '外部工号',
+    dataIndex: 'externalJobNo',
+    width: 130,
+    ellipsis: true,
+  },
+  { key: 'bomName', title: 'Bom名称', dataIndex: 'bomName', width: 100, ellipsis: true },
+  { key: 'bomVersion', title: 'Bom版本', dataIndex: 'bomVersion', width: 90 },
+  { key: 'unitPriceExTax', title: '单价（不含税）', width: 120 },
+  { key: 'unitPriceInTax', title: '单价（含税）', width: 110 },
+  { key: 'taxRate', title: '税率(%)', width: 80 },
+  { key: 'totalPriceExTax', title: '总价（不含税）', width: 110 },
+  { key: 'totalPriceInTax', title: '总价（含税）', width: 100 },
+  { key: 'lineDiscountPercent', title: '行折扣(%)', width: 90 },
+  { key: 'lineDiscountAmount', title: '行优惠金额', width: 100 },
+  { key: 'packagingForm', title: '包装形式', width: 90 },
+  { key: 'needIndustrialLabel', title: '工业标识', width: 90 },
+  { key: 'supplementDesc', title: '补充说明', width: 90 },
+  { key: 'lineAttachment', title: '上传附件', width: 120 },
+  { key: 'action', title: '操作', width: 150, fixed: 'right' },
+]
+
+const visibleColumnKeys = ref(columnDefs.map((c) => c.key))
+const columnWidths = reactive(Object.fromEntries(columnDefs.map((c) => [c.key, c.width])))
+
+watch(visibleColumnKeys, (keys) => {
+  const required = fixedColumnKeys.filter((k) => k !== 'action')
+  const missing = required.filter((k) => !keys.includes(k))
+  if (missing.length) {
+    visibleColumnKeys.value = [...new Set([...keys, ...required])]
+  }
+})
+
+const taxModeHint = computed(() =>
+  taxModeExcluding.value
+    ? '当前：按不含税口径反算（切换后请用计价逻辑；明细默认展示单价含税）'
+    : '当前：按单价（含税）录入，系统自动反算不含税金额',
+)
+
+const form = reactive({
+  orderNo: '',
+  urgency: '正常',
+  contractType: '标准合同',
+  contractNo: '',
+  settlementCurrency: '人民币',
+  orderType: '国内订单',
+  customerName: undefined,
+  contactPerson: undefined,
+  contactPhone: '',
+  deliveryAddress: '',
+  deliveryMethod: '送货',
+  techSpecCode: '',
+  reminderDate: null,
+  salesperson: 'admin1',
+  settlementType: undefined,
+  paymentRatio: undefined,
+  downPaymentAmount: null,
+  remark: '',
+  discountStrategy: DISCOUNT_STRATEGIES.NONE,
+  orderDiscountType: 'none',
+  orderDiscountPercent: 100,
+  orderDiscountRate: 1,
+  orderDiscountAmount: 0,
+  orderDiscountReason: '',
+  lineItems: [],
+  shipAccessories: [],
+})
+
+const showShipAccessoriesSection = computed(() => {
+  void functionParamState.params.shipAttachmentDecideStage
+  return isShipAttachmentDecidedAtOrder()
+})
+
+function onShipAccessoriesChange(list) {
+  form.shipAccessories = Array.isArray(list) ? list : form.shipAccessories || []
+}
+
+const salesDiscountEnabled = computed(() => {
+  void functionParamState.params.enableSalesOrderDiscount
+  return isSalesOrderDiscountEnabled()
+})
+
+const settingColumnDefs = computed(() =>
+  filterColumnsBySalesOrderDiscount(columnDefs, salesDiscountEnabled.value),
+)
+
+const displayColumns = computed(() =>
+  settingColumnDefs.value
+    .filter((c) => visibleColumnKeys.value.includes(c.key))
+    .map((c) => ({
+      title: c.title,
+      key: c.key,
+      dataIndex: c.dataIndex,
+      width: columnWidths[c.key] ?? c.width,
+      ellipsis: c.ellipsis,
+      align: c.key === 'index' ? 'center' : undefined,
+      fixed: c.fixed,
+    })),
+)
+
+const tableScrollX = computed(() =>
+  displayColumns.value.reduce((sum, c) => sum + (c.width || 100), 0),
+)
+
+const catalogBusinessTypeOpts = ['自产销售', '外购销售', CUSTOM_SALES_BUSINESS_TYPE].map((v) => ({
+  label: v,
+  value: v,
+}))
+const manualBusinessTypeOpts = [
+  '外协销售',
+  '质检服务',
+  MAINTENANCE_SERVICE_BUSINESS_TYPE,
+  CUSTOM_SALES_BUSINESS_TYPE,
+].map((v) => ({ label: v, value: v }))
+
+function onBusinessTypeChange(record, businessType) {
+  record.businessType = businessType
+  if (businessType === MAINTENANCE_SERVICE_BUSINESS_TYPE) {
+    record.isManualLine = true
+    record.productId = ''
+    record.bomId = ''
+    record.bomName = ''
+    record.bomVersion = ''
+    record.productAttr = ''
+    return
+  }
+  if (businessType === CUSTOM_SALES_BUSINESS_TYPE) {
+    record.productAttr = '定制产品'
+    record.bomId = ''
+    record.bomName = ''
+    record.bomVersion = ''
+    return
+  }
+  if (record.isManualLine) {
+    record.productAttr = ''
+    return
+  }
+  const product = productInfoState.products.find((p) => p.id === record.productId)
+  if (product) {
+    record.productAttr = product.productAttribute || ''
+  }
+  if (businessType === '自产销售' || businessType === '外购销售') {
+    const bom = getOwnActiveBomForItem('product', record.productId)
+    record.bomId = bom?.id || ''
+    record.bomName = bom?.bomName || ''
+    record.bomVersion = bom?.version || ''
+  }
+}
+
+function startColumnResize(e, key) {
+  const startX = e.clientX
+  const startWidth = columnWidths[key] ?? 100
+
+  const onMove = (ev) => {
+    columnWidths[key] = Math.max(60, startWidth + ev.clientX - startX)
+  }
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
+
+function lineBusinessTypeOpts(record) {
+  const base = record.isManualLine ? manualBusinessTypeOpts : catalogBusinessTypeOpts
+  if (record.businessType && !base.some((opt) => opt.value === record.businessType)) {
+    return [{ label: record.businessType, value: record.businessType }, ...base]
+  }
+  return base
+}
+
+const urgencyOpts = getUrgencyOptions()
+const contractTypeOpts = contractTypeOptions.map((v) => ({ label: v, value: v }))
+
+function isContractPriceLocked(record) {
+  return record?.priceSource === 'contract'
+}
+
+function mapContractLineToSalesLine(contractLine, contract) {
+  const taxInclusive = contract?.taxInclusive !== false
+  const taxRate = contractLine.taxRate != null ? Number(contractLine.taxRate) : 13
+  const qty = Number(contractLine.qty) > 0 ? Number(contractLine.qty) : 1
+  let unitInTax = Number(contractLine.unitPriceInTax)
+  let unitExTax = Number(contractLine.unitPriceExTax)
+  if (!Number.isFinite(unitInTax) || unitInTax < 0) unitInTax = 0
+  if (!Number.isFinite(unitExTax) || unitExTax < 0) unitExTax = 0
+  // 合同按含税录入时，以含税价为准反算不含税；否则以不含税为准推含税
+  if (taxInclusive) {
+    if (!(unitInTax > 0) && unitExTax > 0) {
+      unitInTax = round2(unitExTax * (1 + taxRate / 100))
+    }
+    if (unitInTax > 0) {
+      unitExTax = taxRate >= 0 ? round2(unitInTax / (1 + taxRate / 100)) : unitInTax
+    }
+  } else if (unitExTax > 0) {
+    unitInTax = round2(unitExTax * (1 + taxRate / 100))
+  } else if (unitInTax > 0) {
+    unitExTax = taxRate >= 0 ? round2(unitInTax / (1 + taxRate / 100)) : unitInTax
+  }
+
+  const line = createLineItem({
+    productId: contractLine.productId || '',
+    productCode: contractLine.productCode || '',
+    productName: contractLine.productName || '',
+    specModel: contractLine.specModel || '',
+    material: contractLine.material || '',
+    unit: contractLine.unit || '件',
+    businessType: '自产销售',
+    deliveryMode: '整件',
+    salesQty: qty,
+    taxRate,
+    listUnitPriceExTax: unitExTax,
+    lineDiscountRate: 1,
+    priceSource: 'contract',
+    unitPriceExTax: unitExTax,
+    unitPriceInTax: unitInTax,
+    packagingForm: contractLine.packagingForm || '',
+    supplementDesc: contractLine.supplementDesc || '',
+    deliveryDate: contractLine.deliveryDate || headerDeliveryDateText(),
+    bomFulfillmentPath: BOM_FULFILLMENT_PATH.DESIGN_REQUIRED,
+  })
+  applyHeaderDeliveryDateToLine(line)
+  // 含税合同：按含税口径反算不含税；不含税合同：按不含税推含税
+  recalcLine(line, 'unitPrice', !taxInclusive)
+  return line
+}
+
+function applyFrameworkContractPricing(contract) {
+  repriceLinesForCustomer()
+  const hitCount = (form.lineItems || []).filter((l) => l.priceSource === 'contract').length
+  if (form.lineItems.length) {
+    message.success(
+      hitCount
+        ? `已按框架合同「${contract.contractNo}」写入协议单价（命中 ${hitCount} 行；仅协议折扣的行不改价）`
+        : `已关联框架合同「${contract.contractNo}」：现有行无协议单价，添加产品后仅在价目有协议单价时写入成交价`,
+    )
+  } else {
+    message.info(
+      `已关联框架合同「${contract.contractNo}」：添加产品后仅带入协议单价，不带入协议折扣`,
+    )
+  }
+}
+
+function hasMeaningfulSalesLines() {
+  return (form.lineItems || []).some(
+    (line) => String(line.productCode || '').trim() || String(line.productName || '').trim(),
+  )
+}
+
+function listContractLineRows(contract) {
+  return (contract?.lineItems || [])
+    .filter((l) => String(l.productCode || '').trim() || String(l.productName || '').trim())
+    .map((l, idx) => ({
+      ...l,
+      pickKey: l.id || `${l.productCode || 'row'}-${idx}`,
+      productCode: l.productCode || '',
+      productName: l.productName || '',
+      qty: Number(l.qty ?? l.salesQty) || 0,
+      unitPriceExTax: Number(l.unitPriceExTax) || 0,
+    }))
+}
+
+function syncContractPickSelectedFromKeys(keys) {
+  const list = Array.isArray(keys) ? keys : []
+  const map = new Map(contractPickRows.value.map((r) => [r.pickKey, r]))
+  contractPickKeys.value = list
+  contractPickSelectedRows.value = list.map((key) => map.get(key)).filter(Boolean)
+}
+
+function onContractPickKeysChange(keys) {
+  syncContractPickSelectedFromKeys(keys)
+}
+
+function clearContractPickSelection() {
+  contractPickKeys.value = []
+  contractPickSelectedRows.value = []
+}
+
+function removeContractPickRow(pickKey) {
+  syncContractPickSelectedFromKeys(contractPickKeys.value.filter((k) => k !== pickKey))
+}
+
+function bindContractHeader(contract) {
+  if (contract.contractType && form.contractType !== '临时合同') {
+    form.contractType = contract.contractType
+  }
+  if (!form.customerName && contract.customerName) {
+    form.customerName = contract.customerName
+  }
+}
+
+function skipImportContractLines() {
+  contractLinePickOpen.value = false
+  repriceLinesForCustomer()
+}
+
+function openStandardContractLinePicker(contract) {
+  const rows = listContractLineRows(contract)
+  if (!rows.length) {
+    message.info(`标准合同「${contract.contractNo}」暂无明细可带出`)
+    repriceLinesForCustomer()
+    return
+  }
+  contractPickContract.value = contract
+  contractPickRows.value = rows
+  contractPickPage.current = 1
+  contractPickPage.pageSize = 10
+  syncContractPickSelectedFromKeys(rows.map((r) => r.pickKey))
+  contractLinePickOpen.value = true
+}
+
+function confirmContractLinePick() {
+  const contract = contractPickContract.value
+  if (!contract) {
+    contractLinePickOpen.value = false
+    return
+  }
+  const selected = contractPickSelectedRows.value
+  if (!selected.length) {
+    message.warning('请至少选择一行合同明细')
+    return
+  }
+  taxModeExcluding.value = contract.taxInclusive === false
+  form.lineItems = selected.map((row) => mapContractLineToSalesLine(row, contract))
+  if (form.discountStrategy === DISCOUNT_STRATEGIES.NONE) {
+    form.discountStrategy = DISCOUNT_STRATEGIES.LINE
+  }
+  if (!form.customerName && contract.customerName) {
+    form.customerName = contract.customerName
+  }
+  if (contract.serviceContent && !form.remark) {
+    form.remark = contract.serviceContent
+  }
+  recalcAll()
+  contractLinePickOpen.value = false
+  message.success(
+    `已从标准合同「${contract.contractNo}」带入 ${selected.length} 条销售明细` +
+      (contract.taxInclusive !== false ? '（已按含税价反算不含税）' : ''),
+  )
+}
+
+function onContractNoChange(contractNo, contractFromSelect) {
+  if (!contractNo) {
+    repriceLinesForCustomer()
+    return
+  }
+  const contract = contractFromSelect || getSalesContractByNo(contractNo)
+  if (contract && contract.cashDirection === CONTRACT_CASH_DIRECTION.EXPENSE) {
+    message.warning('销售订单只能关联收入合同')
+    form.contractNo = ''
+    return
+  }
+  if (!contract) {
+    message.info('未在合同台账中找到该编号，已按输入编号保存（不自动带出明细）')
+    return
+  }
+  bindContractHeader(contract)
+  if (contract.contractType === '框架合同') {
+    applyFrameworkContractPricing(contract)
+    return
+  }
+  if (contract.contractType === '标准合同') {
+    openStandardContractLinePicker(contract)
+    return
+  }
+  repriceLinesForCustomer()
+}
+
+watch(
+  () => form.contractType,
+  () => {
+    // 允许手填编号长期保留；仅当已选合同类型与台账不一致时清空
+    if (!form.contractNo || form.contractType === '临时合同') return
+    const contract = getSalesContractByNo(form.contractNo)
+    if (contract && contract.contractType && contract.contractType !== form.contractType) {
+      form.contractNo = ''
+    }
+  },
+)
+const currencyOpts = settlementCurrencyOptions.map((v) => ({ label: v, value: v }))
+const orderTypeOpts = orderTypeOptions.map((v) => ({ label: v, value: v }))
+const deliveryMethodOpts = deliveryMethodOptions.map((v) => ({ label: v, value: v }))
+const deliveryModeOpts = deliveryModeOptions.map((v) => ({ label: v, value: v }))
+const stockFulfillmentModeOpts = STOCK_FULFILLMENT_MODE_OPTIONS
+const settlementTypeOpts = settlementTypeOptions.map((v) => ({ label: v, value: v }))
+const paymentRatioOpts = paymentRatioOptions.map((v) => ({ label: v, value: v }))
+const salespersonOpts = salespersonOptions.map((v) => ({ label: v, value: v }))
+
+const orderPricing = computed(() =>
+  calcOrderAmounts(
+    {
+      lineItems: form.lineItems,
+      orderDiscountRate: normalizeDiscountRate(form.orderDiscountRate, 1),
+      orderDiscountAmount: form.orderDiscountAmount,
+      orderDiscountType: form.orderDiscountType,
+      orderDiscountReason: form.orderDiscountReason,
+      discountStrategy: form.discountStrategy,
+    },
+    { taxModeExcluding: taxModeExcluding.value },
+  ),
+)
+
+/** 新建/编辑时按当前明细估算库存（编辑态带上订单 id 以排除本单占用） */
+const stockRemindOrder = computed(() => ({
+  id: props.editRecord?.id || '',
+  orderNo: form.orderNo || props.editRecord?.orderNo || '',
+  lineItems: form.lineItems,
+  shipAccessories: form.shipAccessories || [],
+}))
+
+const shipAccessoryGapHint = computed(() => {
+  const s = summarizeShipAccessoryGaps(form.shipAccessories || [])
+  if (!s.total) return ''
+  if (!s.gapCount) return `随货配件共 ${s.total} 项，暂无库存缺口。`
+  return `随货配件共 ${s.total} 项，其中缺口 ${s.gapCount} 项（缺口量 ${s.gapQty}）；明细见上方「随货配件」区。`
+})
+
+function openStockRemindDrawer(line) {
+  stockRemindFocusLineId.value = line?.id ? String(line.id) : ''
+  stockRemindDrawerOpen.value = true
+}
+
+watch(
+  () =>
+    form.lineItems
+      .map((l) => l.productCode)
+      .filter(Boolean)
+      .join('|'),
+  () => {
+    if (form.lineItems.some((l) => l.productCode)) {
+      ensureStockTransferDemoMocksForOrder(stockRemindOrder.value)
+    }
+  },
+  { immediate: true },
+)
+
+function toggleBasicInfo() {
+  basicInfoCollapsed.value = !basicInfoCollapsed.value
+}
+
+function onStockFulfillmentModeChange(record, val) {
+  record.stockFulfillmentMode = normalizeStockFulfillmentMode(val)
+  if (record.stockFulfillmentMode !== STOCK_FULFILLMENT_MODE.PREFER_STOCK) {
+    record.preferStockTakeQty = null
+  }
+}
+
+function isPreferStockMode(record) {
+  return (
+    normalizeStockFulfillmentMode(record?.stockFulfillmentMode) ===
+    STOCK_FULFILLMENT_MODE.PREFER_STOCK
+  )
+}
+
+const orderAmount = computed(() => orderPricing.value.orderAmount)
+
+const customerDiscountHint = computed(() => {
+  if (!salesDiscountEnabled.value) return ''
+  if (isLineDiscountDisabled(form.discountStrategy)) return ''
+  const customer = getCustomerByName(form.customerName)
+  if (!customer?.defaultDiscountRate || customer.defaultDiscountRate >= 1) return ''
+  return `已应用客户默认折扣 ${formatDiscountRatePercent(customer.defaultDiscountRate)}（新加行自动带出，可改）`
+})
+
+const showLineDiscount = computed(
+  () => salesDiscountEnabled.value && !isLineDiscountDisabled(form.discountStrategy),
+)
+const orderDiscountFieldsDisabled = computed(() => isOrderDiscountDisabled(form.discountStrategy))
+
+const contactOpts = computed(() => {
+  const customer = getCustomerOptions().find((c) => c.value === form.customerName)
+  return (customer?.contacts || []).map((c) => ({ label: c.name, value: c.name, phone: c.phone }))
+})
+
+watch(
+  () => form.contractNo,
+  () => {
+    if (!isActive.value || !form.customerName) return
+    repriceLinesForCustomer()
+  },
+)
+
+watch(salesDiscountEnabled, (enabled) => {
+  if (enabled || !isActive.value) return
+  form.discountStrategy = DISCOUNT_STRATEGIES.NONE
+  form.orderDiscountPercent = 100
+  form.orderDiscountRate = 1
+  form.orderDiscountAmount = 0
+  syncOrderDiscountRate()
+})
+
+watch(
+  () => [isActive.value, props.editRecord?.id],
+  ([val]) => {
+    if (!val) return
+    basicInfoCollapsed.value = false
+    detailCollapsed.value = false
+    if (props.editRecord) {
+      // 保活切回：同一订单不重复覆盖用户未保存改动
+      if (form.orderNo && form.orderNo === props.editRecord.orderNo && form.lineItems.length) {
+        return
+      }
+      const r = props.editRecord
+      prevHeaderDeliveryDate.value = r.reminderDate || ''
+      Object.assign(form, {
+        orderNo: r.orderNo,
+        urgency: r.urgency,
+        contractType: r.contractType,
+        contractNo: r.contractNo || '',
+        settlementCurrency: r.settlementCurrency,
+        orderType: r.orderType,
+        customerName: r.customerName,
+        contactPerson: r.contactPerson,
+        contactPhone: r.contactPhone || '',
+        deliveryAddress: r.deliveryAddress || '',
+        deliveryMethod: r.deliveryMethod,
+        techSpecCode: r.techSpecCode || '',
+        reminderDate: r.reminderDate ? dayjs(r.reminderDate) : null,
+        salesperson: r.salesperson,
+        settlementType: r.settlementType || undefined,
+        paymentRatio: r.paymentRatio || undefined,
+        downPaymentAmount: r.downPaymentAmount,
+        remark: r.remark || '',
+        discountStrategy: r.discountStrategy || DISCOUNT_STRATEGIES.LINE,
+        orderDiscountType: r.orderDiscountType || 'none',
+        orderDiscountRate: normalizeDiscountRate(r.orderDiscountRate, 1),
+        orderDiscountPercent: round2(normalizeDiscountRate(r.orderDiscountRate, 1) * 100),
+        orderDiscountAmount: r.orderDiscountAmount ?? 0,
+        orderDiscountReason: r.orderDiscountReason || '',
+        lineItems: JSON.parse(JSON.stringify(r.lineItems || [])).map((line) =>
+          normalizeLineItem(line, r.businessType),
+        ),
+        shipAccessories: JSON.parse(JSON.stringify(r.shipAccessories || [])),
+      })
+      recalcAll()
+      fileList.value = (r.attachments || []).map((file) => ({
+        uid: file.uid || file.name,
+        name: file.name,
+        size: file.size,
+        status: 'done',
+      }))
+      return
+    }
+    if (form.orderNo || form.lineItems.length) return
+    resetForm()
+  },
+  { immediate: true },
+)
+
+function normalizeLineItem(item, orderBusinessType = '自产销售') {
+  const line = normalizeSalesLineBusiness(
+    {
+      ...item,
+      salesQty: item.salesQty ?? item.qty ?? 1,
+      qty: item.qty ?? item.salesQty ?? 1,
+      taxRate: item.taxRate ?? 13,
+      issueQty: item.issueQty ?? 0,
+      unit: item.unit || '件',
+      productAttr: item.productAttr || '',
+      externalJobNo: item.externalJobNo || '',
+      deliveryMode: item.deliveryMode || '整件',
+      businessType: item.businessType || orderBusinessType || '自产销售',
+      lineAttachments: Array.isArray(item.lineAttachments) ? [...item.lineAttachments] : [],
+    },
+    { businessType: orderBusinessType },
+  )
+  if (!line.lineAttachments.length && line.attachment) {
+    line.lineAttachments = [
+      {
+        uid: `legacy-${line.id}`,
+        name: line.attachment,
+        type: '明细附件',
+        uploadedAt: '',
+      },
+    ]
+  }
+  syncLineAttachmentSummary(line)
+  ensureLinePricingFields(line)
+  return line
+}
+
+function syncLineAttachmentSummary(line) {
+  line.attachment = (line.lineAttachments || [])
+    .map((file) => file.name)
+    .filter(Boolean)
+    .join('、')
+}
+
+function resetForm() {
+  form.orderNo = ''
+  form.urgency = '正常'
+  form.contractType = '标准合同'
+  form.contractNo = ''
+  form.settlementCurrency = '人民币'
+  form.orderType = '国内订单'
+  form.customerName = undefined
+  form.contactPerson = undefined
+  form.contactPhone = ''
+  form.deliveryAddress = ''
+  form.deliveryMethod = '送货'
+  form.techSpecCode = ''
+  form.reminderDate = null
+  prevHeaderDeliveryDate.value = ''
+  form.salesperson = 'admin1'
+  form.settlementType = undefined
+  form.paymentRatio = undefined
+  form.downPaymentAmount = null
+  form.remark = ''
+  form.discountStrategy = DISCOUNT_STRATEGIES.NONE
+  form.orderDiscountType = 'none'
+  form.orderDiscountPercent = 100
+  form.orderDiscountRate = 1
+  form.orderDiscountAmount = 0
+  form.orderDiscountReason = ''
+  form.lineItems = []
+  form.shipAccessories = []
+  form.orderAmount = 0
+  form.totalDiscountAmount = 0
+  form.lineDiscountTotal = 0
+  form.orderDiscountTotal = 0
+  fileList.value = []
+  taxModeExcluding.value = false
+  priceSummaryCollapsed.value = true
+}
+
+function beforeUpload(file) {
+  if (file.size > MAX_FILE_SIZE) {
+    message.error('文件大小不能超过 200MB')
+    return Upload.LIST_IGNORE
+  }
+  return false
+}
+
+function lineUploadFileList(record) {
+  return (record.lineAttachments || []).map((file) => ({
+    uid: file.uid,
+    name: file.name,
+    status: 'done',
+  }))
+}
+
+function beforeLineUpload(record, file) {
+  if (file.size > MAX_FILE_SIZE) {
+    message.error('文件大小不能超过 200MB')
+    return Upload.LIST_IGNORE
+  }
+  if (!record.lineAttachments) record.lineAttachments = []
+  record.lineAttachments.push({
+    uid: file.uid || `line-${Date.now()}-${file.name}`,
+    name: file.name,
+    size: file.size,
+    type: file.type || '',
+    uploadedAt: dayjs().format('YYYY-MM-DD HH:mm'),
+  })
+  syncLineAttachmentSummary(record)
+  return false
+}
+
+function onLineFileRemove(record, file) {
+  record.lineAttachments = (record.lineAttachments || []).filter((item) => item.uid !== file.uid)
+  syncLineAttachmentSummary(record)
+}
+
+function round2(n) {
+  return Math.round((Number(n) || 0) * 100) / 100
+}
+
+function recalcLine(record, editMode = 'discount', taxModeOverride) {
+  let excluding = taxModeOverride != null ? taxModeOverride : taxModeExcluding.value
+  if (taxModeOverride == null && editMode === 'unitPrice') {
+    // 仅改含税单价时：按含税口径反算不含税
+    excluding = false
+  } else if (
+    taxModeOverride == null &&
+    !(Number(record.unitPriceInTax) > 0) &&
+    Number(record.listUnitPriceExTax) > 0
+  ) {
+    // 从产品价目初始化时，用不含税价生成含税单价
+    excluding = true
+  }
+  recalcSalesLinePricing(record, { taxModeExcluding: excluding, editMode })
+}
+
+function recalcAll(lineEditMode = 'unitPrice') {
+  form.orderDiscountRate = normalizeDiscountRate(
+    (Number(form.orderDiscountPercent) || 100) / 100,
+    1,
+  )
+  form.orderDiscountType =
+    form.orderDiscountRate < 1 || form.orderDiscountAmount > 0 ? 'rate' : 'none'
+  applyOrderAmounts(form, {
+    taxModeExcluding: taxModeExcluding.value,
+    lineEditMode,
+  })
+}
+
+function syncOrderDiscountRate() {
+  // 折扣策略或整单折扣变化时：按策略重建行价，再汇总（整单折扣在汇总时代入各行）
+  form.lineItems.forEach((line) => {
+    if (isLineDiscountDisabled(form.discountStrategy)) {
+      line.lineDiscountRate = 1
+    }
+    recalcLine(line, 'discount')
+  })
+  recalcAll('unitPrice')
+}
+
+function getLineDiscountPercent(record) {
+  return round2(normalizeDiscountRate(record.lineDiscountRate, 1) * 100)
+}
+
+function setLineDiscountPercent(record, percent) {
+  record.lineDiscountRate = normalizeDiscountRate((Number(percent) || 100) / 100, 1)
+  recalcLine(record, 'discount')
+  recalcAll('unitPrice')
+}
+
+function onLineFieldChange(record) {
+  // 数量/税率等：在允许行折扣时按折扣率重算，否则保留单价
+  const mode = isLineDiscountDisabled(form.discountStrategy) ? 'unitPrice' : 'discount'
+  recalcLine(record, mode)
+  recalcAll('unitPrice')
+}
+
+function onUnitPriceExTaxChange(record) {
+  recalcLine(record, 'unitPrice', true)
+  recalcAll('unitPrice')
+}
+
+function onUnitPriceInTaxChange(record) {
+  recalcLine(record, 'unitPrice', false)
+  recalcAll('unitPrice')
+}
+
+function lineDateValue(val) {
+  return val ? dayjs(val) : null
+}
+
+function onLineDateChange(record, date) {
+  record.deliveryDate = date ? date.format('YYYY-MM-DD') : ''
+}
+
+const prevHeaderDeliveryDate = ref(null)
+
+function headerDeliveryDateText() {
+  return form.reminderDate ? form.reminderDate.format('YYYY-MM-DD') : ''
+}
+
+/** 表头交货日期变更：询问是否同步明细（对齐入库单表头仓库） */
+function onHeaderDeliveryDateChange(date) {
+  const newVal = date ? date.format('YYYY-MM-DD') : ''
+  const oldVal = prevHeaderDeliveryDate.value || ''
+  prevHeaderDeliveryDate.value = newVal
+  if (newVal === oldVal || !form.lineItems.length) return
+  Modal.confirm({
+    title: '交货日期已修改，是否同步修改明细交货日期？',
+    okText: '是',
+    cancelText: '否',
+    onOk: () => {
+      form.lineItems.forEach((line) => {
+        line.deliveryDate = newVal
+      })
+    },
+  })
+}
+
+function applyHeaderDeliveryDateToLine(line) {
+  if (!line) return line
+  const headerDate = headerDeliveryDateText()
+  if (headerDate && !line.deliveryDate) {
+    line.deliveryDate = headerDate
+  }
+  return line
+}
+
+function toggleTaxMode() {
+  taxModeExcluding.value = !taxModeExcluding.value
+  recalcAll()
+}
+
+function repriceLinesForCustomer() {
+  const customer = getCustomerByName(form.customerName)
+  const contract = form.contractNo ? getSalesContractByNo(form.contractNo) : null
+  form.lineItems.forEach((line) => {
+    if (line.isManualLine) return
+    const master = line.productId
+      ? productInfoState.products.find((p) => p.id === line.productId)
+      : null
+    const listPrice =
+      Number(master?.unitPrice ?? line.listUnitPriceExTax ?? line.unitPriceExTax) || 0
+    const pricing = resolveSalesLinePrice({
+      customer,
+      contract,
+      productId: line.productId,
+      productCode: line.productCode,
+      listPriceFromProduct: listPrice,
+    })
+    line.listUnitPriceExTax = pricing.listUnitPriceExTax
+    line.lineDiscountRate = pricing.lineDiscountRate
+    line.priceSource = pricing.priceSource
+    recalcLine(line)
+  })
+  recalcAll()
+}
+
+function onCustomerChange() {
+  form.contactPerson = undefined
+  form.contactPhone = ''
+  repriceLinesForCustomer()
+}
+
+function onContactChange(name) {
+  const contact = contactOpts.value.find((c) => c.value === name)
+  if (contact?.phone) form.contactPhone = contact.phone
+}
+
+function openProductPicker() {
+  productPickerOpen.value = true
+}
+
+function openVariantConfig(record) {
+  if (!isSpuLine(record) || !record.spuId) return
+  variantConfigTargetLine.value = record
+  variantConfigSpuId.value = record.spuId
+  variantConfigInitialValues.value = { ...(record.variantValues || {}) }
+  variantConfigOpen.value = true
+}
+
+function lineVariantDisplay(record) {
+  return lineVariantSummary(record) || record.variantSummary || ''
+}
+
+function priceContext() {
+  return {
+    customerName: form.customerName,
+    contractNo: form.contractNo,
+  }
+}
+
+function onVariantConfigConfirm(payload) {
+  const { resolved, variantValues } = payload || {}
+  if (!resolved?.sku) {
+    message.warning('未匹配到 SKU')
+    return
+  }
+
+  const target = variantConfigTargetLine.value
+  if (!target) {
+    message.warning('未找到待配置的明细行')
+    return
+  }
+
+  const dupSku = form.lineItems.some(
+    (line) =>
+      line.id !== target.id && line.productCode === resolved.productCode && !line.isManualLine,
+  )
+  if (dupSku) {
+    message.warning(`产品编码「${resolved.productCode}」已在明细中`)
+    return
+  }
+
+  const result = applySalesLineResolvedConfig(target, resolved, priceContext())
+  if (!result.ok) {
+    message.warning(result.message || '更新变体失败')
+    return
+  }
+  target.variantValues = { ...(variantValues || resolved.variantValues || {}) }
+  target.variantSummary = lineVariantSummary(target)
+  recalcLine(target)
+  recalcAll()
+  message.success('变体已配置')
+}
+
+function onSalesProductsSelected(rows) {
+  const list = Array.isArray(rows) ? rows : [rows]
+  const skuRows = list.filter((r) => r.pickType !== 'spu')
+  const spuRows = list.filter((r) => r.pickType === 'spu')
+
+  if (skuRows.length) {
+    onProductsSelected(skuRows)
+  }
+  if (spuRows.length) {
+    onSpuDraftSelected(spuRows)
+  }
+}
+
+function onSpuDraftSelected(rows) {
+  let added = 0
+  rows.forEach((payload) => {
+    const spuId = payload.spuId || payload.id
+    if (!spuId) return
+    const dup = form.lineItems.some(
+      (line) => isSpuLine(line) && line.spuId === spuId && !line.productId,
+    )
+    if (dup) return
+
+    const draft = createSpuLineDraft(payload)
+    const line = createLineItem({
+      ...draft,
+      businessType: '自产销售',
+      deliveryMode: '整件',
+      salesQty: 1,
+      taxRate: 13,
+      bomFulfillmentPath: BOM_FULFILLMENT_PATH.DESIGN_REQUIRED,
+      deliveryDate: headerDeliveryDateText(),
+    })
+    applyHeaderDeliveryDateToLine(line)
+    recalcLine(line)
+    form.lineItems.push(line)
+    added += 1
+  })
+  recalcAll()
+  if (!added) {
+    message.info('所选产品族已在明细中（待配置变体），未重复添加')
+    return
+  }
+  message.success(`已添加 ${added} 个产品族，请点击规格型号 / 材质 / 变体属性完成配置`)
+}
+
+function resolveMasterRecord(payload) {
+  if (payload.itemType === '产品') {
+    return productInfoState.products.find((p) => p.id === payload.id) || null
+  }
+  return materialInfoState.materials.find((m) => m.id === payload.id) || null
+}
+
+function mapPickerToSalesLine(payload) {
+  const bomItemType = payload.itemType === '产品' ? 'product' : 'material'
+  const bom = getOwnActiveBomForItem(bomItemType, payload.id)
+  const master = resolveMasterRecord(payload)
+  const listPrice = master?.unitPrice ?? payload.unitPrice ?? 0
+  const customer = getCustomerByName(form.customerName)
+  const contract = form.contractNo ? getSalesContractByNo(form.contractNo) : null
+  const contractPriceHit = (contract?.priceItems || []).find(
+    (item) =>
+      (payload.id && item.productId === payload.id) ||
+      (payload.code && item.productCode === payload.code),
+  )
+  const taxRate =
+    contractPriceHit?.taxRate != null
+      ? Number(contractPriceHit.taxRate)
+      : (master?.outputTaxRate ?? 13)
+  const pricing = resolveSalesLinePrice({
+    customer,
+    contract,
+    productId: payload.id,
+    productCode: payload.code,
+    listPriceFromProduct: listPrice,
+  })
+
+  return createLineItem({
+    productId: payload.id,
+    bomId: bom?.id || '',
+    businessType: '自产销售',
+    isManualLine: false,
+    isSpuLine: false,
+    spuId: master?.spuId || payload.spuId || '',
+    spuName: master?.spuName || '',
+    variantValues: master?.variantValues ? { ...master.variantValues } : {},
+    variantSummary: master?.variantSummary || '',
+    deliveryMode: '整件',
+    productAttr: master?.productAttribute || payload.materialType || '',
+    productName: payload.name,
+    productCode: payload.code,
+    specModel: payload.specModel,
+    material: payload.material,
+    drawingNo: payload.drawingNo || '',
+    techParams: master?.techParams || '',
+    matchingRequirements: master?.matchingRequirements || master?.remark || '',
+    category: payload.categoryName || master?.categoryName || '',
+    unit: payload.inventoryUnit || master?.inventoryUnit || '件',
+    bomName: bom?.bomName || '',
+    bomVersion: bom?.version || '',
+    bomFulfillmentPath: bom
+      ? BOM_FULFILLMENT_PATH.USE_CATALOG_BOM
+      : BOM_FULFILLMENT_PATH.DESIGN_REQUIRED,
+    needIndustrialLabel: Boolean(master?.production?.needIndustrialLabel),
+    salesQty: 1,
+    taxRate,
+    listUnitPriceExTax: pricing.listUnitPriceExTax,
+    lineDiscountRate: pricing.lineDiscountRate,
+    priceSource: pricing.priceSource,
+    unitPriceExTax: 0,
+    unitPriceInTax: 0,
+    deliveryDate: headerDeliveryDateText(),
+  })
+}
+
+function onProductsSelected(rows) {
+  const noBomProducts = []
+  rows.forEach((payload) => {
+    const code = payload.code || ''
+    if (!code) return
+    if (form.lineItems.some((line) => line.productCode === code && !line.isManualLine)) return
+
+    const bomItemType = payload.itemType === '产品' ? 'product' : 'material'
+    const bom = getOwnActiveBomForItem(bomItemType, payload.id)
+    if (!bom) {
+      noBomProducts.push(payload.name)
+    }
+
+    const line = mapPickerToSalesLine(payload)
+    recalcLine(line)
+    form.lineItems.push(line)
+  })
+
+  recalcAll()
+
+  if (noBomProducts.length) {
+    message.warning(
+      `以下产品无自有生效 BOM，已默认「需设计任务」：${noBomProducts.join('、')}。审核后将进入设计；或先为该 SKU 维护并启用产品 BOM。`,
+    )
+  }
+}
+
+function addManualProductLine() {
+  const line = createLineItem({
+    businessType: '外协销售',
+    isManualLine: true,
+    deliveryMode: '整件',
+    salesQty: 1,
+    taxRate: 13,
+    unit: '件',
+    deliveryDate: headerDeliveryDateText(),
+  })
+  recalcLine(line)
+  form.lineItems.push(line)
+  recalcAll()
+}
+
+function removeLine(index) {
+  form.lineItems.splice(index, 1)
+  recalcAll()
+}
+
+function cloneLine(index) {
+  const src = form.lineItems[index]
+  const cloned = createLineItem({ ...JSON.parse(JSON.stringify(src)), id: undefined })
+  recalcLine(cloned)
+  form.lineItems.push(cloned)
+  recalcAll()
+}
+
+function openLineEdit(record) {
+  lineEditTarget.value = record
+  lineEditOpen.value = true
+}
+
+function openLongTextEdit(record, fieldKey) {
+  longTextEdit.record = record
+  longTextEdit.fieldKey = fieldKey
+  longTextEdit.title = LONG_TEXT_FIELD_LABELS[fieldKey] || '内容'
+  longTextEdit.draft = record[fieldKey] || ''
+  longTextEdit.singleLine = SINGLE_LINE_EDIT_FIELDS.has(fieldKey)
+  longTextEdit.open = true
+}
+
+function confirmLongTextEdit() {
+  if (longTextEdit.record && longTextEdit.fieldKey) {
+    longTextEdit.record[longTextEdit.fieldKey] = longTextEdit.draft || ''
+  }
+  longTextEdit.open = false
+}
+
+function onLineEditSaved(updated) {
+  const idx = form.lineItems.findIndex((line) => line.id === updated.id)
+  if (idx === -1) return
+  Object.assign(form.lineItems[idx], updated)
+  recalcAll()
+}
+
+function formatMoney(val) {
+  return Number(val || 0).toFixed(2)
+}
+
+function handleSave() {
+  if (!salesDiscountEnabled.value) {
+    form.discountStrategy = DISCOUNT_STRATEGIES.NONE
+    form.orderDiscountPercent = 100
+    form.orderDiscountRate = 1
+    form.orderDiscountAmount = 0
+  }
+  if (!form.customerName) {
+    message.warning('请选择客户名称')
+    return
+  }
+  recalcAll()
+
+  if (!form.lineItems.length) {
+    message.warning('请至少添加一条销售明细')
+    return
+  }
+
+  const skuGuard = validateSalesLinesSkuResolved(form.lineItems)
+  if (!skuGuard.ok) {
+    message.warning(skuGuard.message)
+    return
+  }
+
+  const pricing = orderPricing.value
+  const contract = form.contractNo ? getSalesContractByNo(form.contractNo) : null
+  const quotaWarn = checkContractQuotaWarning(
+    contract,
+    pricing.amountInTax || pricing.orderAmount || 0,
+    pricing.totalQty || 0,
+  )
+  if (quotaWarn.warn) {
+    Modal.confirm({
+      title: '合同额度预警',
+      content: quotaWarn.message,
+      okText: '仍要保存',
+      cancelText: '返回修改',
+      onOk: () => persistOrder(),
+    })
+    return
+  }
+  persistOrder()
+}
+
+function persistOrder() {
+  const orderNo = form.orderNo?.trim() || generateSalesOrderNo()
+  const pricing = orderPricing.value
+  // 配件清单由用户手工维护，保存时不再自动同步标准包
+  const payload = {
+    ...JSON.parse(JSON.stringify(form)),
+    businessType: deriveOrderBusinessType(form.lineItems),
+    orderNo,
+    reminderDate: form.reminderDate ? form.reminderDate.format('YYYY-MM-DD') : '',
+    documentDate: dayjs().format('YYYY-MM-DD'),
+    orderSource: '内部新增',
+    region: '华北',
+    salesChannel: '直销',
+    progressStatus: '待提交',
+    deliveryStatus: '未发货',
+    inventoryStatus: '充足',
+    totalIssuedQty: 0,
+    creator: props.editRecord?.creator || 'admin1',
+    createdAt: props.editRecord?.createdAt || dayjs().format('YYYY-MM-DD HH:mm'),
+    approver: props.editRecord?.approver || '',
+    approvedAt: props.editRecord?.approvedAt || '',
+    lineItems: pricing.lineItems,
+    lineListAmountExTax: pricing.lineListAmountExTax,
+    lineAmountExTax: pricing.lineAmountExTax,
+    lineAmountInTax: pricing.lineAmountInTax,
+    lineDiscountTotal: pricing.lineDiscountTotal,
+    orderDiscountByRate: pricing.orderDiscountByRate,
+    orderDiscountTotal: pricing.orderDiscountTotal,
+    totalDiscountAmount: pricing.totalDiscountAmount,
+    orderAmount: pricing.orderAmount,
+    amountExTax: pricing.amountExTax,
+    amountInTax: pricing.amountInTax,
+    totalQty: pricing.totalQty,
+    orderDiscountRate: normalizeDiscountRate(form.orderDiscountRate, 1),
+    purchaseRequisitionNo: props.editRecord?.purchaseRequisitionNo || '',
+    purchaseRequisitionId: props.editRecord?.purchaseRequisitionId || '',
+    attachments: fileList.value.map((file) => ({
+      uid: file.uid,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+    })),
+  }
+  delete payload.orderDiscountPercent
+
+  if (props.pageMode) {
+    if (isEdit.value) {
+      updateSalesOrder(props.editRecord.id, payload)
+    } else {
+      addSalesOrder({ ...payload, id: `so-${Date.now()}` })
+      recalcOrderAmounts(salesOrderState.orders[0])
+    }
+  } else {
+    emit('saved', { isEdit: isEdit.value, id: props.editRecord?.id, data: payload })
+  }
+  message.success(isEdit.value ? '销售订单已更新' : '销售订单已保存')
+  closeAfterSave()
+}
+</script>
+
+<style lang="less" scoped>
+.so-form-shell {
+  min-width: 0;
+}
+
+.form-layout {
+  min-width: 0;
+}
+
+.section-block {
+  flex-shrink: 0;
+
+  .section-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .section-title-row .section-title {
+    margin-bottom: 0;
+  }
+
+  .collapse-btn {
+    padding-inline: 4px;
+    height: auto;
+    flex-shrink: 0;
+  }
+
+  &.is-collapsed {
+    padding-top: 10px;
+    padding-bottom: 10px;
+
+    .section-title-row {
+      margin-bottom: 0;
+    }
+  }
+}
+
+.header-form {
+  :deep(.ant-form-item) {
+    width: 100%;
+    margin-bottom: 0;
+    margin-inline-end: 0;
+  }
+
+  :deep(.ant-form-item-row) {
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+
+  :deep(.ant-form-item-label) {
+    flex: 0 0 auto;
+    padding-bottom: 0;
+
+    > label {
+      height: 24px;
+      line-height: 24px;
+      font-size: 13px;
+      white-space: nowrap;
+
+      &::after {
+        margin-inline: 2px 6px;
+      }
+    }
+  }
+
+  :deep(.ant-form-item-control) {
+    flex: 1;
+    min-width: 0;
+  }
+
+  :deep(.ant-input),
+  :deep(.ant-select),
+  :deep(.ant-picker),
+  :deep(.ant-input-number),
+  :deep(.ant-input-affix-wrapper) {
+    width: 100%;
+  }
+
+  .remark-item {
+    :deep(.ant-form-item-label) {
+      flex: 0 0 68px;
+    }
+  }
+}
+
+.discount-hint {
+  margin: 4px 0 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #1677ff;
+  background: #e6f4ff;
+  border-radius: 4px;
+}
+
+.price-summary-card {
+  margin: 0;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+
+  .price-summary-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: #fff;
+    cursor: pointer;
+    user-select: none;
+
+    .section-title {
+      font-weight: 600;
+      font-size: 14px;
+      flex-shrink: 0;
+      color: #1f1f1f;
+    }
+
+    .header-amounts {
+      flex: 1;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px 16px;
+      min-width: 0;
+      font-size: 12px;
+      color: rgba(0, 0, 0, 0.65);
+
+      strong {
+        margin-left: 4px;
+        font-size: 14px;
+        color: rgba(0, 0, 0, 0.88);
+      }
+    }
+
+    .collapse-icon {
+      flex-shrink: 0;
+      font-size: 12px;
+      color: rgba(0, 0, 0, 0.45);
+      transition: transform 0.2s;
+
+      &.rotated {
+        transform: rotate(-90deg);
+      }
+    }
+  }
+
+  .price-summary-body {
+    padding: 0 16px 12px;
+    border-top: 1px solid #f0f0f0;
+    background: #fff;
+  }
+
+  .summary-amounts-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+    padding: 8px 0 6px;
+    font-size: 12px;
+    color: rgba(0, 0, 0, 0.65);
+
+    .amount-chip {
+      white-space: nowrap;
+
+      strong {
+        margin-left: 4px;
+        font-size: 13px;
+        font-weight: 500;
+        color: rgba(0, 0, 0, 0.88);
+      }
+
+      &.discount strong {
+        color: #cf1322;
+      }
+    }
+  }
+
+  .discount-inline-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 0;
+    margin-bottom: 0;
+
+    :deep(.ant-form-item) {
+      margin-bottom: 0;
+      margin-right: 12px;
+    }
+
+    :deep(.ant-form-item-label > label) {
+      font-size: 12px;
+      height: 24px;
+    }
+
+    :deep(.ant-radio-wrapper) {
+      font-size: 12px;
+    }
+
+    .discount-reason-item {
+      flex: 1;
+      min-width: 220px;
+    }
+  }
+}
+
+.detail-section {
+  margin: 0;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+
+  .detail-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: #fff;
+    border-bottom: 1px solid #f0f0f0;
+    cursor: pointer;
+    user-select: none;
+
+    .section-title {
+      font-weight: 600;
+      font-size: 14px;
+      color: #1f1f1f;
+    }
+
+    .collapse-icon {
+      color: rgba(0, 0, 0, 0.45);
+      transition: transform 0.2s;
+
+      &.rotated {
+        transform: rotate(-90deg);
+      }
+    }
+  }
+
+  .detail-section-body {
+    background: #fff;
+  }
+
+  .detail-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px 8px;
+    gap: 8px;
+
+    .tax-toggle-btn {
+      color: #1677ff;
+      border-color: #91caff;
+      background: #e6f4ff;
+    }
+
+    .tax-hint {
+      font-size: 12px;
+      color: rgba(0, 0, 0, 0.45);
+    }
+
+    .column-setting-btn {
+      color: rgba(0, 0, 0, 0.45);
+    }
+  }
+
+  :deep(.ant-table-wrapper) {
+    padding: 0 16px 12px;
+  }
+
+  :deep(.sales-line-table .ant-table-body) {
+    overflow-y: visible !important;
+    max-height: none !important;
+  }
+
+  :deep(.sales-line-table .ant-table-thead > tr > th) {
+    padding: 8px !important;
+    position: relative;
+  }
+}
+
+.header-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  user-select: none;
+
+  .resize-handle {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: col-resize;
+
+    &:hover {
+      background: rgba(22, 119, 255, 0.25);
+    }
+  }
+}
+
+.column-settings {
+  width: 280px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.line-attachment-upload {
+  :deep(.ant-upload-list) {
+    max-width: 100%;
+  }
+
+  :deep(.ant-upload-list-item) {
+    margin-top: 4px;
+    font-size: 12px;
+  }
+
+  .line-upload-btn {
+    padding-inline: 0;
+    height: auto;
+  }
+}
+
+.stock-remind-section {
+  margin-top: 12px;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  background: #fff;
+  overflow: hidden;
+
+  .stock-remind-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: #fafafa;
+    border-bottom: 1px solid #f0f0f0;
+    cursor: pointer;
+    user-select: none;
+
+    .section-title {
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .collapse-icon {
+      color: rgba(0, 0, 0, 0.45);
+      transition: transform 0.2s;
+
+      &.rotated {
+        transform: rotate(-90deg);
+      }
+    }
+  }
+
+  &.is-collapsed .stock-remind-header {
+    border-bottom: none;
+  }
+
+  .stock-remind-body {
+    padding: 12px;
+  }
+
+  .stock-remind-tip {
+    margin: 0 0 10px;
+    font-size: 12px;
+    color: rgba(0, 0, 0, 0.45);
+    line-height: 1.5;
+  }
+}
+
+.stock-remind-tip {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+  line-height: 1.5;
+}
+
+.ship-acc-stock-hint {
+  margin-top: 16px;
+  padding: 10px 12px;
+  background: #fafafa;
+  border-radius: 6px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.65);
+  line-height: 1.5;
+}
+
+.fulfillment-hint {
+  margin: 8px 16px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #1677ff;
+}
+
+.ship-accessory-section {
+  .ship-accessory-tip {
+    margin: 0 0 12px;
+    font-size: 12px;
+    color: rgba(0, 0, 0, 0.45);
+    line-height: 1.5;
+  }
+}
+
+.attachment-section {
+  /* 卡片外观由 FormCreateShell .section-block 统一 */
+  .section-title {
+    margin-bottom: 12px;
+  }
+}
+
+.attachment-form {
+  width: 100%;
+
+  :deep(.ant-form-item) {
+    width: 100%;
+    margin-bottom: 0;
+    margin-inline-end: 0;
+  }
+
+  :deep(.ant-form-item-row) {
+    flex-wrap: nowrap;
+    align-items: flex-start;
+  }
+
+  :deep(.ant-form-item-label) {
+    flex: 0 0 auto;
+    padding-bottom: 0;
+
+    > label {
+      height: 24px;
+      line-height: 24px;
+      font-size: 13px;
+      white-space: nowrap;
+
+      &::after {
+        margin-inline: 2px 6px;
+      }
+    }
+  }
+
+  :deep(.ant-form-item-control) {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .upload-field {
+    width: 100%;
+  }
+
+  .upload-hint {
+    margin-top: 6px;
+    font-size: 12px;
+    color: rgba(0, 0, 0, 0.45);
+    line-height: 1.5;
+  }
+}
+
+.readonly-cell {
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.variant-field-link {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #1677ff;
+  cursor: pointer;
+
+  &:hover {
+    color: #4096ff;
+  }
+}
+
+.contract-pick-alert {
+  margin-bottom: 12px;
+}
+
+.contract-picker-body {
+  display: flex;
+  gap: 12px;
+  height: 480px;
+  max-height: calc(80vh - 200px);
+  min-height: 400px;
+}
+
+.contract-table-panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.contract-table-pager {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.contract-selected-panel {
+  width: 28%;
+  min-width: 220px;
+  max-width: 300px;
+  flex-shrink: 0;
+  height: 100%;
+  min-height: 0;
+  border: 1px solid #f0f0f0;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  background: #fafafa;
+  overflow: hidden;
+}
+
+.contract-selected-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.contract-selected-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: #333;
+}
+
+.contract-clear-btn {
+  padding: 0;
+  height: auto;
+}
+
+.contract-selected-list {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.contract-selected-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px;
+  margin-bottom: 8px;
+  background: #fff;
+  border: 1px solid #f0f0f0;
+  border-radius: 4px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.contract-selected-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.contract-selected-code {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.contract-selected-name,
+.contract-selected-meta {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.65);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contract-remove-btn {
+  flex-shrink: 0;
+  color: rgba(0, 0, 0, 0.45);
+
+  &:hover {
+    color: #ff4d4f;
+  }
+}
+
+.contract-selected-empty {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 0;
+}
+</style>

@@ -1,0 +1,448 @@
+import { createOutboundLine } from '@/mock/outboundOrders'
+import { getOwnActiveBomForItem } from '@/store/productBomStore'
+import { materialInfoState } from '@/store/materialInfoStore'
+import { getStockQty, stockState } from '@/store/stockStore'
+import { listBatches, sumDedicatedQty } from '@/store/stockBatchStore'
+import {
+  getSoftAllocatedQtyByItemCode,
+  salesStockAllocationState,
+} from '@/store/salesStockAllocationStore'
+import { demoStockQty } from '@/utils/productionPlanWorkItem'
+import { resolveVariableLengthFields } from '@/utils/variableLengthMaterial'
+import { getLocationSelectOptions } from '@/store/warehouseLocationStore'
+
+function roundQty(val) {
+  return Math.round((Number(val) || 0) * 1000) / 1000
+}
+
+function roundMoney(val) {
+  return Math.round((Number(val) || 0) * 100) / 100
+}
+
+export function findMaterialByCode(itemCode) {
+  if (!itemCode) return null
+  return materialInfoState.materials.find((m) => m.code === itemCode) || null
+}
+
+/** 是否双物料单位出库行 */
+export function isOutboundDualUnitLine(line = {}, material = null) {
+  const mat = material || findMaterialByCode(line.itemCode)
+  return Boolean(line.isVariableLength || mat?.isVariableLength)
+}
+
+/** 出库数量单位（双单位按库存单位） */
+export function resolveOutboundStockUnit(line = {}, material = null) {
+  const mat = material || findMaterialByCode(line.itemCode)
+  if (isOutboundDualUnitLine(line, mat)) {
+    return line.stockUnit || line.unit || mat?.stockUnit || mat?.inventoryUnit || '米'
+  }
+  return line.unit || mat?.inventoryUnit || mat?.stockUnit || '件'
+}
+
+/** 按物料档案写入双单位相关字段 */
+export function applyDualUnitFieldsToOutboundLine(line = {}, itemCode = '') {
+  const code = itemCode || line.itemCode
+  const mat = findMaterialByCode(code)
+  if (!mat) {
+    line.stockUnit = line.unit || '件'
+    return line
+  }
+  const vl = resolveVariableLengthFields(mat)
+  line.barcodeType = mat.barcodeType || vl.barcodeType || line.barcodeType || '一批一码'
+  line.needsBlankingSettle = Boolean(mat.needsBlankingSettle)
+  if (vl.isVariableLength) {
+    line.isVariableLength = true
+    line.purchaseUnit = vl.purchaseUnit
+    line.stockUnit = vl.stockUnit
+    line.unit = vl.stockUnit
+    line.uomRelation = vl.uomRelation
+  } else {
+    line.isVariableLength = false
+    line.purchaseUnit = mat.inventoryUnit || line.unit || '件'
+    line.stockUnit = mat.inventoryUnit || line.unit || '件'
+    line.unit = line.stockUnit
+    // 单单位也可自主拣选；勿清空已选批次
+    if (
+      !line.manualBatchPick &&
+      !(Array.isArray(line.batchAllocations) && line.batchAllocations.length)
+    ) {
+      line.pickedBatchId = undefined
+      line.pickedBatchNo = undefined
+      line.pickedLength = undefined
+    }
+  }
+  return line
+}
+
+/** 出库明细是否展示拣选批次 */
+export function canOutboundBatchPick(line = {}) {
+  return Boolean(line?.itemCode || line?.materialCode || line?.productCode)
+}
+
+/** 件码：兼容数组与「、」分隔字符串 */
+export function normalizePieceSerialNos(value) {
+  if (!value) return []
+  if (Array.isArray(value)) return value.map((s) => String(s).trim()).filter(Boolean)
+  return String(value)
+    .split(/[、,，;；\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+/** 出库确认时实际扣减的批次文案（优先分配明细） */
+export function formatOutboundIssuedBatchText(line = {}) {
+  const allocs = (line.batchAllocations || []).filter((a) => a?.batchNo)
+  if (allocs.length) {
+    return allocs
+      .map((a) => {
+        const qty = Number(a.qty)
+        if (Number.isFinite(qty) && qty > 0) return `${a.batchNo}×${qty}`
+        return a.batchNo
+      })
+      .join('；')
+  }
+  return line.issuedBatchNo || line.pickedBatchNo || line.barcodeBatchNo || ''
+}
+
+export function calcLineTotalPrice(line = {}) {
+  const qty = Number(line.shipQty) || 0
+  const price = Number(line.unitPrice) || 0
+  return roundMoney(qty * price)
+}
+
+export function calcLineCostAmount(line = {}) {
+  const qty = Number(line.shipQty) || 0
+  const costUnit = Number(line.costUnitPrice ?? line.unitPrice) || 0
+  return roundMoney(qty * costUnit)
+}
+
+export function enrichOutboundLinePricing(line = {}) {
+  const totalPrice = calcLineTotalPrice(line)
+  const costUnitPrice =
+    line.costUnitPrice != null && line.costUnitPrice !== ''
+      ? roundMoney(line.costUnitPrice)
+      : line.unitPrice != null
+        ? roundMoney(line.unitPrice)
+        : null
+  const costAmount =
+    line.costAmount != null && line.costAmount !== ''
+      ? roundMoney(line.costAmount)
+      : costUnitPrice != null
+        ? roundMoney((Number(line.shipQty) || 0) * costUnitPrice)
+        : null
+  return { totalPrice, costUnitPrice, costAmount }
+}
+
+export function syncLineTotalFromUnit(line) {
+  line.totalPrice = calcLineTotalPrice(line)
+}
+
+export function syncLineUnitFromTotal(line) {
+  const qty = Number(line.shipQty) || 0
+  if (qty <= 0) return
+  line.unitPrice = roundMoney((Number(line.totalPrice) || 0) / qty)
+}
+
+export function syncLineCostFromUnit(line) {
+  line.costAmount = calcLineCostAmount(line)
+}
+
+export function syncLineCostUnitFromAmount(line) {
+  const qty = Number(line.shipQty) || 0
+  if (qty <= 0) return
+  line.costUnitPrice = roundMoney((Number(line.costAmount) || 0) / qty)
+}
+
+export function getTotalStockQty(itemCode) {
+  if (!itemCode) return 0
+  void stockState.records
+  const total = stockState.records
+    .filter((r) => r.itemCode === itemCode)
+    .reduce((sum, r) => sum + (Number(r.qty) || 0), 0)
+  if (total > 0) return roundQty(total)
+  return roundQty(demoStockQty(10, String(itemCode).length))
+}
+
+export function getWarehouseStockQty(warehouse, itemCode) {
+  if (!warehouse || !itemCode) return 0
+  void stockState.records
+  const qty = getStockQty(warehouse, itemCode)
+  if (qty > 0) return roundQty(qty)
+  // 出库拣批依赖真实批次账；无库存时不再回落演示占位数量，避免「有库存却选不到批次」
+  return 0
+}
+
+/** 该仓在库批次可用合计（出库展示/拣选用） */
+export function getBatchStockQty(warehouse, itemCode) {
+  if (!warehouse || !itemCode) return 0
+  return roundQty(
+    listBatches({ warehouse, itemCode, inStockOnly: true }).reduce(
+      (s, b) => s + (Number(b.currentLength) || 0),
+      0,
+    ),
+  )
+}
+
+/** 优先用已维护货位；否则回落演示货位号 */
+export function resolveOutboundLocationNo(warehouse, itemCode) {
+  if (warehouse) {
+    const opts = getLocationSelectOptions(warehouse)
+    if (opts.length) return opts[0].value
+  }
+  if (!warehouse || !itemCode) return ''
+  const seed = `${warehouse}::${itemCode}`
+  const zones = ['A', 'B', 'C', 'D', 'E']
+  const zone = zones[seed.length % zones.length]
+  const row = (seed.charCodeAt(0) % 12) + 1
+  const col = (seed.charCodeAt(seed.length - 1) % 20) + 1
+  return `${zone}-${String(row).padStart(2, '0')}-${String(col).padStart(2, '0')}`
+}
+
+export function enrichOutboundLineLocation(line = {}) {
+  if (line.locationNo) return { locationNo: line.locationNo }
+  return {
+    locationNo: resolveOutboundLocationNo(line.shipWarehouse, line.itemCode),
+  }
+}
+
+export function enrichOutboundLineStock(line = {}) {
+  const itemCode = line.itemCode || ''
+  const warehouse = line.shipWarehouse || ''
+  const batchQty = getBatchStockQty(warehouse, itemCode)
+  const realWh = getWarehouseStockQty(warehouse, itemCode)
+  void salesStockAllocationState.allocations
+  const stockQty = getTotalStockQty(itemCode)
+  const dedicatedQty = itemCode ? sumDedicatedQty({ itemCode }) : 0
+  const softAllocatedQty = itemCode ? getSoftAllocatedQtyByItemCode(itemCode) : 0
+  // 当前可用 = 总库存 − 按单库存 − 软占用
+  const availableStockQty = roundQty(Math.max(0, stockQty - dedicatedQty - softAllocatedQty))
+  return {
+    stockQty,
+    dedicatedStockQty: dedicatedQty,
+    softAllocatedQty,
+    availableStockQty,
+    // 有批次账时以批次合计为准，避免汇总与批次不一致；无批次则为真实仓存（可为 0）
+    warehouseStockQty: batchQty > 0 ? batchQty : realWh,
+  }
+}
+
+export function enrichOutboundLine(line = {}) {
+  const next = { ...line }
+  applyDualUnitFieldsToOutboundLine(next)
+  return {
+    ...next,
+    ...enrichOutboundLineStock(next),
+    ...enrichOutboundLineLocation(next),
+    ...enrichOutboundLinePricing(next),
+  }
+}
+
+export function buildOutboundLineFromPickerItem(item, defaultWarehouse = '') {
+  const line = createOutboundLine({
+    itemId: item.itemId,
+    itemCode: item.code,
+    itemName: item.name,
+    itemType: item.itemType,
+    specAttr: item.productAttribute || item.materialType || '',
+    specModel: item.specModel || '',
+    material: item.material || '',
+    drawingNo: item.drawingNo || '',
+    unit: item.inventoryUnit || '件',
+    packagingForm: item.packagingForm || '',
+    unitPrice: item.unitPrice ?? null,
+    shipQty: 1,
+    shipWarehouse: defaultWarehouse || '',
+    sourceDocNo: '',
+    isSpuLine: item.isSpuLine === true,
+    spuId: item.spuId || '',
+    spuName: item.spuName || '',
+    productId: item.productId || item.itemId || '',
+    variantValues: item.variantValues ? { ...item.variantValues } : {},
+    variantSummary: item.variantSummary || '',
+  })
+  const enriched = enrichOutboundLine(line)
+  if (enriched.isVariableLength && !enriched.pickedBatchId) {
+    enriched.shipQty = null
+    Object.assign(enriched, enrichOutboundLinePricing(enriched))
+  }
+  return enriched
+}
+
+/** 按 BOM 添加：展开子件明细；includeTopItem=false 时不带入顶级物品 */
+export function buildOutboundLinesFromBom(
+  pickerRow,
+  outboundQty = 1,
+  defaultWarehouse = '',
+  includeTopItem = true,
+) {
+  const storeType = pickerRow.itemType === '产品' ? 'product' : 'material'
+  const bom = getOwnActiveBomForItem(storeType, pickerRow.itemId)
+  if (!bom?.lineItems?.length) return []
+
+  const qty = Number(outboundQty) || 1
+  const map = new Map()
+
+  const pushLine = (partial, lineQty) => {
+    const code = partial.itemCode
+    if (!code) return
+    const shipQty = roundQty(lineQty)
+    if (map.has(code)) {
+      const hit = map.get(code)
+      hit.shipQty = roundQty(hit.shipQty + shipQty)
+      Object.assign(hit, enrichOutboundLinePricing(hit))
+      return
+    }
+    const line = enrichOutboundLine(
+      createOutboundLine({
+        ...partial,
+        shipQty: shipQty || 1,
+        sourceDocNo: partial.sourceDocNo || bom.bomNo || bom.bomName || '',
+      }),
+    )
+    map.set(code, line)
+  }
+
+  if (includeTopItem) {
+    pushLine(
+      buildOutboundLineFromPickerItem(
+        {
+          itemId: pickerRow.itemId,
+          itemType: pickerRow.itemType,
+          code: pickerRow.code,
+          name: pickerRow.name,
+          specModel: pickerRow.specModel,
+          inventoryUnit: pickerRow.inventoryUnit || '件',
+          unitPrice: pickerRow.unitPrice,
+        },
+        defaultWarehouse,
+      ),
+      qty,
+    )
+  }
+
+  bom.lineItems.forEach((line, index) => {
+    const code = line.materialCode || line.itemCode || ''
+    pushLine(
+      createOutboundLine({
+        itemCode: code,
+        itemName: line.itemName || line.materialName || '',
+        itemType: line.itemType || '物料',
+        specModel: line.specModel || '',
+        specAttr: line.specAttr || '',
+        unit: line.unit || '件',
+        unitPrice: line.unitPrice ?? null,
+        shipWarehouse: defaultWarehouse || '',
+        isVariableLength: Boolean(line.isVariableLength),
+        needsBlankingSettle: Boolean(
+          line.needsBlankingSettle ?? findMaterialByCode(code)?.needsBlankingSettle,
+        ),
+        blankSize: line.blankSize || null,
+        blankSizeText: line.blankSizeText || '',
+        blankSizeMode: line.blankSizeMode || '',
+        blankLength: line.blankLength ?? null,
+        blankArea: line.blankArea ?? null,
+        uomRelation: line.uomRelation || '',
+      }),
+      (Number(line.unitQty) || 0) * qty || demoStockQty(1, index),
+    )
+  })
+
+  return [...map.values()]
+}
+
+export function mergeOutboundLines(existing = [], incoming = []) {
+  const result = existing.map((l) => ({ ...l }))
+  incoming.forEach((line) => {
+    const code = line.itemCode
+    if (!code) {
+      result.push(enrichOutboundLine({ ...line }))
+      return
+    }
+    const hit = result.find((l) => l.itemCode === code)
+    if (hit) {
+      hit.shipQty = roundQty((Number(hit.shipQty) || 0) + (Number(line.shipQty) || 0))
+      if (!hit.sourceDocNo && line.sourceDocNo) hit.sourceDocNo = line.sourceDocNo
+      Object.assign(hit, enrichOutboundLinePricing(hit))
+      return
+    }
+    result.push(enrichOutboundLine({ ...line }))
+  })
+  return result
+}
+
+export function createBlankOutboundLine(defaultWarehouse = '') {
+  return enrichOutboundLine(
+    createOutboundLine({
+      itemCode: '',
+      itemName: '',
+      shipQty: 1,
+      shipWarehouse: defaultWarehouse || '',
+    }),
+  )
+}
+
+export function applyPickerItemToOutboundLine(line, item, defaultWarehouse = '') {
+  const normalized = {
+    itemId: item.itemId ?? item.id,
+    itemType: item.itemType,
+    code: item.code,
+    name: item.name,
+    specModel: item.specModel,
+    material: item.material,
+    drawingNo: item.drawingNo,
+    inventoryUnit: item.inventoryUnit,
+    unitPrice: item.unitPrice,
+    productAttribute: item.productAttribute || item.materialType,
+    materialType: item.materialType,
+    isSpuLine: item.isSpuLine === true,
+    spuId: item.spuId || '',
+    spuName: item.spuName || '',
+    productId: item.productId || '',
+    variantValues: item.variantValues ? { ...item.variantValues } : {},
+    variantSummary: item.variantSummary || '',
+  }
+  const fresh = buildOutboundLineFromPickerItem(
+    normalized,
+    line.shipWarehouse || defaultWarehouse || '',
+  )
+  return enrichOutboundLine({
+    ...line,
+    itemId: fresh.itemId,
+    itemCode: fresh.itemCode,
+    itemName: fresh.itemName,
+    itemType: fresh.itemType,
+    specAttr: fresh.specAttr,
+    specModel: fresh.specModel,
+    material: fresh.material,
+    drawingNo: fresh.drawingNo,
+    unit: fresh.unit,
+    stockUnit: fresh.stockUnit,
+    purchaseUnit: fresh.purchaseUnit,
+    isVariableLength: fresh.isVariableLength,
+    needsBlankingSettle: fresh.needsBlankingSettle,
+    packagingForm: fresh.packagingForm || '',
+    unitPrice: fresh.unitPrice ?? line.unitPrice,
+    stockQty: fresh.stockQty,
+    warehouseStockQty: fresh.warehouseStockQty,
+    isSpuLine: fresh.isSpuLine,
+    spuId: fresh.spuId,
+    spuName: fresh.spuName,
+    productId: fresh.productId,
+    variantValues: fresh.variantValues ? { ...fresh.variantValues } : {},
+    variantSummary: fresh.variantSummary || '',
+    pickedBatchId: undefined,
+    pickedBatchNo: undefined,
+    pickedLength: undefined,
+    barcodeBatchNo: '',
+    totalPrice: calcLineTotalPrice({ ...line, unitPrice: fresh.unitPrice ?? line.unitPrice }),
+  })
+}
+
+export function cloneOutboundLine(line) {
+  return enrichOutboundLine(
+    createOutboundLine({
+      ...line,
+      id: undefined,
+    }),
+  )
+}

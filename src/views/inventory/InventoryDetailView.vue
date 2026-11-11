@@ -1,0 +1,2047 @@
+<template>
+  <div class="inventory-detail-page list-page">
+    <div class="view-tabs-bar">
+      <a-tabs v-model:activeKey="viewTab" class="view-tabs" :tab-bar-style="{ margin: 0 }">
+        <a-tab-pane key="ledger" tab="库存台账" />
+        <a-tab-pane key="batches" tab="按批次查询" />
+      </a-tabs>
+    </div>
+
+    <template v-if="viewTab === 'ledger'">
+      <div class="filter-card">
+        <a-form :model="filters" layout="inline" class="filter-form horizontal-form">
+          <a-row :gutter="[12, 8]" style="width: 100%">
+            <a-col :xs="24" :sm="12" :md="6">
+              <a-form-item label="所属仓库">
+                <a-select
+                  v-model:value="filters.warehouse"
+                  allow-clear
+                  placeholder="请选择"
+                  size="small"
+                  :options="warehouseOpts"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :sm="12" :md="6">
+              <a-form-item label="类型">
+                <a-select
+                  v-model:value="filters.materialType"
+                  allow-clear
+                  placeholder="请选择"
+                  size="small"
+                  :options="materialTypeOpts"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :sm="12" :md="6">
+              <a-form-item label="产品编码">
+                <a-input
+                  v-model:value="filters.itemCode"
+                  allow-clear
+                  placeholder="编码 / SKU / 产品族"
+                  size="small"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :sm="12" :md="6">
+              <a-form-item label="产品名称">
+                <a-input
+                  v-model:value="filters.itemName"
+                  allow-clear
+                  placeholder="请输入"
+                  size="small"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :sm="12" :md="6">
+              <a-form-item label="规格型号">
+                <a-input
+                  v-model:value="filters.specModel"
+                  allow-clear
+                  placeholder="请输入"
+                  size="small"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :sm="12" :md="6">
+              <a-form-item label="材质">
+                <a-input
+                  v-model:value="filters.material"
+                  allow-clear
+                  placeholder="请输入"
+                  size="small"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :sm="12" :md="6">
+              <a-form-item label="图号">
+                <a-input
+                  v-model:value="filters.drawingNo"
+                  allow-clear
+                  placeholder="请输入"
+                  size="small"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :sm="12" :md="8">
+              <a-form-item label="库存数量">
+                <a-space :size="4">
+                  <a-input-number
+                    v-model:value="filters.stockQtyMin"
+                    size="small"
+                    placeholder="最小值"
+                    :min="0"
+                    style="width: 100px"
+                  />
+                  <span>—</span>
+                  <a-input-number
+                    v-model:value="filters.stockQtyMax"
+                    size="small"
+                    placeholder="最大值"
+                    :min="0"
+                    style="width: 100px"
+                  />
+                </a-space>
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :sm="12" :md="6">
+              <a-form-item class="filter-actions-item">
+                <a-space>
+                  <a-button type="primary" size="small" @click="handleSearch">
+                    <SearchOutlined />
+                    搜索
+                  </a-button>
+                  <a-button size="small" @click="handleReset">清空</a-button>
+                </a-space>
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </a-form>
+      </div>
+
+      <div class="toolbar-row">
+        <a-dropdown>
+          <a-button size="small" @click.prevent>
+            批量操作
+            <DownOutlined />
+          </a-button>
+          <template #overlay>
+            <a-menu @click="onBatchMenu">
+              <a-menu-item key="export">导出</a-menu-item>
+              <a-menu-item key="toFree" :disabled="!selectedDedicatedRows.length">
+                转自由
+              </a-menu-item>
+              <a-menu-item key="toOrder" :disabled="!selectedDedicatedRows.length">
+                转他单
+              </a-menu-item>
+            </a-menu>
+          </template>
+        </a-dropdown>
+        <a-space :size="4" class="toolbar-icons">
+          <a-tooltip title="刷新">
+            <a-button type="text" size="small" @click="handleSearch">
+              <ReloadOutlined />
+            </a-button>
+          </a-tooltip>
+          <TableColumnSettingButton @click="columnDrawerOpen = true" />
+        </a-space>
+      </div>
+
+      <a-alert type="info" show-icon class="summary-bar" :banner="false">
+        <template #message>
+          <span>
+            当前表格已选择 <strong>{{ selectedRowKeys.length }}</strong> 项
+            <a-button type="link" size="small" @click="selectedRowKeys = []">清空</a-button>
+            · 同物料自由/按单分行展示；按单行可直接转自由、转他单
+          </span>
+        </template>
+      </a-alert>
+
+      <div class="table-card">
+        <a-table
+          :columns="mergedDisplayColumns"
+          :data-source="pagedList"
+          row-key="id"
+          size="small"
+          bordered
+          :scroll="{ x: tableScrollX }"
+          :pagination="false"
+          :row-selection="rowSelection"
+        >
+          <template #bodyCell="{ column, record, index }">
+            <template v-if="column.key === 'index'">
+              {{ rowIndex(index) }}
+            </template>
+            <template v-else-if="column.key === 'ownership'">
+              <a-tag :color="record.dedicated ? 'orange' : 'blue'">
+                {{ record.dedicated ? '按单' : '自由' }}
+              </a-tag>
+            </template>
+            <template v-else-if="column.key === 'materialType'">
+              {{ record.materialType || '—' }}
+            </template>
+            <template v-else-if="column.key === 'variantSummary'">
+              {{ record.variantSummary || '—' }}
+            </template>
+            <template v-else-if="column.key === 'drawingNo'">
+              {{ record.drawingNo || '—' }}
+            </template>
+            <template v-else-if="column.key === 'stockQty'">
+              {{ formatInventoryQtyWithUnit(record.stockQty, record.unit) }}
+            </template>
+            <template v-else-if="column.key === 'salesOrderNo'">
+              {{ record.dedicated ? record.salesOrderNo || '—' : '—' }}
+            </template>
+            <template v-else-if="column.key === 'softAllocated'">
+              {{ formatInventoryQtyWithUnit(record.softAllocated, record.unit) }}
+            </template>
+            <template v-else-if="column.key === 'availableQty'">
+              {{ formatInventoryQtyWithUnit(record.availableQty, record.unit) }}
+            </template>
+            <template v-else-if="column.key === 'unitPrice'">
+              {{ formatInventoryMoney(record.unitPrice) }}
+            </template>
+            <template v-else-if="column.key === 'totalAmount'">
+              {{ formatInventoryMoney(record.totalAmount) }}
+            </template>
+            <template v-else-if="column.key === 'action'">
+              <a-space :size="8">
+                <a v-if="record.dedicated" @click="openListOwnershipTransfer(record, 'free')">
+                  转自由
+                </a>
+                <a v-if="record.dedicated" @click="openListOwnershipTransfer(record, 'order')">
+                  转他单
+                </a>
+                <a @click="openBatchDrawer(record)">查看批次</a>
+              </a-space>
+            </template>
+          </template>
+        </a-table>
+
+        <div class="table-pagination">
+          <a-pagination
+            v-model:current="pagination.current"
+            v-model:page-size="pagination.pageSize"
+            :total="ownershipLines.length"
+            size="small"
+            show-size-changer
+            :page-size-options="['10', '20', '50', '100']"
+            :show-total="(t) => `共 ${t} 条`"
+            show-quick-jumper
+          />
+        </div>
+      </div>
+    </template>
+
+    <template v-else>
+      <div class="filter-card">
+        <a-form :model="batchFilters" layout="inline" class="filter-form horizontal-form">
+          <a-row :gutter="[12, 8]" style="width: 100%">
+            <a-col :xs="24" :sm="12" :md="6">
+              <a-form-item label="销售订单号">
+                <a-input
+                  v-model:value="batchFilters.salesOrderNo"
+                  allow-clear
+                  placeholder="按销售单号筛选"
+                  size="small"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :sm="12" :md="6">
+              <a-form-item label="批次号">
+                <a-input
+                  v-model:value="batchFilters.batchNo"
+                  allow-clear
+                  placeholder="批次号"
+                  size="small"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :sm="12" :md="6">
+              <a-form-item label="产品编码">
+                <a-input
+                  v-model:value="batchFilters.itemCode"
+                  allow-clear
+                  placeholder="产品编码"
+                  size="small"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :sm="12" :md="6">
+              <a-form-item label="产品名称">
+                <a-input
+                  v-model:value="batchFilters.itemName"
+                  allow-clear
+                  placeholder="产品名称"
+                  size="small"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :sm="12" :md="6">
+              <a-form-item label="规格型号">
+                <a-input
+                  v-model:value="batchFilters.specModel"
+                  allow-clear
+                  placeholder="规格型号"
+                  size="small"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :sm="12" :md="6">
+              <a-form-item label="材质">
+                <a-input
+                  v-model:value="batchFilters.material"
+                  allow-clear
+                  placeholder="材质"
+                  size="small"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :sm="12" :md="6">
+              <a-form-item label="仓库">
+                <a-select
+                  v-model:value="batchFilters.warehouse"
+                  allow-clear
+                  placeholder="请选择"
+                  size="small"
+                  :options="warehouseOpts"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :sm="12" :md="6">
+              <a-form-item label="归属">
+                <a-select
+                  v-model:value="batchFilters.ownership"
+                  allow-clear
+                  placeholder="全部"
+                  size="small"
+                  :options="ownershipOpts"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :xs="24" :sm="12" :md="6">
+              <a-form-item>
+                <a-space>
+                  <a-button type="primary" size="small" @click="handleBatchSearch">搜索</a-button>
+                  <a-button size="small" @click="handleBatchReset">清空</a-button>
+                </a-space>
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </a-form>
+      </div>
+      <div class="table-card">
+        <a-table
+          :columns="batchQueryColumns"
+          :data-source="filteredBatchRows"
+          row-key="id"
+          size="small"
+          bordered
+          :scroll="{ x: 1200 }"
+          :pagination="{ pageSize: 15 }"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'ownership'">
+              <a-tag :color="record.salesOrderNo ? 'orange' : 'blue'">
+                {{ record.salesOrderNo ? '按单' : '自由' }}
+              </a-tag>
+            </template>
+            <template v-else-if="column.key === 'createdAt'">
+              {{ formatBatchTime(record.createdAt) }}
+            </template>
+            <template v-else-if="column.key === 'currentLength'">
+              {{ formatInventoryQty(record.currentLength) }}
+            </template>
+            <template v-else-if="column.key === 'unitCost'">
+              {{ formatInventoryMoney(record.unitCost) }}
+            </template>
+          </template>
+        </a-table>
+      </div>
+    </template>
+
+    <a-drawer
+      v-model:open="batchDrawerOpen"
+      :title="batchDrawerTitle"
+      v-bind="batchDrawerBind"
+      :width="batchDrawerWidth"
+      root-class-name="batch-view-drawer"
+      destroy-on-close
+    >
+      <template #extra>
+        <a-button size="small" @click="closeBatchDrawer">返回列表</a-button>
+      </template>
+      <div v-if="batchDrawerRow" class="batch-soft-summary">
+        <span
+          >在库合计
+          <b>{{ formatInventoryQtyWithUnit(drawerBatchStockTotal, batchDrawerRow.unit) }}</b></span
+        >
+        <span class="soft-sep">|</span>
+        <span>
+          软占用（物料级）
+          <a v-if="drawerItemSoftAllocated > 0" class="soft-link" @click="openSoftAllocDetail">
+            {{ formatInventoryQtyWithUnit(drawerItemSoftAllocated, batchDrawerRow.unit) }}
+          </a>
+          <b v-else>{{ formatInventoryQtyWithUnit(0, batchDrawerRow.unit) }}</b>
+          <a-button
+            v-if="drawerItemSoftAllocated > 0"
+            type="link"
+            size="small"
+            class="soft-detail-btn"
+            @click="openSoftAllocDetail"
+          >
+            查看占用明细
+          </a-button>
+        </span>
+        <span class="soft-sep">|</span>
+        <span
+          >可用约
+          <b>{{
+            formatInventoryQtyWithUnit(drawerItemAvailableApprox, batchDrawerRow.unit)
+          }}</b></span
+        >
+      </div>
+
+      <div v-if="batchDrawerRow" class="batch-item-meta">
+        <span
+          >产品名称：<b>{{ drawerItemMeta.itemName }}</b></span
+        >
+        <span
+          >规格型号：<b>{{ drawerItemMeta.specModel }}</b></span
+        >
+        <span
+          >材质：<b>{{ drawerItemMeta.material }}</b></span
+        >
+        <span
+          >变体属性：<b>{{ drawerItemMeta.variantSummary }}</b></span
+        >
+      </div>
+
+      <a-tabs v-model:activeKey="drawerInnerTab" size="small" class="batch-drawer-tabs">
+        <a-tab-pane key="batches" tab="批次明细">
+          <div class="batch-drawer-toolbar">
+            <a-radio-group v-model:value="drawerBatchScope" size="small" button-style="solid">
+              <a-radio-button value="inStock">仅在库</a-radio-button>
+              <a-radio-button value="all">含已出库</a-radio-button>
+            </a-radio-group>
+            <a-space size="small" class="ownership-actions">
+              <a-button
+                size="small"
+                :disabled="!drawerSelectedDedicatedBatches.length"
+                @click="openDrawerOwnershipTransfer('free')"
+              >
+                转自由
+              </a-button>
+              <a-button
+                size="small"
+                type="primary"
+                :disabled="!drawerSelectedDedicatedBatches.length"
+                @click="openDrawerOwnershipTransfer('order')"
+              >
+                转他单
+              </a-button>
+            </a-space>
+            <span class="fifo-hint">排序：{{ drawerIssueRuleLabel }}</span>
+          </div>
+          <a-alert
+            type="info"
+            show-icon
+            class="batch-soft-tip"
+            message="本页为批次快照：入库建批 + 出库扣减后的本批余量。在库数量是当前还剩多少（库存单位）；点收数量是本批建账时的采购单位点数；采购≠库存时另显示入库数量（建账时折成库存单位的量）。有结算单位时另显示结算数量、批次单量。出入库痕迹请看「物料流水」。"
+          />
+          <a-table
+            :columns="drawerBatchColumns"
+            :data-source="drawerBatches"
+            row-key="id"
+            size="small"
+            bordered
+            :pagination="false"
+            :scroll="{ x: drawerBatchTableScrollX }"
+            :expandable="drawerBatchExpandable"
+            :row-selection="drawerBatchRowSelection"
+          >
+            <template #headerCell="{ column }">
+              <template v-if="column.key === 'currentLength'">
+                <span class="col-title-with-tip">
+                  在库数量
+                  <a-tooltip :title="BATCH_ON_HAND_QTY_TIP">
+                    <InfoCircleOutlined class="col-tip-icon" />
+                  </a-tooltip>
+                </span>
+              </template>
+              <template v-else-if="column.key === 'inboundQty'">
+                <span class="col-title-with-tip">
+                  点收数量
+                  <a-tooltip :title="BATCH_RECEIVE_QTY_TIP">
+                    <InfoCircleOutlined class="col-tip-icon" />
+                  </a-tooltip>
+                </span>
+              </template>
+              <template v-else>{{ column.title }}</template>
+            </template>
+            <template #bodyCell="{ column, record, index }">
+              <template v-if="column.key === 'fifoIndex'">
+                {{ index + 1 }}
+              </template>
+              <template v-else-if="column.key === 'ownership'">
+                <a-tag :color="record.salesOrderNo ? 'orange' : 'blue'">
+                  {{ record.salesOrderNo ? '按单' : '自由' }}
+                </a-tag>
+              </template>
+              <template v-else-if="column.key === 'createdAt'">
+                {{ formatBatchTime(record.createdAt) }}
+              </template>
+              <template v-else-if="column.key === 'sourceDocNo'">
+                <span class="ellipsis-cell" :title="record.sourceDocNo || ''">{{
+                  record.sourceDocNo || '—'
+                }}</span>
+              </template>
+              <template v-else-if="column.key === 'remnant'">
+                <a-tag v-if="isRemnantBatch(record)" color="orange">余料</a-tag>
+                <span v-else class="muted">—</span>
+              </template>
+              <template v-else-if="column.key === 'pieceManage'">
+                <template v-if="isPieceManagedBatch(record)">
+                  <a-tag color="purple">{{ record.attrs?.barcodeType || '按件' }}</a-tag>
+                  <span class="piece-count">{{ pieceCountOf(record) }} 件</span>
+                </template>
+                <span v-else class="muted">—</span>
+              </template>
+              <template v-else-if="column.key === 'inboundQty'">
+                {{ formatDrawerInboundQty(record) }}
+              </template>
+              <template v-else-if="column.key === 'inboundStockQty'">
+                {{ formatDrawerInboundStockQty(record) }}
+              </template>
+              <template v-else-if="column.key === 'currentLength'">
+                {{
+                  formatInventoryQtyWithUnit(
+                    record.currentLength,
+                    record.unit || batchDrawerRow?.unit,
+                  )
+                }}
+              </template>
+              <template v-else-if="column.key === 'unitCost'">
+                {{ formatInventoryMoney(record.unitCost) }}
+              </template>
+              <template v-else-if="column.key === 'convertSettleQty'">
+                {{ formatConvertSettleQty(record) }}
+              </template>
+              <template v-else-if="column.key === 'convertActualUnitWeight'">
+                {{ formatConvertActualUnitWeight(record) }}
+              </template>
+              <template v-else-if="column.key === 'status'">
+                <a-tag :color="record.status === '在库' ? 'green' : 'default'">
+                  {{ record.status || '—' }}
+                </a-tag>
+              </template>
+            </template>
+            <template #expandedRowRender="{ record }">
+              <div v-if="isPieceManagedBatch(record)" class="batch-expand">
+                <div class="expand-title">在库件码（FIFO 件序）</div>
+                <a-table
+                  v-if="inStockPiecesOfBatch(record).length"
+                  size="small"
+                  bordered
+                  row-key="id"
+                  :pagination="false"
+                  :columns="drawerPieceColumns"
+                  :data-source="inStockPiecesOfBatch(record)"
+                >
+                  <template #bodyCell="{ column, record: piece }">
+                    <template v-if="column.key === 'pieceQty'">
+                      {{ formatInventoryQtyWithUnit(piece.pieceQty, piece.unit || record.unit) }}
+                    </template>
+                    <template v-else-if="column.key === 'remnant'">
+                      <a-tag v-if="piece.remnant" color="orange">余料</a-tag>
+                      <span v-else class="muted">—</span>
+                    </template>
+                    <template v-else-if="column.key === 'createdAt'">
+                      {{ formatBatchTime(piece.createdAt) }}
+                    </template>
+                  </template>
+                </a-table>
+                <div v-else class="expand-empty">暂无在库件码</div>
+              </div>
+            </template>
+          </a-table>
+        </a-tab-pane>
+
+        <a-tab-pane key="flow" tab="物料流水">
+          <div class="batch-drawer-toolbar">
+            <a-input
+              v-model:value="drawerFlowBatchNo"
+              allow-clear
+              size="small"
+              placeholder="按批次号筛选"
+              style="width: 180px"
+            />
+            <a-select
+              v-model:value="drawerFlowType"
+              allow-clear
+              size="small"
+              placeholder="流水类型"
+              style="width: 120px"
+              :options="drawerFlowTypeOpts"
+            />
+            <span class="fifo-hint">按时间倒序，含入库建批与出库扣减</span>
+          </div>
+          <a-alert
+            type="info"
+            show-icon
+            class="batch-soft-tip"
+            message="本页为 FIFO 相关物料流水：入库来自批次建档，出库来自出库单批次分配；件码出库痕迹一并列出。"
+          />
+          <a-table
+            :columns="drawerFlowColumns"
+            :data-source="drawerFlowRows"
+            row-key="id"
+            size="small"
+            bordered
+            table-layout="fixed"
+            :pagination="{ pageSize: 15, size: 'small' }"
+            :locale="{ emptyText: '暂无流水记录' }"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'flowType'">
+                <a-tag :color="record.flowType === 'inbound' ? 'cyan' : 'orange'">
+                  {{ record.flowType === 'inbound' ? '入库' : '出库' }}
+                </a-tag>
+              </template>
+              <template v-else-if="column.key === 'occurredAt'">
+                {{ formatBatchTime(record.occurredAt) }}
+              </template>
+              <template v-else-if="column.key === 'qty'">
+                {{ formatInventoryQtyWithUnit(record.qty, record.unit || batchDrawerRow?.unit) }}
+              </template>
+              <template v-else-if="column.key === 'docNo'">
+                <a
+                  v-if="record.flowType === 'outbound' && record.orderId"
+                  @click="goOutboundDetail(record.orderId)"
+                >
+                  {{ record.docNo || '—' }}
+                </a>
+                <span v-else>{{ record.docNo || '—' }}</span>
+              </template>
+            </template>
+          </a-table>
+        </a-tab-pane>
+      </a-tabs>
+    </a-drawer>
+
+    <a-modal
+      v-model:open="softAllocDetailOpen"
+      :title="softAllocDetailTitle"
+      :footer="null"
+      width="860px"
+      destroy-on-close
+    >
+      <a-table
+        :columns="softAllocDetailColumns"
+        :data-source="softAllocDetailRows"
+        row-key="id"
+        size="small"
+        bordered
+        :pagination="false"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'salesOrderNo'">
+            <a v-if="record.salesOrderId" @click="goSalesOrderDetail(record.salesOrderId)">
+              {{ record.salesOrderNo || record.salesOrderId }}
+            </a>
+            <span v-else>{{ record.salesOrderNo || '—' }}</span>
+          </template>
+          <template v-else-if="column.key === 'qty'">
+            {{ formatInventoryQtyWithUnit(record.qty, batchDrawerRow?.unit) }}
+          </template>
+        </template>
+      </a-table>
+      <a-empty v-if="!softAllocDetailRows.length" description="暂无软占用记录" />
+    </a-modal>
+
+    <TableColumnSettingDrawer
+      v-model:open="columnDrawerOpen"
+      v-model:settings="columnSettings"
+      :default-settings="defaultColumnSettings"
+    />
+
+    <ExportExcelModal
+      v-model:open="exportModalOpen"
+      v-model:settings="exportFieldSettings"
+      :default-settings="defaultExportFieldSettings"
+      :filtered-count="filteredList.length"
+      :selected-count="selectedRowKeys.length"
+      @export="doExport"
+    />
+
+    <BatchOwnershipTransferModal
+      v-model:open="ownershipTransferOpen"
+      :mode="ownershipTransferMode"
+      :payload="ownershipTransferPayload"
+      @done="onOwnershipTransferDone"
+    />
+  </div>
+</template>
+
+<script>
+export default { name: 'InventoryDetailView' }
+</script>
+
+<script setup>
+import { computed, h, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import dayjs from 'dayjs'
+import { message } from 'ant-design-vue'
+import {
+  SearchOutlined,
+  ReloadOutlined,
+  DownOutlined,
+  InfoCircleOutlined,
+} from '@ant-design/icons-vue'
+import { stockState } from '@/store/stockStore'
+import {
+  listBatches,
+  listFreeBatches,
+  listDedicatedBatches,
+  getBatchById,
+  stockBatchState,
+  BATCH_STATUS,
+  sumFreeQty,
+  sumDedicatedQty,
+  sumOnHandBatchCost,
+} from '@/store/stockBatchStore'
+import { isPieceManagedBatch, listStockPieces, stockPieceState } from '@/store/stockPieceStore'
+import { outboundState } from '@/store/outboundStore'
+import { getOutboundIssueRule, OUTBOUND_ISSUE_RULE_OPTIONS } from '@/store/functionParamStore'
+import { sortBatchesByIssueRule } from '@/utils/outboundBatchAllocate'
+import { productInfoState } from '@/store/productInfoStore'
+import { materialInfoState } from '@/store/materialInfoStore'
+import {
+  getSoftAllocatedQtyByItemCode,
+  listSoftAllocationsByItemCode,
+  salesStockAllocationState,
+} from '@/store/salesStockAllocationStore'
+import { warehouseOptions } from '@/mock/purchaseOrderOptions'
+import TableColumnSettingDrawer from '@/components/TableColumnSettingDrawer.vue'
+import TableColumnSettingButton from '@/components/TableColumnSettingButton.vue'
+import ExportExcelModal from '@/components/ExportExcelModal.vue'
+import BatchOwnershipTransferModal from '@/views/inventory/components/BatchOwnershipTransferModal.vue'
+import { useTableColumnSettings } from '@/composables/useTableColumnSettings'
+import { useListExport } from '@/composables/useListExport'
+import { useDrawerWidth } from '@/composables/useDrawerWidth'
+import { lineVariantSummary } from '@/utils/spuLineResolve'
+import { inventoryDetailExportFields } from '@/utils/exportFields/inventoryDetailExport'
+import {
+  buildInventoryDetailLines,
+  filterInventoryDetailLines,
+  formatInventoryMoney,
+  formatInventoryQty,
+  formatInventoryQtyWithUnit,
+  inventoryMaterialTypeOptions,
+} from '@/utils/inventoryDetailLines'
+import {
+  INVENTORY_PRODUCT_MERGE_KEYS,
+  buildInventoryGroupRowSpans,
+  inventoryGroupKey,
+} from '@/utils/inventoryLineMerge'
+import { hasBatchUomConvert } from '@/utils/batchUomConvert'
+import { hasSettleUnit } from '@/utils/settleUnit'
+import { formatQtyWithUnit, formatQty } from '@/utils/numberFormat'
+import {
+  CASTING_BLANK_SETTLE_CODE,
+  STEEL_PIPE_CODE,
+  STEEL_PLATE_CODE,
+  STEEL_WEIGHT_BAR_CODE,
+  PIPE_TRIPLE_UNIT_CODE,
+  PIPE_TRIPLE_CAT_CODE,
+} from '@/mock/stockBatchSeed'
+import { CBP_ANGLE_CODE, CBP_SS_PIPE_CODE } from '@/mock/categoryBatchPieceDemoSeed'
+import { TRANSFER_DUAL_OWNERSHIP_ITEMS } from '@/mock/transferDualOwnershipDemoSeed'
+
+/** 库存台账置顶：先按单演示料（第一页可见自由+按单分行），再单位口径演示料 */
+const DEMO_STOCK_PIN_CODES = [
+  ...TRANSFER_DUAL_OWNERSHIP_ITEMS.map((item) => item.code),
+  PIPE_TRIPLE_UNIT_CODE,
+  PIPE_TRIPLE_CAT_CODE,
+  CASTING_BLANK_SETTLE_CODE,
+  STEEL_PIPE_CODE,
+  CBP_ANGLE_CODE,
+  CBP_SS_PIPE_CODE,
+  STEEL_PLATE_CODE,
+  STEEL_WEIGHT_BAR_CODE,
+]
+
+function demoStockPinRank(itemCode) {
+  const i = DEMO_STOCK_PIN_CODES.indexOf(String(itemCode || ''))
+  return i === -1 ? DEMO_STOCK_PIN_CODES.length + 1 : i
+}
+
+const route = useRoute()
+const router = useRouter()
+const viewTab = ref('ledger')
+const filters = reactive({
+  warehouse: undefined,
+  materialType: undefined,
+  itemCode: '',
+  itemName: '',
+  specModel: '',
+  material: '',
+  drawingNo: '',
+  stockQtyMin: undefined,
+  stockQtyMax: undefined,
+})
+const appliedFilters = ref({ ...filters })
+const selectedRowKeys = ref([])
+const pagination = reactive({ current: 1, pageSize: 10 })
+
+const materialTypeOpts = inventoryMaterialTypeOptions.map((v) => ({ label: v, value: v }))
+
+const batchFilters = reactive({
+  salesOrderNo: '',
+  batchNo: '',
+  itemCode: '',
+  itemName: '',
+  specModel: '',
+  material: '',
+  warehouse: undefined,
+  ownership: undefined,
+})
+const appliedBatchFilters = ref({ ...batchFilters })
+
+const batchDrawerOpen = ref(false)
+const batchDrawerRow = ref(null)
+/** batches | flow */
+const drawerInnerTab = ref('batches')
+/** inStock | all */
+const drawerBatchScope = ref('inStock')
+const drawerFlowBatchNo = ref('')
+const drawerFlowType = ref(undefined)
+const drawerFlowTypeOpts = [
+  { label: '入库', value: 'inbound' },
+  { label: '出库', value: 'outbound' },
+]
+
+const warehouseOpts = warehouseOptions.map((w) => ({ label: w.label, value: w.value }))
+const ownershipOpts = [
+  { label: '按单', value: 'dedicated' },
+  { label: '自由备货', value: 'free' },
+]
+
+const allLines = computed(() => {
+  void stockBatchState.batches
+  const base = buildInventoryDetailLines({
+    stockRecords: stockState.records,
+    products: productInfoState.products,
+    materials: materialInfoState.materials,
+    spus: [],
+    warehouses: warehouseOptions.map((w) => w.value),
+  })
+  const rows = base.map((row) => {
+    const softAllocated = getSoftAllocatedQtyByItemCode(row.itemCode)
+    const stockQty = Number(row.stockQty) || 0
+    const freeQty = sumFreeQty({ warehouse: row.warehouse, itemCode: row.itemCode })
+    const dedicatedQty = sumDedicatedQty({ warehouse: row.warehouse, itemCode: row.itemCode })
+    const batchCost = sumOnHandBatchCost({ warehouse: row.warehouse, itemCode: row.itemCode })
+    return {
+      ...row,
+      freeQty,
+      dedicatedQty,
+      softAllocated,
+      availableQty: Math.max(0, stockQty - softAllocated),
+      // 批次实际成本：有批成本则用加权平均单价与金额；否则不展示标准单价冒充库存金额
+      unitPrice: batchCost.unitCost,
+      totalAmount: batchCost.totalAmount,
+    }
+  })
+  // 演示料置顶：结算按批次覆盖（铸件）优先，便于不搜索即可验收
+  return rows.sort((a, b) => {
+    const ra = demoStockPinRank(a.itemCode)
+    const rb = demoStockPinRank(b.itemCode)
+    if (ra !== rb) return ra - rb
+    const wh = String(a.warehouse || '').localeCompare(String(b.warehouse || ''), 'zh')
+    if (wh !== 0) return wh
+    return String(a.itemCode || '').localeCompare(String(b.itemCode || ''), 'zh')
+  })
+})
+
+const filteredList = computed(() =>
+  filterInventoryDetailLines(allLines.value, appliedFilters.value),
+)
+
+/** 台账行展开为自由/按单分行（同仓同料合并展示） */
+const ownershipLines = computed(() => {
+  void stockBatchState.batches
+  const lines = []
+  for (const row of filteredList.value) {
+    const freeBatches = listFreeBatches({
+      warehouse: row.warehouse,
+      itemCode: row.itemCode,
+      inStockOnly: true,
+    })
+    const dedicatedBatches = listDedicatedBatches({
+      warehouse: row.warehouse,
+      itemCode: row.itemCode,
+      inStockOnly: true,
+    })
+    const freeQty = freeBatches.reduce((s, b) => s + (Number(b.currentLength) || 0), 0)
+    const dedicatedGroups = new Map()
+    for (const b of dedicatedBatches) {
+      const gKey = `${b.salesOrderId || ''}|${b.salesOrderNo || ''}|${b.salesLineId || ''}`
+      let g = dedicatedGroups.get(gKey)
+      if (!g) {
+        g = {
+          salesOrderId: b.salesOrderId || '',
+          salesOrderNo: b.salesOrderNo || '',
+          salesLineId: b.salesLineId || '',
+          qty: 0,
+          batchIds: [],
+        }
+        dedicatedGroups.set(gKey, g)
+      }
+      g.qty += Number(b.currentLength) || 0
+      g.batchIds.push(b.id)
+    }
+
+    const base = {
+      ledgerId: row.id,
+      ledgerStockQty: row.stockQty,
+      warehouse: row.warehouse,
+      itemName: row.itemName,
+      itemCode: row.itemCode,
+      materialType: row.materialType,
+      specModel: row.specModel,
+      material: row.material,
+      variantSummary: row.variantSummary,
+      drawingNo: row.drawingNo,
+      unit: row.unit,
+      locationNo: row.locationNo,
+      softAllocated: row.softAllocated,
+      availableQty: row.availableQty,
+      unitPrice: row.unitPrice,
+      totalAmount: row.totalAmount,
+      freeQty: row.freeQty,
+      dedicatedQty: row.dedicatedQty,
+    }
+
+    const hasDedicated = [...dedicatedGroups.values()].some((g) => g.qty > 0)
+    const freeRowQty = freeQty > 0 ? freeQty : !hasDedicated ? Number(row.stockQty) || 0 : 0
+    if (freeRowQty > 0 || !hasDedicated) {
+      lines.push({
+        ...base,
+        id: `${row.id}__free`,
+        dedicated: false,
+        stockQty: freeRowQty,
+        salesOrderId: '',
+        salesOrderNo: '',
+        salesLineId: '',
+        batchIds: freeBatches.map((b) => b.id),
+      })
+    }
+
+    for (const g of dedicatedGroups.values()) {
+      if (!(g.qty > 0)) continue
+      lines.push({
+        ...base,
+        id: `${row.id}__d__${g.salesOrderId || g.salesOrderNo || 'x'}__${g.salesLineId || '0'}`,
+        dedicated: true,
+        stockQty: g.qty,
+        salesOrderId: g.salesOrderId,
+        salesOrderNo: g.salesOrderNo,
+        salesLineId: g.salesLineId,
+        batchIds: g.batchIds,
+      })
+    }
+  }
+  return lines
+})
+
+const selectedDedicatedRows = computed(() =>
+  ownershipLines.value.filter((r) => selectedRowKeys.value.includes(r.id) && r.dedicated),
+)
+
+const filteredBatchRows = computed(() => {
+  void stockBatchState.batches
+  void productInfoState.products
+  void materialInfoState.materials
+  const f = appliedBatchFilters.value
+  const nameKw = String(f.itemName || '')
+    .trim()
+    .toLowerCase()
+  const specKw = String(f.specModel || '')
+    .trim()
+    .toLowerCase()
+  const materialKw = String(f.material || '')
+    .trim()
+    .toLowerCase()
+  return listBatches({ inStockOnly: false }).filter((b) => {
+    if (b.status !== BATCH_STATUS.IN_STOCK) return false
+    if (f.salesOrderNo && !String(b.salesOrderNo || '').includes(String(f.salesOrderNo).trim())) {
+      return false
+    }
+    if (f.batchNo && !String(b.batchNo || '').includes(String(f.batchNo).trim())) return false
+    if (f.itemCode && !String(b.itemCode || '').includes(String(f.itemCode).trim())) return false
+    if (
+      nameKw &&
+      !String(b.itemName || '')
+        .toLowerCase()
+        .includes(nameKw)
+    )
+      return false
+    if (specKw || materialKw) {
+      const meta = resolveBatchSpecMaterial(b)
+      if (
+        specKw &&
+        !String(meta.specModel || '')
+          .toLowerCase()
+          .includes(specKw)
+      )
+        return false
+      if (
+        materialKw &&
+        !String(meta.material || '')
+          .toLowerCase()
+          .includes(materialKw)
+      )
+        return false
+    }
+    if (f.warehouse && b.warehouse !== f.warehouse) return false
+    if (f.ownership === 'dedicated' && !(b.salesOrderId || b.salesOrderNo)) return false
+    if (f.ownership === 'free' && (b.salesOrderId || b.salesOrderNo)) return false
+    return true
+  })
+})
+
+function resolveBatchSpecMaterial(batch) {
+  const attrs = batch?.attrs || {}
+  let specModel = attrs.specModel || attrs.spec || ''
+  let material = attrs.material || ''
+  if (specModel && material) return { specModel, material }
+  const code = batch?.itemCode
+  if (!code) return { specModel, material }
+  const product = productInfoState.products.find((p) => p.code === code)
+  const mat = materialInfoState.materials.find((m) => m.code === code)
+  const master = product || mat
+  if (!specModel) specModel = master?.specModel || master?.spec || ''
+  if (!material) material = master?.material || ''
+  return { specModel, material }
+}
+
+const batchQueryColumns = [
+  { title: '批次号', dataIndex: 'batchNo', key: 'batchNo', width: 140 },
+  { title: '入库时间', key: 'createdAt', dataIndex: 'createdAt', width: 150 },
+  { title: '归属', key: 'ownership', width: 96 },
+  { title: '销售订单号', dataIndex: 'salesOrderNo', key: 'salesOrderNo', width: 130 },
+  { title: '仓库', dataIndex: 'warehouse', key: 'warehouse', width: 100 },
+  { title: '产品编码', dataIndex: 'itemCode', key: 'itemCode', width: 130 },
+  { title: '产品名称', dataIndex: 'itemName', key: 'itemName', width: 140, ellipsis: true },
+  { title: '单位', dataIndex: 'unit', key: 'unit', width: 64 },
+  { title: '在库数量', key: 'currentLength', width: 100, align: 'right' },
+  { title: '批次成本', key: 'unitCost', width: 100, align: 'right' },
+  { title: '状态', dataIndex: 'status', key: 'status', width: 80 },
+  { title: '来源类型', dataIndex: 'sourceType', key: 'sourceType', width: 100 },
+  { title: '来源单号', dataIndex: 'sourceDocNo', key: 'sourceDocNo', width: 140 },
+]
+
+const drawerBatches = computed(() => {
+  const r = batchDrawerRow.value
+  if (!r) return []
+  void stockBatchState.batches
+  const list = listBatches({
+    warehouse: r.warehouse,
+    itemCode: r.itemCode,
+    inStockOnly: drawerBatchScope.value === 'inStock',
+  })
+  return sortBatchesByIssueRule(list, getOutboundIssueRule())
+})
+
+const drawerSelectedBatchKeys = ref([])
+const ownershipTransferOpen = ref(false)
+const ownershipTransferMode = ref('free')
+const ownershipTransferPayload = ref(null)
+
+const drawerSelectedDedicatedBatches = computed(() => {
+  const keySet = new Set(drawerSelectedBatchKeys.value)
+  return drawerBatches.value.filter(
+    (b) =>
+      keySet.has(b.id) && b.status === BATCH_STATUS.IN_STOCK && (b.salesOrderId || b.salesOrderNo),
+  )
+})
+
+const drawerBatchRowSelection = computed(() => ({
+  selectedRowKeys: drawerSelectedBatchKeys.value,
+  onChange: (keys) => {
+    drawerSelectedBatchKeys.value = keys
+  },
+  getCheckboxProps: (record) => ({
+    disabled:
+      record.status !== BATCH_STATUS.IN_STOCK || !(record.salesOrderId || record.salesOrderNo),
+  }),
+}))
+
+watch(
+  () => [
+    batchDrawerRow.value?.id,
+    drawerBatchScope.value,
+    drawerBatches.value.map((b) => b.id).join(','),
+  ],
+  () => {
+    drawerSelectedBatchKeys.value = []
+  },
+)
+
+function openOwnershipTransfer(mode, batches, meta = {}) {
+  const list = (batches || []).filter(Boolean)
+  if (!list.length) {
+    message.warning('请先勾选在库的按单批次')
+    return
+  }
+  ownershipTransferMode.value = mode === 'order' ? 'order' : 'free'
+  ownershipTransferPayload.value = {
+    batches: list.map((b) => ({ ...b })),
+    warehouse: meta.warehouse || list[0].warehouse,
+    itemCode: meta.itemCode || list[0].itemCode,
+    itemName: meta.itemName || list[0].itemName,
+    unit: meta.unit || list[0].unit,
+  }
+  ownershipTransferOpen.value = true
+}
+
+function openDrawerOwnershipTransfer(mode) {
+  openOwnershipTransfer(mode, drawerSelectedDedicatedBatches.value, {
+    warehouse: batchDrawerRow.value?.warehouse,
+    itemCode: batchDrawerRow.value?.itemCode,
+    itemName: batchDrawerRow.value?.itemName,
+    unit: batchDrawerRow.value?.unit,
+  })
+}
+
+function resolveOwnershipBatches(record) {
+  const ids = record?.batchIds || []
+  const fromIds = ids.map((id) => getBatchById(id)).filter(Boolean)
+  if (fromIds.length) return fromIds
+  if (!record?.dedicated) return []
+  return listDedicatedBatches({
+    warehouse: record.warehouse,
+    itemCode: record.itemCode,
+    salesOrderId: record.salesOrderId || undefined,
+    salesOrderNo: record.salesOrderId ? undefined : record.salesOrderNo || undefined,
+    salesLineId: record.salesLineId || undefined,
+    inStockOnly: true,
+  })
+}
+
+function openListOwnershipTransfer(record, mode) {
+  if (!record?.dedicated) {
+    message.warning('仅按单库存可转移归属')
+    return
+  }
+  const batches = resolveOwnershipBatches(record)
+  if (!batches.length) {
+    message.warning('未找到可转移的按单批次')
+    return
+  }
+  openOwnershipTransfer(mode, batches, {
+    warehouse: record.warehouse,
+    itemCode: record.itemCode,
+    itemName: record.itemName,
+    unit: record.unit,
+  })
+}
+
+function openSelectedOwnershipTransfer(mode) {
+  const rows = selectedDedicatedRows.value
+  if (!rows.length) {
+    message.warning('请先勾选按单行')
+    return
+  }
+  const first = rows[0]
+  const mixed = rows.some(
+    (r) =>
+      r.warehouse !== first.warehouse ||
+      r.itemCode !== first.itemCode ||
+      (r.salesOrderId || '') !== (first.salesOrderId || '') ||
+      (r.salesOrderNo || '') !== (first.salesOrderNo || '') ||
+      (r.salesLineId || '') !== (first.salesLineId || ''),
+  )
+  if (mixed) {
+    message.warning('请选择同一仓库、同一物料、同一销售行的按单行再批量转移')
+    return
+  }
+  const batchMap = new Map()
+  for (const r of rows) {
+    for (const b of resolveOwnershipBatches(r)) batchMap.set(b.id, b)
+  }
+  openOwnershipTransfer(mode, [...batchMap.values()], {
+    warehouse: first.warehouse,
+    itemCode: first.itemCode,
+    itemName: first.itemName,
+    unit: first.unit,
+  })
+}
+
+function onOwnershipTransferDone() {
+  drawerSelectedBatchKeys.value = []
+  selectedRowKeys.value = []
+}
+
+const drawerHasSalesOrder = computed(() =>
+  drawerBatches.value.some((b) => b.salesOrderNo || b.salesOrderId),
+)
+
+/** 抽屉物料口径：采购≠库存才拆两列入库；有结算单位才出结算列 */
+const drawerItemUnits = computed(() => {
+  const row = batchDrawerRow.value
+  if (!row) {
+    return {
+      stockUnit: '',
+      purchaseUnit: '',
+      settleUnit: '',
+      hasPurchaseSplit: false,
+      hasSettle: false,
+    }
+  }
+  const code = row.itemCode
+  const mat = materialInfoState.materials.find((m) => m.code === code)
+  const product = productInfoState.products.find((p) => p.code === code)
+  const master = mat || product || {}
+  const stockUnit = String(row.unit || master.inventoryUnit || master.stockUnit || '').trim()
+  const purchaseUnit = String(master.purchaseUnit || '').trim()
+  const settleUnit = String(master.settleUnit || '').trim()
+  const hasPurchaseSplit = Boolean(purchaseUnit && stockUnit && purchaseUnit !== stockUnit)
+  const hasSettleOnBatches = drawerBatches.value.some((b) => hasBatchUomConvert(b))
+  return {
+    stockUnit,
+    purchaseUnit,
+    settleUnit,
+    hasPurchaseSplit,
+    hasSettle: hasSettleUnit(master) || hasSettleOnBatches,
+  }
+})
+
+const BATCH_ON_HAND_QTY_TIP =
+  '本批当前还剩多少，按库存单位计。入库建批后出库会扣减本列；顶栏「在库合计」为本列在库批次之和。'
+const BATCH_RECEIVE_QTY_TIP =
+  '本批建账时点收的数量，出库不扣。采购单位与库存单位相同时即当时入账量；不相同时按采购单位显示，并另列「入库数量」表示折成库存单位的建账量。'
+
+const drawerBatchColumns = computed(() => {
+  const cols = [
+    { title: 'FIFO序', key: 'fifoIndex', width: 72, align: 'center' },
+    { title: '批次号', dataIndex: 'batchNo', key: 'batchNo', width: 140 },
+    { title: '入库时间', key: 'createdAt', width: 150 },
+    { title: '余料', key: 'remnant', width: 72 },
+    { title: '归属', key: 'ownership', width: 88 },
+  ]
+  if (drawerHasSalesOrder.value) {
+    cols.push({
+      title: '销售订单号',
+      dataIndex: 'salesOrderNo',
+      key: 'salesOrderNo',
+      width: 130,
+      ellipsis: true,
+    })
+  }
+  cols.push(
+    { title: '来源类型', dataIndex: 'sourceType', key: 'sourceType', width: 100 },
+    { title: '来源单号', dataIndex: 'sourceDocNo', key: 'sourceDocNo', width: 132, ellipsis: true },
+    { title: '在库数量', key: 'currentLength', width: 110, align: 'right' },
+    { title: '批次成本', key: 'unitCost', width: 100, align: 'right' },
+    { title: '点收数量', key: 'inboundQty', width: 110, align: 'right' },
+  )
+  if (drawerItemUnits.value.hasPurchaseSplit) {
+    cols.push({ title: '入库数量', key: 'inboundStockQty', width: 118, align: 'right' })
+  }
+  if (drawerItemUnits.value.hasSettle) {
+    cols.push(
+      { title: '结算数量', key: 'convertSettleQty', width: 110, align: 'right' },
+      { title: '批次单量', key: 'convertActualUnitWeight', width: 120, align: 'right' },
+    )
+  }
+  cols.push(
+    { title: '件码', key: 'pieceManage', width: 120 },
+    { title: '状态', key: 'status', width: 72 },
+  )
+  return cols
+})
+
+const drawerBatchTableScrollX = computed(() =>
+  drawerBatchColumns.value.reduce((sum, col) => sum + (Number(col.width) || 100), 48),
+)
+
+const drawerPieceColumns = [
+  { title: '件码', dataIndex: 'serialNo', key: 'serialNo', width: 160 },
+  { title: '数量', key: 'pieceQty', width: 100, align: 'right' },
+  { title: '余料', key: 'remnant', width: 72 },
+  { title: '入库时间', key: 'createdAt', width: 150 },
+  { title: '来源批次', dataIndex: 'remnantFromSerialNo', key: 'remnantFromSerialNo', width: 140 },
+]
+
+const drawerFlowColumns = [
+  { title: '类型', key: 'flowType', width: 72 },
+  { title: '发生时间', key: 'occurredAt', width: 150 },
+  { title: '批次号', dataIndex: 'batchNo', key: 'batchNo', width: 140 },
+  { title: '数量', key: 'qty', width: 100, align: 'right' },
+  { title: '件码', dataIndex: 'pieceSerialNos', key: 'pieceSerialNos', width: 180, ellipsis: true },
+  { title: '单据类型', dataIndex: 'docType', key: 'docType', width: 100 },
+  { title: '单据号', key: 'docNo', width: 140 },
+  { title: '备注', dataIndex: 'remark', key: 'remark', width: 160, ellipsis: true },
+]
+
+const softAllocDetailColumns = [
+  { title: '销售订单号', key: 'salesOrderNo', dataIndex: 'salesOrderNo', width: 150 },
+  { title: '客户', dataIndex: 'customerName', key: 'customerName', width: 140, ellipsis: true },
+  { title: '销售行', dataIndex: 'salesLineId', key: 'salesLineId', width: 160, ellipsis: true },
+  { title: '占用数量', key: 'qty', width: 100, align: 'right' },
+  { title: '交期', dataIndex: 'deliveryDate', key: 'deliveryDate', width: 120 },
+  { title: '占用时间', dataIndex: 'updatedAt', key: 'updatedAt', width: 150 },
+]
+
+const batchDrawerTitle = computed(() => {
+  const r = batchDrawerRow.value
+  if (!r) return '批次明细'
+  return `批次 · ${r.warehouse || ''} / ${r.itemCode || ''}`
+})
+
+function dashText(value) {
+  const text = String(value ?? '').trim()
+  return text || '—'
+}
+
+const { drawerBind: batchDrawerBind, isNarrowViewport } = useDrawerWidth('l')
+/** 约页面 2/3 宽，左侧仍能对照库存列表 */
+const batchDrawerWidth = computed(() => (isNarrowViewport.value ? '100%' : '66vw'))
+
+const drawerItemMeta = computed(() => {
+  const row = batchDrawerRow.value
+  if (!row) {
+    return { itemName: '—', specModel: '—', material: '—', variantSummary: '—' }
+  }
+  const code = row.itemCode
+  const product = productInfoState.products.find((p) => p.code === code)
+  const mat = materialInfoState.materials.find((m) => m.code === code)
+  const master = product || mat
+  const specMeta = resolveBatchSpecMaterial({
+    itemCode: code,
+    attrs: {
+      specModel: row.specModel || row.spec,
+      spec: row.spec,
+      material: row.material,
+    },
+  })
+  const variantSummary =
+    row.variantSummary ||
+    lineVariantSummary({
+      spuId: master?.spuId || row.spuId,
+      variantValues: master?.variantValues || row.variantValues || {},
+    }) ||
+    master?.variantSummary ||
+    ''
+  return {
+    itemName: dashText(row.itemName || master?.name),
+    specModel: dashText(specMeta.specModel || master?.specModel),
+    material: dashText(specMeta.material || master?.material),
+    variantSummary: dashText(variantSummary),
+  }
+})
+
+function resolveBatchPurchaseUnit(batch) {
+  const fromConvert = String(batch?.uomConvert?.purchaseUnit || '').trim()
+  if (fromConvert) return fromConvert
+  const code = batch?.itemCode
+  const mat = materialInfoState.materials.find((m) => m.code === code)
+  const product = productInfoState.products.find((p) => p.code === code)
+  const master = mat || product
+  const fromMaster = String(master?.purchaseUnit || '').trim()
+  if (fromMaster) return fromMaster
+  const stockU = String(batch?.uomConvert?.stockUnit || batch?.unit || '').trim()
+  return stockU || '件'
+}
+
+function issuedQtyOfBatch(batch) {
+  if (!batch) return 0
+  void outboundState.orders
+  let sum = 0
+  for (const order of outboundState.orders || []) {
+    for (const line of order.lineItems || []) {
+      const allocs = Array.isArray(line.batchAllocations) ? line.batchAllocations : []
+      for (const a of allocs) {
+        const matchId = a.batchId && a.batchId === batch.id
+        const matchNo = a.batchNo && a.batchNo === batch.batchNo
+        if (!matchId && !matchNo) continue
+        sum += Number(a.qty) || 0
+      }
+    }
+  }
+  return sum
+}
+
+/** 本批建账库存量（库存单位）；与在库余量不同，出库不扣 */
+function resolveBatchInboundQty(batch) {
+  const fromConvert = Number(batch?.uomConvert?.stockQty)
+  if (Number.isFinite(fromConvert) && fromConvert > 0) return fromConvert
+  const stored = Number(batch?.inboundQty)
+  if (Number.isFinite(stored) && stored > 0) return stored
+  const remain = Number(batch?.currentLength) || 0
+  const issued = issuedQtyOfBatch(batch)
+  return Math.round((remain + issued) * 10000) / 10000
+}
+
+/** 本批建账采购量（采购单位）；出库不扣 */
+function resolveBatchInboundPurchaseQty(batch) {
+  const stored = Number(batch?.inboundPurchaseQty)
+  if (Number.isFinite(stored) && stored > 0) return stored
+  const fromConvert = Number(batch?.uomConvert?.pieceCount)
+  if (Number.isFinite(fromConvert) && fromConvert > 0) return fromConvert
+  const fromAttrs = Number(batch?.attrs?.pieceCount)
+  if (Number.isFinite(fromAttrs) && fromAttrs > 0) return fromAttrs
+  if (isPieceManagedBatch(batch) && batch?.id) {
+    const n = listStockPieces({ batchId: batch.id }).length
+    if (n > 0) return n
+  }
+  return null
+}
+
+function formatDrawerInboundQty(batch) {
+  const units = drawerItemUnits.value
+  if (units.hasPurchaseSplit) {
+    const qty = resolveBatchInboundPurchaseQty(batch)
+    if (!(qty > 0)) return '—'
+    return formatInventoryQtyWithUnit(qty, units.purchaseUnit || resolveBatchPurchaseUnit(batch))
+  }
+  return formatInventoryQtyWithUnit(
+    resolveBatchInboundQty(batch),
+    batch.unit || units.stockUnit || batchDrawerRow.value?.unit,
+  )
+}
+
+function formatDrawerInboundStockQty(batch) {
+  const units = drawerItemUnits.value
+  return formatInventoryQtyWithUnit(
+    resolveBatchInboundQty(batch),
+    batch.unit || units.stockUnit || batchDrawerRow.value?.unit,
+  )
+}
+
+function formatConvertSettleQty(batch) {
+  if (!hasBatchUomConvert(batch)) return '—'
+  return formatQtyWithUnit(batch.uomConvert.settleQty, batch.uomConvert.settleUnit)
+}
+
+function formatConvertActualUnitWeight(batch) {
+  if (!hasBatchUomConvert(batch)) return '—'
+  const u = batch.uomConvert.settleUnit
+  const pieceU = resolveBatchPurchaseUnit(batch)
+  return `${formatQty(batch.uomConvert.actualUnitWeight)} ${u}/${pieceU}`
+}
+
+const drawerBatchStockTotal = computed(() =>
+  drawerBatches.value
+    .filter((b) => b.status === BATCH_STATUS.IN_STOCK)
+    .reduce((s, b) => s + (Number(b.currentLength) || 0), 0),
+)
+
+const drawerIssueRuleLabel = computed(() => {
+  const rule = getOutboundIssueRule()
+  const hit = OUTBOUND_ISSUE_RULE_OPTIONS.find((o) => o.value === rule)
+  return hit?.label || '先进先出'
+})
+
+const drawerBatchExpandable = computed(() => ({
+  rowExpandable: (record) => isPieceManagedBatch(record),
+  /** 非按件管理不渲染展开图标，避免空加号 */
+  expandIcon: ({ expanded, onExpand, record }) => {
+    if (!isPieceManagedBatch(record)) return null
+    return h('button', {
+      type: 'button',
+      class: [
+        'ant-table-row-expand-icon',
+        expanded ? 'ant-table-row-expand-icon-expanded' : 'ant-table-row-expand-icon-collapsed',
+      ],
+      'aria-label': expanded ? '关闭行' : '展开行',
+      onClick: (e) => {
+        e.stopPropagation()
+        onExpand(record, e)
+      },
+    })
+  },
+}))
+
+/** 本物料全部批次（含已出库），供流水拼装 */
+const drawerAllBatchesForItem = computed(() => {
+  const r = batchDrawerRow.value
+  if (!r) return []
+  void stockBatchState.batches
+  return listBatches({
+    warehouse: r.warehouse,
+    itemCode: r.itemCode,
+    inStockOnly: false,
+  })
+})
+
+const drawerFlowRows = computed(() => {
+  const r = batchDrawerRow.value
+  if (!r) return []
+  void stockBatchState.batches
+  void stockPieceState.pieces
+  void outboundState.orders
+
+  const batchNoFilter = String(drawerFlowBatchNo.value || '')
+    .trim()
+    .toLowerCase()
+  const typeFilter = drawerFlowType.value
+  const batches = drawerAllBatchesForItem.value
+  const batchIdSet = new Set(batches.map((b) => b.id))
+  const batchNoSet = new Set(batches.map((b) => String(b.batchNo || '')).filter(Boolean))
+  const outQtyByBatchKey = new Map()
+  const rows = []
+
+  for (const order of outboundState.orders || []) {
+    for (const line of order.lineItems || []) {
+      const allocs = Array.isArray(line.batchAllocations) ? line.batchAllocations : []
+      for (const a of allocs) {
+        const matchId = a.batchId && batchIdSet.has(a.batchId)
+        const matchNo = a.batchNo && batchNoSet.has(a.batchNo)
+        if (!matchId && !matchNo) continue
+        const key = a.batchId || a.batchNo
+        outQtyByBatchKey.set(key, (outQtyByBatchKey.get(key) || 0) + (Number(a.qty) || 0))
+        const serials = Array.isArray(a.pieceSerialNos)
+          ? a.pieceSerialNos.join('、')
+          : a.pieceSerialNos || line.issuedPieceSerialNos || ''
+        rows.push({
+          id: `out-${order.id}-${line.id || line.lineId || ''}-${a.batchId || a.batchNo}-${rows.length}`,
+          flowType: 'outbound',
+          occurredAt: order.outboundTime || order.confirmedAt || order.updatedAt || order.createdAt,
+          batchNo: a.batchNo || '',
+          qty: Number(a.qty) || 0,
+          unit: a.unit || line.unit || r.unit || '',
+          pieceSerialNos: serials || '—',
+          docType: order.outboundType || '出库',
+          docNo: order.docNo || order.outboundNo || '',
+          orderId: order.id,
+          remark: order.status ? `单据状态：${order.status}` : '',
+        })
+      }
+    }
+  }
+
+  for (const batch of batches) {
+    const outQty =
+      (batch.id && outQtyByBatchKey.get(batch.id)) ||
+      (batch.batchNo && outQtyByBatchKey.get(batch.batchNo)) ||
+      0
+    const remain = Number(batch.currentLength) || 0
+    const inboundQty = Math.round((remain + Number(outQty) || 0) * 10000) / 10000 || remain
+    rows.push({
+      id: `in-batch-${batch.id}`,
+      flowType: 'inbound',
+      occurredAt: batch.createdAt,
+      batchNo: batch.batchNo || '',
+      qty: inboundQty,
+      unit: batch.unit || r.unit || '',
+      pieceSerialNos: '—',
+      docType: batch.sourceType || '入库',
+      docNo: batch.sourceDocNo || '',
+      orderId: '',
+      remark: isRemnantBatch(batch)
+        ? `余料建批${batch.attrs?.remnantFrom ? `（来自 ${batch.attrs.remnantFrom}）` : ''}`
+        : '批次建档',
+    })
+
+    const issuedPieces = listStockPieces({ batchId: batch.id }).filter(
+      (p) => p.status === '已出库' && p.issuedAt,
+    )
+    for (const p of issuedPieces) {
+      const already = rows.some(
+        (row) =>
+          row.flowType === 'outbound' &&
+          row.batchNo === batch.batchNo &&
+          String(row.pieceSerialNos || '').includes(p.serialNo),
+      )
+      if (already) continue
+      rows.push({
+        id: `out-piece-${p.id}`,
+        flowType: 'outbound',
+        occurredAt: p.issuedAt,
+        batchNo: batch.batchNo || '',
+        qty: Number(p.pieceQty) || 0,
+        unit: p.unit || batch.unit || r.unit || '',
+        pieceSerialNos: p.serialNo || '—',
+        docType: '件码出库',
+        docNo: p.issueDocNo || '',
+        orderId: '',
+        remark: p.remnant ? '余料件出库' : '',
+      })
+    }
+  }
+
+  return rows
+    .filter((row) => {
+      if (typeFilter && row.flowType !== typeFilter) return false
+      if (
+        batchNoFilter &&
+        !String(row.batchNo || '')
+          .toLowerCase()
+          .includes(batchNoFilter)
+      ) {
+        return false
+      }
+      return true
+    })
+    .sort((a, b) => {
+      const ta = dayjs(a.occurredAt || 0).valueOf()
+      const tb = dayjs(b.occurredAt || 0).valueOf()
+      return tb - ta
+    })
+})
+
+const drawerItemSoftAllocated = computed(() => {
+  const code = batchDrawerRow.value?.itemCode
+  if (!code) return 0
+  void salesStockAllocationState.allocations
+  return getSoftAllocatedQtyByItemCode(code)
+})
+
+const drawerItemAvailableApprox = computed(() =>
+  Math.max(0, drawerBatchStockTotal.value - drawerItemSoftAllocated.value),
+)
+
+const softAllocDetailTitle = computed(() => {
+  const code = batchDrawerRow.value?.itemCode || ''
+  return `软占用明细 · ${code}`
+})
+
+const softAllocDetailOpen = ref(false)
+
+const softAllocDetailRows = computed(() => {
+  const code = batchDrawerRow.value?.itemCode
+  if (!code || !softAllocDetailOpen.value) return []
+  void salesStockAllocationState.allocations
+  return listSoftAllocationsByItemCode(code)
+})
+
+const {
+  exportModalOpen,
+  openExportModal,
+  exportFieldSettings,
+  defaultExportFieldSettings,
+  doExport,
+} = useListExport({
+  storageKey: 'inventory-detail-list',
+  fieldDefinitions: inventoryDetailExportFields,
+  getFilteredRows: () => ownershipLines.value,
+  getSelectedRows: () =>
+    ownershipLines.value.filter((item) => selectedRowKeys.value.includes(item.id)),
+  fileNamePrefix: '库存明细',
+})
+
+const pagedList = computed(() => {
+  const start = (pagination.current - 1) * pagination.pageSize
+  return ownershipLines.value.slice(start, start + pagination.pageSize)
+})
+
+const pageItemRowSpans = computed(() =>
+  buildInventoryGroupRowSpans(pagedList.value, inventoryGroupKey),
+)
+
+const rowSelection = computed(() => ({
+  fixed: true,
+  columnWidth: 40,
+  selectedRowKeys: selectedRowKeys.value,
+  onChange: (keys) => {
+    selectedRowKeys.value = keys
+  },
+}))
+
+const baseColumns = [
+  { title: '序号', key: 'index', width: 56, align: 'center', fixed: 'left' },
+  { title: '归属', key: 'ownership', width: 72, align: 'center', fixed: 'left' },
+  { title: '所属仓库', key: 'warehouse', dataIndex: 'warehouse', width: 100 },
+  { title: '产品名称', key: 'itemName', dataIndex: 'itemName', width: 160, ellipsis: true },
+  { title: '产品编码', key: 'itemCode', dataIndex: 'itemCode', width: 130, ellipsis: true },
+  { title: '类型', key: 'materialType', width: 88, align: 'center' },
+  { title: '规格型号', key: 'specModel', dataIndex: 'specModel', width: 120, ellipsis: true },
+  { title: '材质', key: 'material', dataIndex: 'material', width: 88 },
+  {
+    title: '变体属性',
+    key: 'variantSummary',
+    dataIndex: 'variantSummary',
+    width: 140,
+    ellipsis: true,
+  },
+  { title: '图号', key: 'drawingNo', dataIndex: 'drawingNo', width: 110, ellipsis: true },
+  { title: '数量', key: 'stockQty', width: 110, align: 'right' },
+  {
+    title: '销售订单号',
+    key: 'salesOrderNo',
+    dataIndex: 'salesOrderNo',
+    width: 140,
+    ellipsis: true,
+  },
+  { title: '软占用', key: 'softAllocated', width: 100, align: 'right' },
+  { title: '可用', key: 'availableQty', width: 100, align: 'right' },
+  { title: '库位', key: 'locationNo', dataIndex: 'locationNo', width: 100 },
+  { title: '成本单价', key: 'unitPrice', width: 100, align: 'right' },
+  { title: '库存总金额', key: 'totalAmount', width: 120, align: 'right' },
+  { title: '操作', key: 'action', width: 200, fixed: 'right' },
+]
+
+const { columnSettings, columnDrawerOpen, displayColumns, tableScrollX, defaultColumnSettings } =
+  useTableColumnSettings('inventory-detail-list-v8', baseColumns, { minScrollX: 2000 })
+
+const mergedDisplayColumns = computed(() =>
+  displayColumns.value.map((col) => {
+    const mergeKey = col.key || col.dataIndex
+    if (!INVENTORY_PRODUCT_MERGE_KEYS.has(mergeKey)) return col
+    return {
+      ...col,
+      customCell: (_record, index) => ({
+        rowSpan: pageItemRowSpans.value[index] ?? 1,
+        style: { verticalAlign: 'middle' },
+      }),
+    }
+  }),
+)
+
+function rowIndex(index) {
+  return (pagination.current - 1) * pagination.pageSize + index + 1
+}
+
+function handleSearch() {
+  appliedFilters.value = { ...filters }
+  pagination.current = 1
+}
+
+function handleReset() {
+  Object.assign(filters, {
+    warehouse: undefined,
+    materialType: undefined,
+    itemCode: '',
+    itemName: '',
+    specModel: '',
+    material: '',
+    drawingNo: '',
+    stockQtyMin: undefined,
+    stockQtyMax: undefined,
+  })
+  appliedFilters.value = { ...filters }
+  pagination.current = 1
+  selectedRowKeys.value = []
+}
+
+function handleBatchSearch() {
+  appliedBatchFilters.value = { ...batchFilters }
+}
+
+function handleBatchReset() {
+  Object.assign(batchFilters, {
+    salesOrderNo: '',
+    batchNo: '',
+    itemCode: '',
+    itemName: '',
+    specModel: '',
+    material: '',
+    warehouse: undefined,
+    ownership: undefined,
+  })
+  appliedBatchFilters.value = { ...batchFilters }
+}
+
+function openBatchDrawer(record) {
+  batchDrawerRow.value = {
+    ...record,
+    id: record.ledgerId || record.id,
+    stockQty: record.ledgerStockQty ?? record.stockQty,
+  }
+  drawerInnerTab.value = 'batches'
+  drawerBatchScope.value = 'inStock'
+  drawerFlowBatchNo.value = ''
+  drawerFlowType.value = undefined
+  batchDrawerOpen.value = true
+  softAllocDetailOpen.value = false
+}
+
+function closeBatchDrawer() {
+  batchDrawerOpen.value = false
+  softAllocDetailOpen.value = false
+}
+
+function formatBatchTime(val) {
+  if (!val) return '—'
+  const d = dayjs(val)
+  return d.isValid() ? d.format('YYYY-MM-DD HH:mm') : String(val)
+}
+
+function isRemnantBatch(batch) {
+  return Boolean(batch?.attrs?.remnant)
+}
+
+function pieceCountOf(batch) {
+  void stockPieceState.pieces
+  if (!batch?.id) return 0
+  return listStockPieces({ batchId: batch.id, inStockOnly: true }).length
+}
+
+function inStockPiecesOfBatch(batch) {
+  void stockPieceState.pieces
+  if (!batch?.id) return []
+  return listStockPieces({ batchId: batch.id, inStockOnly: true })
+    .slice()
+    .sort((a, b) => {
+      const sa = String(a.serialNo || '')
+      const sb = String(b.serialNo || '')
+      if (sa !== sb) return sa < sb ? -1 : 1
+      return (a.index || 0) - (b.index || 0)
+    })
+}
+
+function goOutboundDetail(id) {
+  if (!id) return
+  batchDrawerOpen.value = false
+  router.push(`/inventory/outbound/${id}`)
+}
+
+function openSoftAllocDetail() {
+  if (!(drawerItemSoftAllocated.value > 0)) return
+  softAllocDetailOpen.value = true
+}
+
+function goSalesOrderDetail(id) {
+  if (!id) return
+  softAllocDetailOpen.value = false
+  router.push(`/sales/orders/${id}`)
+}
+
+function onBatchMenu({ key }) {
+  if (key === 'export') openExportModal()
+  else if (key === 'toFree') openSelectedOwnershipTransfer('free')
+  else if (key === 'toOrder') openSelectedOwnershipTransfer('order')
+}
+
+watch(
+  () => route.query.salesOrderNo,
+  (no) => {
+    if (!no) return
+    viewTab.value = 'batches'
+    batchFilters.salesOrderNo = String(no)
+    appliedBatchFilters.value = { ...batchFilters }
+  },
+  { immediate: true },
+)
+</script>
+
+<style scoped>
+.inventory-detail-page {
+  /* 壳层由全局 .list-page 提供 */
+}
+
+.view-tabs-bar {
+  margin-bottom: 8px;
+  background: #fff;
+  border: 1px solid var(--divider, #e5e6eb);
+  border-bottom: none;
+  border-radius: 6px;
+  padding: 0 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.view-tabs-bar :deep(.view-tabs.ant-tabs) {
+  margin: 0;
+}
+
+/* 去掉 Ant Tabs 默认下方空隙，让指示线贴白盒底边 */
+.view-tabs-bar :deep(.ant-tabs-nav) {
+  margin: 0 !important;
+}
+
+.view-tabs-bar :deep(.ant-tabs-nav::before) {
+  left: -16px !important;
+  right: -16px !important;
+  border-bottom: 1px solid var(--divider, #e5e6eb) !important;
+}
+
+.view-tabs-bar :deep(.ant-tabs-tab) {
+  padding: 14px 0 !important;
+}
+
+.view-tabs-bar :deep(.ant-tabs-tab-btn) {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  line-height: 22px !important;
+}
+
+.view-tabs-bar :deep(.ant-tabs-tab-active .ant-tabs-tab-btn) {
+  font-weight: 700 !important;
+}
+
+.view-tabs-bar :deep(.ant-tabs-ink-bar) {
+  height: 3px !important;
+  bottom: 0 !important;
+}
+
+.view-tabs-bar :deep(.ant-tabs-content-holder) {
+  display: none !important;
+}
+
+.filter-card {
+  /* 由 .list-page > .filter-card 兜底；此处保留兼容非直子场景 */
+}
+
+.toolbar-row {
+  /* 由全局 .toolbar-row 白盒兜底 */
+}
+
+.summary-bar {
+  margin-bottom: 8px;
+  padding: 6px 12px;
+}
+
+.table-card {
+  /* 由 .list-page > .table-card 兜底 */
+}
+
+.table-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.batch-soft-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #595959;
+}
+
+.batch-soft-summary b {
+  color: #262626;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+.soft-sep {
+  color: #d9d9d9;
+  margin: 0 4px;
+}
+
+.soft-link {
+  margin-left: 4px;
+  font-weight: 600;
+}
+
+.batch-drawer-tabs {
+  margin-top: 4px;
+}
+
+.batch-drawer-tabs :deep(.ant-tabs-nav) {
+  margin-bottom: 12px;
+}
+
+.batch-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 20px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  line-height: 22px;
+  color: #4e5969;
+}
+
+.batch-item-meta b {
+  color: #1f2329;
+  font-weight: 700;
+}
+
+.batch-drawer-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.ownership-actions {
+  margin-left: 4px;
+}
+
+.fifo-hint {
+  margin-left: auto;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.batch-expand {
+  padding: 4px 8px 8px;
+  background: #fafafa;
+}
+
+.expand-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.85);
+  margin-bottom: 8px;
+}
+
+.expand-empty {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+  padding: 4px 0;
+}
+
+.piece-count {
+  margin-left: 4px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.muted {
+  color: rgba(0, 0, 0, 0.25);
+}
+
+.ellipsis-cell {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soft-detail-btn {
+  padding-inline: 4px;
+  height: auto;
+}
+
+.batch-soft-tip {
+  margin-bottom: 12px;
+}
+
+.col-title-with-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.col-tip-icon {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  cursor: help;
+}
+</style>
+
+<style>
+.batch-view-drawer .ant-drawer-content-wrapper {
+  max-width: 100%;
+}
+.batch-view-drawer .ant-drawer-body {
+  padding: 16px 20px 20px;
+  overflow-x: hidden;
+}
+.batch-view-drawer .ant-drawer-extra {
+  margin-inline-end: 4px;
+}
+</style>

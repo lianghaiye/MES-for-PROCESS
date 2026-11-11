@@ -1,0 +1,251 @@
+/** 采购申请合并与价格计算 */
+
+import { resolveOrderSizeFromPlan } from '@/utils/orderSize'
+import { hasSettleUnit, resolveSettleEstimateRate, resolveSettleUnit } from '@/utils/settleUnit'
+import { roundNumber } from '@/utils/numberFormat'
+import { normalizeUrgency, urgencyRank } from '@/constants/urgency'
+
+function roundQty(n) {
+  const r = roundNumber(Number(n) || 0, 4)
+  return Number.isFinite(r) ? r : 0
+}
+
+/** 金额 / 单价 / 税率 / 结算数量：最多 4 位小数 */
+export function round4(n) {
+  return roundQty(n)
+}
+
+export function round2(n) {
+  return roundQty(n)
+}
+
+function roundSettleQty(n) {
+  return roundQty(n)
+}
+
+/** @deprecated 请用 urgencyRank；保留兼容旧 import */
+export const URGENCY_RANK = { 正常: 1, 紧急: 2, 加急: 2, 特急: 3, 普通: 1 }
+
+export function pickHighestUrgency(...values) {
+  let best = '正常'
+  let bestRank = 0
+  values.forEach((v) => {
+    const u = normalizeUrgency(v)
+    const rank = urgencyRank(u)
+    if (rank > bestRank) {
+      best = u
+      bestRank = rank
+    }
+  })
+  return best
+}
+
+/** 有结算单位时，按计划采购量 × 预估换算率（主数据默认率或最近批次单量）重算预计结算数量 */
+export function refreshSettleEstimate(line = {}) {
+  if (!hasSettleUnit(line)) return line
+  const { rate, source } = resolveSettleEstimateRate(line)
+  const purchaseQty = Number(line.planPurchaseQty) || 0
+  if (rate != null && purchaseQty > 0) {
+    line.settleQty = roundSettleQty(purchaseQty * rate)
+    if (!(Number(line.standardUnitWeight) > 0)) {
+      line.standardUnitWeight = rate
+    }
+    line.settleEstimateRateSource = source
+  }
+  return line
+}
+
+/**
+ * @param {object} line
+ * @param {boolean} [taxModeExcluding=true] true=按不含税算含税；false=按含税算不含税
+ * @param {{ refreshSettleEstimate?: boolean }} [options] 改计划量时默认重算预计结算；手改预计结算时传 false
+ */
+export function recalcMergedLine(line, taxModeExcluding = true, options = {}) {
+  if (options.refreshSettleEstimate !== false) {
+    refreshSettleEstimate(line)
+  }
+  const purchaseQty = Number(line.planPurchaseQty) || 0
+  const pricingQty = hasSettleUnit(line)
+    ? Number(line.settleQty) > 0
+      ? Number(line.settleQty)
+      : 0
+    : purchaseQty
+  const rate = Number(line.taxRate) || 0
+  if (taxModeExcluding) {
+    const ex = Number(line.unitPriceExTax) || 0
+    line.unitPriceInTax = round4(ex * (1 + rate / 100))
+  } else {
+    const inc = Number(line.unitPriceInTax) || 0
+    line.unitPriceExTax = round4(inc / (1 + rate / 100))
+  }
+  line.totalPriceExTax = round4(pricingQty * (Number(line.unitPriceExTax) || 0))
+  line.totalPriceInTax = round4(pricingQty * (Number(line.unitPriceInTax) || 0))
+  return line
+}
+
+/** 解析申请明细行的销售单号（行级优先，回退单据头） */
+export function resolvePrLineSalesOrderNo(line, req) {
+  return String(line?.salesOrderNo || req?.salesOrderNo || '').trim()
+}
+
+/**
+ * 物料编码 + 供应商 + 销售单号 作为合并键
+ * 不同销售订单的同物料不同行，避免数量与来源被打散合并
+ */
+export function mergeKey(materialCode, supplierName, salesOrderNo = '') {
+  return `${materialCode || ''}@@${supplierName || ''}@@${salesOrderNo || ''}`
+}
+
+function isLinePendingPo(line) {
+  return (line?.poGenStatus || '未生成采购') !== '已生成采购'
+}
+
+function pickSettleFields(line = {}) {
+  const settleUnit = resolveSettleUnit(line)
+  if (!settleUnit) {
+    return {
+      settleUnit: '',
+      standardUnitWeight: undefined,
+      settleQty: undefined,
+      settleEstimateRateSource: undefined,
+    }
+  }
+  const { rate, source } = resolveSettleEstimateRate({ ...line, settleUnit })
+  const settleQty = Number(line.settleQty)
+  return {
+    settleUnit,
+    standardUnitWeight: rate ?? undefined,
+    settleQty: Number.isFinite(settleQty) && settleQty > 0 ? settleQty : undefined,
+    settleEstimateRateSource: source || undefined,
+  }
+}
+
+/**
+ * 从多条采购申请中抽取明细并按物料编码+供应商+销售单号合并
+ * @param {object} [options]
+ * @param {boolean} [options.onlyPending=true] 仅未生成采购的明细行
+ * @returns {Array} 合并后的行，含 sourceReqNos / sourceLineIds / sourceSalesOrderNos
+ */
+export function mergeRequisitionLines(requisitions, options = {}) {
+  const onlyPending = options.onlyPending !== false
+  const bucket = new Map()
+
+  requisitions.forEach((req) => {
+    ;(req.lineItems || []).forEach((line) => {
+      if (onlyPending && !isLinePendingPo(line)) return
+      const supplier = line.supplierName || ''
+      const salesOrderNo = resolvePrLineSalesOrderNo(line, req)
+      const key = mergeKey(line.inventoryCode, supplier, salesOrderNo)
+      const existing = bucket.get(key)
+      const lineId = line.id || `${req.id}-${line.inventoryCode}`
+      const urgency = pickHighestUrgency(req.urgency, line.urgency)
+      const settle = pickSettleFields(line)
+
+      if (!existing) {
+        bucket.set(key, {
+          key,
+          materialName: line.inventoryName,
+          materialType: line.materialType || '零部件',
+          materialCode: line.inventoryCode,
+          specModel: line.specModel,
+          material: line.material,
+          stockQty: Number(line.stockQty) || 0,
+          demandQty: Number(line.demandQty) || 0,
+          planPurchaseQty: Number(line.planPurchaseQty) || 0,
+          designatedSupplier: Boolean(line.designatedSupplier),
+          supplierName: supplier,
+          settlementType: line.settlementType || '预付款+货到付',
+          unitPriceExTax: Number(line.unitPriceExTax) || 0,
+          taxRate: line.taxRate ?? 13,
+          unitPriceInTax: Number(line.unitPriceInTax) || 0,
+          totalPriceExTax: Number(line.totalPriceExTax) || 0,
+          totalPriceInTax: Number(line.totalPriceInTax) || 0,
+          receivingMode: line.receivingMode || '正常收货',
+          leadTimeDays: line.leadTimeDays ?? 12,
+          expectedArrivalDate: line.expectedArrivalDate || req.estimatedArrivalDate || '',
+          deliveryDate: line.deliveryDate || req.deliveryDate || '',
+          receivingWarehouse: line.receivingWarehouse || req.receivingWarehouse || '',
+          urgency,
+          unit: line.unit || line.purchaseUnit || '件',
+          purchaseUnit: line.purchaseUnit || line.unit || '件',
+          inventoryUnit: line.inventoryUnit || '',
+          ...settle,
+          blankSizeText: line.blankSizeText || '',
+          blankSize: line.blankSize || null,
+          blankSizeMode: line.blankSizeMode || '',
+          orderSizeText: line.orderSizeText || line.blankSizeText || '',
+          orderSize: line.orderSize ?? line.blankSize ?? null,
+          orderSizeMode: line.orderSizeMode || line.blankSizeMode || '',
+          fromProductionPlan: String(req.source || '').trim() === '生产计划',
+          orderSizeFromPlan: resolveOrderSizeFromPlan(req.source, line),
+          orderSizeLocked: resolveOrderSizeFromPlan(req.source, line),
+          variantSummary: line.variantSummary || '',
+          sourceReqNos: [req.reqNo],
+          sourceSalesOrderNos: salesOrderNo ? [salesOrderNo] : [],
+          sourceReqIds: [req.id],
+          sourceLineIds: [lineId],
+          remark: line.remark || '',
+        })
+        return
+      }
+
+      existing.demandQty = roundQty(existing.demandQty + (Number(line.demandQty) || 0))
+      existing.planPurchaseQty = roundQty(
+        existing.planPurchaseQty + (Number(line.planPurchaseQty) || 0),
+      )
+      existing.stockQty = Math.min(existing.stockQty, Number(line.stockQty) || 0)
+      existing.urgency = pickHighestUrgency(existing.urgency, urgency)
+      if (!existing.settleUnit && settle.settleUnit) {
+        existing.settleUnit = settle.settleUnit
+        existing.standardUnitWeight = settle.standardUnitWeight
+      }
+      if (String(req.source || '').trim() === '生产计划') {
+        existing.fromProductionPlan = true
+      }
+      if (!existing.blankSizeText && line.blankSizeText) {
+        existing.blankSizeText = line.blankSizeText
+        existing.blankSize = line.blankSize || null
+        existing.blankSizeMode = line.blankSizeMode || ''
+      }
+      if (!existing.orderSizeText && (line.orderSizeText || line.blankSizeText)) {
+        existing.orderSizeText = line.orderSizeText || line.blankSizeText || ''
+        existing.orderSize = line.orderSize ?? line.blankSize ?? null
+        existing.orderSizeMode = line.orderSizeMode || line.blankSizeMode || ''
+        // 仅当尺寸由生产计划行写入时锁定
+        if (resolveOrderSizeFromPlan(req.source, line)) {
+          existing.orderSizeFromPlan = true
+          existing.orderSizeLocked = true
+        }
+      }
+      if (!existing.variantSummary && line.variantSummary) {
+        existing.variantSummary = line.variantSummary
+      }
+      if (!existing.sourceReqNos.includes(req.reqNo)) {
+        existing.sourceReqNos.push(req.reqNo)
+        existing.sourceReqIds.push(req.id)
+      }
+      if (!existing.sourceLineIds.includes(lineId)) {
+        existing.sourceLineIds.push(lineId)
+      }
+      if (salesOrderNo && !existing.sourceSalesOrderNos.includes(salesOrderNo)) {
+        existing.sourceSalesOrderNos.push(salesOrderNo)
+      }
+    })
+  })
+
+  return Array.from(bucket.values()).map((row, index) => {
+    recalcMergedLine(row)
+    return { ...row, index: index + 1 }
+  })
+}
+
+/** 按供应商拆分采购单 */
+export function groupBySupplier(mergedLines) {
+  const groups = new Map()
+  mergedLines.forEach((line) => {
+    const supplier = line.supplierName || '未指定供应商'
+    if (!groups.has(supplier)) groups.set(supplier, [])
+    groups.get(supplier).push(line)
+  })
+  return groups
+}

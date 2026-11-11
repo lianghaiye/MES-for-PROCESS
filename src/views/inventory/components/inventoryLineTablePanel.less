@@ -1,0 +1,60 @@
+.line-table-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  border: 1px solid #f0f0f0;
+  border-radius: 4px;
+  overflow: visible;
+  background: #fff;
+}
+
+.line-table-body {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow: visible;
+
+  .ant-table-wrapper,
+  .ant-spin-nested-loading,
+  .ant-spin-container {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .ant-table {
+    margin-bottom: 0 !important;
+    width: 100%;
+  }
+
+  .ant-table-container {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /* 横向由 ant-table scroll.x 处理；纵向不限高，避免表内纵向滚动条 */
+  .ant-table-content,
+  .ant-table-body {
+    max-width: 100%;
+  }
+}
+
+.line-empty-placeholder {
+  padding: 12px 0;
+  color: #bfbfbf;
+  font-size: 13px;
+  text-align: center;
+}
+
+.danger-link {
+  color: #ff4d4f;
+}
+
+.line-table-body .ant-table-cell-fix-right {
+  background: #fff;
+}
+
+.line-table-body .ant-table-thead .ant-table-cell-fix-right {
+  background: #fafafa;
+}

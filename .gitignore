@@ -1,0 +1,15 @@
+.DS_Store
+node_modules
+/dist
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.env.local
+.env.*.local
+agent-proxy/.env
+agent-proxy/node_modules
+.idea
+.vscode
+*.local
+.venv-docs/

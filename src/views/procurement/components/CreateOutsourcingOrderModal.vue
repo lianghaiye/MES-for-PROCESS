@@ -1,0 +1,1268 @@
+<template>
+  <FormCreateShell
+    :page-mode="pageMode"
+    :open="open"
+    :title="shellTitle"
+    width="1400px"
+    class="outsourcing-order-form-modal"
+    :mask-closable="false"
+    destroy-on-close
+    @cancel="handleCancel"
+    @update:open="(val) => emit('update:open', val)"
+  >
+    <div class="wx-form-shell">
+      <div class="section-block modal-basic-card" :class="{ 'is-collapsed': basicInfoCollapsed }">
+        <div class="section-title-row">
+          <span class="section-title">基本信息</span>
+          <a-button type="link" size="small" class="collapse-btn" @click="toggleBasicInfo">
+            {{ basicInfoCollapsed ? '展开' : '收起' }}
+            <DownOutlined v-if="basicInfoCollapsed" />
+            <UpOutlined v-else />
+          </a-button>
+        </div>
+        <a-form v-show="!basicInfoCollapsed" layout="inline" class="header-form horizontal-form">
+          <a-row :gutter="[12, 12]" style="width: 100%">
+            <a-col :span="6">
+              <a-form-item label="外协单号">
+                <a-input
+                  v-model:value="form.orderNo"
+                  placeholder="留空则系统自动生成"
+                  allow-clear
+                  size="small"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item label="工单名称">
+                <a-input
+                  v-model:value="form.workOrderName"
+                  allow-clear
+                  size="small"
+                  placeholder="请输入工单名称"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item label="外协类型">
+                <a-select
+                  v-model:value="form.outsourceMode"
+                  :options="outsourceTypeOpts"
+                  size="small"
+                  :disabled="outsourceTypeLocked"
+                  style="width: 100%"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col v-if="isProcessMode" :span="6">
+              <a-form-item label="选择工序" required>
+                <ProcessConfigSearchSelect
+                  v-model:value="form.sourceProcessId"
+                  :disabled="processSelectLocked"
+                  @change="onProcessConfigChange"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item label="关联销售订单">
+                <SalesOrderSearchSelect
+                  v-model:value="form.salesOrderNo"
+                  :exclude-statuses="salesOrderExcludeStatuses"
+                  @change="onSalesOrderChange"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item label="供应商" :required="supplierRequired">
+                <PlanSupplierSelect
+                  v-model:value="form.supplier"
+                  placeholder="请搜索或选择供应商"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item label="合同编号">
+                <ContractSelect
+                  v-model="form.contractNo"
+                  size="small"
+                  cash-direction="支出"
+                  contract-category="外协"
+                  :preferred-supplier-name="form.supplier || ''"
+                  placeholder="搜索选择外协合同，也可直接输入编号"
+                  @change="onContractChange"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item label="计划日期" required>
+                <a-range-picker
+                  v-model:value="form.planDateRange"
+                  size="small"
+                  style="width: 100%"
+                  :placeholder="['开始日期', '结束日期']"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item label="联系人">
+                <a-input
+                  v-model:value="form.contactPerson"
+                  size="small"
+                  allow-clear
+                  placeholder="请输入联系人"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item label="联系电话">
+                <a-input
+                  v-model:value="form.contactPhone"
+                  size="small"
+                  allow-clear
+                  placeholder="请输入联系电话"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item label="供货期(天)">
+                <a-input-number
+                  v-model:value="form.leadTimeDays"
+                  size="small"
+                  :min="0"
+                  style="width: 100%"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item label="结算类型">
+                <a-select
+                  v-model:value="form.settlementType"
+                  size="small"
+                  :options="settlementTypeOpts"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item label="结算周期">
+                <a-select
+                  v-model:value="form.settlementCycle"
+                  size="small"
+                  :options="settlementCycleOpts"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item label="结算方式">
+                <a-select
+                  v-model:value="form.settlementMethod"
+                  size="small"
+                  :options="settlementMethodOpts"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item label="预入仓库">
+                <a-select
+                  v-model:value="form.shipWarehouse"
+                  size="small"
+                  allow-clear
+                  placeholder="请选择 预入仓库"
+                  :options="warehouseOpts"
+                  @change="onHeaderShipWarehouseChange"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="24">
+              <a-form-item label="备注" class="remark-item">
+                <a-textarea
+                  v-model:value="form.remark"
+                  :rows="2"
+                  :maxlength="500"
+                  show-count
+                  placeholder="请输入备注"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </a-form>
+      </div>
+
+      <div class="section-block section-block--lines">
+        <div class="section-title">外协清单</div>
+        <div class="line-toolbar">
+          <a-space wrap>
+            <a-button type="primary" size="small" :loading="addingItems" @click="openProductPicker">
+              <PlusOutlined />
+              添加
+            </a-button>
+            <a-button class="tax-toggle-btn" size="small" @click="toggleTaxMode">
+              切换为：{{ taxModeExcluding ? '计算含税' : '计算不含税' }}
+            </a-button>
+            <span class="tax-hint">{{ taxModeHint }}</span>
+            <TableColumnSettingButton @click="columnDrawerOpen = true" />
+          </a-space>
+        </div>
+
+        <a-table
+          :columns="displayColumns"
+          :data-source="form.lineItems"
+          row-key="id"
+          size="small"
+          bordered
+          :pagination="false"
+          :scroll="{ x: tableScrollX }"
+        >
+          <template #headerCell="{ column }">
+            <template v-if="column.required">
+              <span class="col-title-required">
+                <span class="required-star">*</span>{{ column.title }}
+              </span>
+            </template>
+            <template v-else>{{ column.title }}</template>
+          </template>
+          <template #bodyCell="{ column, record, index }">
+            <template v-if="column.key === 'index'">{{ index + 1 }}</template>
+            <template v-else-if="column.key === 'productName'">
+              <span class="product-name-cell">
+                <span class="line-idx">{{ index + 1 }}.</span>
+                {{ record.productName || '—' }}
+              </span>
+            </template>
+            <template v-else-if="column.key === 'stockQty'">
+              {{ formatQty(record.stockQty) }}{{ record.inventoryUnit || record.unit || '' }}
+            </template>
+            <template v-else-if="column.key === 'planQty'">
+              <a-input-number
+                v-model:value="record.planQty"
+                :min="0"
+                :precision="4"
+                :formatter="inputNumberFormatter"
+                :parser="inputNumberParser"
+                size="small"
+                style="width: 100%"
+                @change="() => onLineChange(record)"
+              />
+            </template>
+            <template v-else-if="column.key === 'unit'">
+              <a-select
+                v-model:value="record.unit"
+                size="small"
+                style="width: 100%"
+                :options="unitOptsFor(record)"
+                show-search
+                allow-clear
+              />
+            </template>
+            <template v-else-if="column.key === 'shipWarehouse'">
+              <a-select
+                v-model:value="record.shipWarehouse"
+                size="small"
+                style="width: 100%"
+                placeholder="请选择"
+                :options="warehouseOpts"
+              />
+            </template>
+            <template v-else-if="column.key === 'billingMethod'">
+              <a-select
+                v-model:value="record.billingMethod"
+                size="small"
+                style="width: 100%"
+                :options="billingOpts"
+              />
+            </template>
+            <template v-else-if="column.key === 'unitPriceExTax'">
+              <a-input-number
+                v-if="taxModeExcluding"
+                v-model:value="record.unitPriceExTax"
+                :min="0"
+                :precision="4"
+                :formatter="inputNumberFormatter"
+                :parser="inputNumberParser"
+                size="small"
+                style="width: 100%"
+                @change="() => onLineChange(record)"
+              />
+              <span v-else>{{ formatQty(record.unitPriceExTax) }}</span>
+            </template>
+            <template v-else-if="column.key === 'unitPriceInTax'">
+              <a-input-number
+                v-if="!taxModeExcluding"
+                v-model:value="record.unitPriceInTax"
+                :min="0"
+                :precision="4"
+                :formatter="inputNumberFormatter"
+                :parser="inputNumberParser"
+                size="small"
+                style="width: 100%"
+                @change="() => onLineChange(record, true)"
+              />
+              <span v-else>{{ formatQty(record.unitPriceInTax) }}</span>
+            </template>
+            <template v-else-if="column.key === 'totalPriceExTax'">
+              {{ formatMoney(record.totalPriceExTax) }}
+            </template>
+            <template v-else-if="column.key === 'totalPriceInTax'">
+              {{ formatMoney(record.totalPriceInTax) }}
+            </template>
+            <template v-else-if="column.key === 'remark'">
+              <a class="remark-link" @click.prevent="openRemark(record)">
+                <span class="remark-text">{{ record.remark || '填写备注' }}</span>
+                <EditOutlined />
+              </a>
+            </template>
+            <template v-else-if="column.key === 'action'">
+              <a-space :size="0">
+                <a-button type="link" size="small" @click="openLineEdit(record)">编辑</a-button>
+                <a-button type="link" size="small" @click="copyLine(record)">复制</a-button>
+                <a-button type="link" size="small" danger @click="removeLine(record.id)">
+                  移出
+                </a-button>
+              </a-space>
+            </template>
+            <template v-else>
+              {{ record[column.dataIndex] || '—' }}
+            </template>
+          </template>
+        </a-table>
+      </div>
+    </div>
+
+    <SelectBomMaterialModal
+      v-if="isActive"
+      v-model:open="productPickerOpen"
+      title="添加产品/物料"
+      picker-default-item-type="产品"
+      @selected="onProductsSelected"
+    />
+
+    <TableColumnSettingDrawer
+      v-model:open="columnDrawerOpen"
+      v-model:settings="columnSettings"
+      :default-settings="defaultColumnSettings"
+      title="外协清单列设置"
+    />
+
+    <a-modal
+      v-model:open="remarkOpen"
+      title="填写备注"
+      :mask-closable="false"
+      destroy-on-close
+      @ok="saveRemark"
+    >
+      <a-textarea v-model:value="remarkDraft" :rows="4" placeholder="请输入备注" />
+    </a-modal>
+
+    <a-modal
+      v-model:open="lineEditOpen"
+      title="编辑明细"
+      width="720px"
+      destroy-on-close
+      @ok="applyLineEdit"
+    >
+      <a-form v-if="lineEditDraft" layout="vertical">
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="产品名称">
+              <a-input :value="lineEditDraft.productName" disabled />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="编号">
+              <a-input :value="lineEditDraft.productCode" disabled />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="计划数量" required>
+              <a-input-number
+                v-model:value="lineEditDraft.planQty"
+                :min="0"
+                :precision="4"
+                :formatter="inputNumberFormatter"
+                :parser="inputNumberParser"
+                style="width: 100%"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="单位" required>
+              <a-select
+                v-model:value="lineEditDraft.unit"
+                style="width: 100%"
+                :options="unitOptsFor(lineEditDraft)"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="预入仓库" required>
+              <a-select
+                v-model:value="lineEditDraft.shipWarehouse"
+                style="width: 100%"
+                :options="warehouseOpts"
+                placeholder="请选择"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="计费方式">
+              <a-select
+                v-model:value="lineEditDraft.billingMethod"
+                style="width: 100%"
+                :options="billingOpts"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item :label="taxModeExcluding ? '不含税单价' : '含税单价'">
+              <a-input-number
+                v-if="taxModeExcluding"
+                v-model:value="lineEditDraft.unitPriceExTax"
+                :min="0"
+                :precision="4"
+                :formatter="inputNumberFormatter"
+                :parser="inputNumberParser"
+                style="width: 100%"
+              />
+              <a-input-number
+                v-else
+                v-model:value="lineEditDraft.unitPriceInTax"
+                :min="0"
+                :precision="4"
+                :formatter="inputNumberFormatter"
+                :parser="inputNumberParser"
+                style="width: 100%"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="24">
+            <a-form-item label="备注">
+              <a-textarea v-model:value="lineEditDraft.remark" :rows="3" allow-clear />
+            </a-form-item>
+          </a-col>
+        </a-row>
+      </a-form>
+    </a-modal>
+
+    <template #footer>
+      <a-button size="small" @click="handleCancel">
+        <CloseOutlined />
+        取消
+      </a-button>
+      <a-button type="primary" size="small" :loading="saving" @click="handleSave">
+        <CheckOutlined />
+        保存
+      </a-button>
+    </template>
+  </FormCreateShell>
+</template>
+
+<script setup>
+import { computed, reactive, ref, watch, nextTick } from 'vue'
+import { message, Modal } from 'ant-design-vue'
+import dayjs from 'dayjs'
+import {
+  PlusOutlined,
+  CheckOutlined,
+  CloseOutlined,
+  EditOutlined,
+  DownOutlined,
+  UpOutlined,
+} from '@ant-design/icons-vue'
+import FormCreateShell from '@/components/FormCreateShell.vue'
+import TableColumnSettingDrawer from '@/components/TableColumnSettingDrawer.vue'
+import TableColumnSettingButton from '@/components/TableColumnSettingButton.vue'
+import { useFormCreateModal } from '@/composables/useFormCreateModal.js'
+import { useTableColumnSettings } from '@/composables/useTableColumnSettings'
+import {
+  formatQty,
+  formatMoney,
+  inputNumberFormatter,
+  inputNumberParser,
+} from '@/utils/numberFormat'
+import { resolveReturnUnitDefaults } from '@/utils/purchaseReturnLine'
+import { mockInventory } from '@/mock/inventory'
+import {
+  createOutsourcingLine,
+  recalcOutsourcingLine,
+  outsourcingBillingMethodOptions,
+} from '@/mock/outsourcingOrders'
+import {
+  settlementTypeOptions,
+  settlementCycleOptions,
+  settlementMethodOptions,
+  warehouseOptions,
+} from '@/mock/purchaseOrderOptions'
+import {
+  addOutsourcingOrder,
+  updateOutsourcingOrder,
+  canEditOutsourcingOrder,
+} from '@/store/outsourcingOrderStore'
+import PlanSupplierSelect from '@/views/planning/components/PlanSupplierSelect.vue'
+import ContractSelect from '@/views/sales/components/ContractSelect.vue'
+import SalesOrderSearchSelect from './SalesOrderSearchSelect.vue'
+import ProcessConfigSearchSelect from './ProcessConfigSearchSelect.vue'
+import SelectBomMaterialModal from '@/views/product-process/components/SelectBomMaterialModal.vue'
+import { resolveWorkOrderProcurementSource } from '@/constants/procurementDocSource'
+import { getWorkOrderConvertQty, validateWorkOrderConvertQty } from '@/utils/workOrderConvert'
+import {
+  OUTSOURCE_MODE,
+  OUTSOURCE_MODE_OPTIONS,
+  normalizeOutsourceMode,
+} from '@/utils/outsourcingMode'
+import {
+  calcProcessOutsourceRemainQty,
+  linkWorkOrderProcessOutsource,
+} from '@/utils/workOrderProcessOutsource'
+
+const props = defineProps({
+  open: { type: Boolean, default: false },
+  pageMode: { type: Boolean, default: false },
+  listPath: { type: String, default: '/procurement/outsourcing-orders' },
+  editRecord: { type: Object, default: null },
+  /** 工单一键转外协：预填工单产品与计划数量 */
+  seedWorkOrder: { type: Object, default: null },
+  /** 工序外协：绑定工单工序 */
+  seedProcess: { type: Object, default: null },
+  /** 下发确认预填计划数量（优先于可外协剩余） */
+  seedPlanQty: { type: Number, default: null },
+})
+
+const emit = defineEmits(['update:open', 'saved'])
+
+const salesOrderExcludeStatuses = ['待审核', '待提交', '已作废', '已拒绝']
+const isEdit = computed(() => Boolean(props.editRecord?.id))
+const { isActive, shellTitle, handleCancel, closeAfterSave } = useFormCreateModal(props, emit, {
+  listPath: props.listPath,
+  getTitle: () => {
+    if (isEdit.value) return '编辑外协订单'
+    if (
+      props.seedProcess?.id ||
+      normalizeOutsourceMode(form.outsourceMode) === OUTSOURCE_MODE.PROCESS ||
+      normalizeOutsourceMode(props.editRecord?.outsourceMode) === OUTSOURCE_MODE.PROCESS
+    ) {
+      return '新增工序外协订单'
+    }
+    return '新增外协订单'
+  },
+})
+
+const taxModeExcluding = ref(true)
+const addingItems = ref(false)
+const basicInfoCollapsed = ref(false)
+const prevHeaderShipWarehouse = ref(undefined)
+const productPickerOpen = ref(false)
+const saving = ref(false)
+const remarkOpen = ref(false)
+const remarkDraft = ref('')
+const remarkTargetId = ref('')
+const lineEditOpen = ref(false)
+const lineEditDraft = ref(null)
+const lineEditSourceId = ref('')
+
+const form = reactive({
+  orderNo: '',
+  workOrderName: '',
+  salesOrderNo: '',
+  contractNo: '',
+  salesOrderId: '',
+  source: '新增',
+  sourceOrderNo: '',
+  sourceWorkOrderId: '',
+  sourceWorkOrderNo: '',
+  outsourceMode: OUTSOURCE_MODE.WHOLE,
+  sourceProcessId: '',
+  sourceProcessCode: '',
+  sourceProcessName: '',
+  sourceProcessIndex: null,
+  supplier: '',
+  planDateRange: null,
+  contactPerson: '',
+  contactPhone: '',
+  leadTimeDays: undefined,
+  settlementType: '先款后货',
+  settlementCycle: '月结',
+  settlementMethod: '现金结算',
+  shipWarehouse: undefined,
+  remark: '',
+  lineItems: [],
+})
+
+const isProcessMode = computed(
+  () => normalizeOutsourceMode(form.outsourceMode) === OUTSOURCE_MODE.PROCESS,
+)
+
+/** 列表自由新增必填；工单转外协 / 工单生成的工序外协可空 */
+const supplierRequired = computed(() => {
+  if (props.seedWorkOrder?.id) return false
+  if (form.sourceWorkOrderId || props.editRecord?.sourceWorkOrderId) return false
+  return true
+})
+
+/** 工单工序入口 / 编辑工序单：类型与工序锁定 */
+const outsourceTypeLocked = computed(
+  () =>
+    Boolean(props.seedProcess?.id) ||
+    (isEdit.value &&
+      normalizeOutsourceMode(props.editRecord?.outsourceMode) === OUTSOURCE_MODE.PROCESS),
+)
+
+const processSelectLocked = computed(() => outsourceTypeLocked.value)
+
+const outsourceTypeOpts = OUTSOURCE_MODE_OPTIONS
+
+const settlementTypeOpts = settlementTypeOptions.map((v) => ({ label: v, value: v }))
+const settlementCycleOpts = settlementCycleOptions.map((v) => ({ label: v, value: v }))
+const settlementMethodOpts = settlementMethodOptions.map((v) => ({ label: v, value: v }))
+const warehouseOpts = warehouseOptions
+const billingOpts = outsourcingBillingMethodOptions.map((v) => ({ label: v, value: v }))
+
+const taxModeHint = computed(() =>
+  taxModeExcluding.value
+    ? '当前：按不含税单价算含税（请填不含税单价）'
+    : '当前：按含税单价算不含税（请填含税单价）',
+)
+
+const lineColumns = [
+  { title: '序号', key: 'index', width: 52, align: 'center', fixed: 'left' },
+  {
+    title: '产品名称',
+    key: 'productName',
+    dataIndex: 'productName',
+    width: 160,
+    ellipsis: true,
+    fixed: 'left',
+  },
+  { title: '编号', dataIndex: 'productCode', width: 120, ellipsis: true },
+  { title: '规格型号', dataIndex: 'specModel', width: 110, ellipsis: true },
+  { title: '变体属性', dataIndex: 'variantSummary', width: 120, ellipsis: true },
+  { title: '材质', dataIndex: 'material', width: 80, ellipsis: true },
+  { title: '图号', dataIndex: 'drawingNo', width: 100, ellipsis: true },
+  { title: '当前库存数', key: 'stockQty', width: 110, align: 'right' },
+  { title: '计划数量', key: 'planQty', width: 110, required: true },
+  { title: '单位', key: 'unit', width: 90, required: true },
+  { title: '预入仓库', key: 'shipWarehouse', width: 120, required: true },
+  { title: '计费方式', key: 'billingMethod', width: 100 },
+  { title: '不含税单价', key: 'unitPriceExTax', width: 120 },
+  { title: '含税单价', key: 'unitPriceInTax', width: 120 },
+  { title: '不含税总价', key: 'totalPriceExTax', width: 120, align: 'right' },
+  { title: '含税总价', key: 'totalPriceInTax', width: 120, align: 'right' },
+  { title: '备注', key: 'remark', width: 120 },
+  { title: '操作', key: 'action', width: 160, fixed: 'right' },
+]
+
+const {
+  columnSettings,
+  columnDrawerOpen,
+  displayColumns: baseDisplayColumns,
+  tableScrollX,
+  defaultColumnSettings,
+} = useTableColumnSettings('outsourcing-order-form-lines-v2', lineColumns)
+
+/** 按含税模式调整单价/总价列顺序：编辑列靠前 */
+const displayColumns = computed(() => {
+  const cols = [...baseDisplayColumns.value]
+  const exKeys = new Set(['unitPriceExTax', 'totalPriceExTax'])
+  const inKeys = new Set(['unitPriceInTax', 'totalPriceInTax'])
+  const priceKeys = new Set([...exKeys, ...inKeys])
+  const before = []
+  const price = []
+  const after = []
+  cols.forEach((c) => {
+    const key = c.key || c.dataIndex
+    if (priceKeys.has(key)) price.push(c)
+    else if (price.length || after.length) after.push(c)
+    else before.push(c)
+  })
+  const orderedPrice = taxModeExcluding.value
+    ? [
+        ...price.filter((c) => exKeys.has(c.key || c.dataIndex)),
+        ...price.filter((c) => inKeys.has(c.key || c.dataIndex)),
+      ]
+    : [
+        ...price.filter((c) => inKeys.has(c.key || c.dataIndex)),
+        ...price.filter((c) => exKeys.has(c.key || c.dataIndex)),
+      ]
+  return [...before, ...orderedPrice, ...after]
+})
+
+function unitOptsFor(record) {
+  const opts = record?.unitOptions?.length
+    ? record.unitOptions
+    : [record?.unit, record?.purchaseUnit, record?.inventoryUnit].filter(Boolean)
+  return [...new Set(opts)].map((u) => ({ label: u, value: u }))
+}
+
+function resolveStockQty(code) {
+  const inv = mockInventory.find((m) => m.code === code)
+  return inv?.stockQty ?? 0
+}
+
+function resetForm() {
+  form.orderNo = ''
+  form.workOrderName = ''
+  form.salesOrderNo = ''
+  form.contractNo = ''
+  form.salesOrderId = ''
+  form.source = '新增'
+  form.sourceOrderNo = ''
+  form.sourceWorkOrderId = ''
+  form.sourceWorkOrderNo = ''
+  form.outsourceMode = OUTSOURCE_MODE.WHOLE
+  form.sourceProcessId = ''
+  form.sourceProcessCode = ''
+  form.sourceProcessName = ''
+  form.sourceProcessIndex = null
+  form.supplier = ''
+  form.planDateRange = null
+  form.contactPerson = ''
+  form.contactPhone = ''
+  form.leadTimeDays = undefined
+  form.settlementType = '先款后货'
+  form.settlementCycle = '月结'
+  form.settlementMethod = '现金结算'
+  form.shipWarehouse = undefined
+  form.remark = ''
+  form.lineItems = []
+  taxModeExcluding.value = true
+  basicInfoCollapsed.value = false
+  prevHeaderShipWarehouse.value = undefined
+}
+
+function loadEditForm(record) {
+  form.orderNo = record.orderNo || ''
+  form.workOrderName = record.workOrderName || ''
+  form.salesOrderNo = record.salesOrderNo || ''
+  form.contractNo = record.contractNo || ''
+  form.salesOrderId = record.salesOrderId || ''
+  form.source = record.source || '新增'
+  form.sourceOrderNo = record.sourceOrderNo || record.sourceWorkOrderNo || ''
+  form.sourceWorkOrderId = record.sourceWorkOrderId || ''
+  form.sourceWorkOrderNo = record.sourceWorkOrderNo || ''
+  form.outsourceMode = normalizeOutsourceMode(record.outsourceMode)
+  form.sourceProcessId = record.sourceProcessId || ''
+  form.sourceProcessCode = record.sourceProcessCode || ''
+  form.sourceProcessName = record.sourceProcessName || ''
+  form.sourceProcessIndex = record.sourceProcessIndex ?? null
+  form.supplier = record.supplier || ''
+  {
+    const start = record.planStartDate || record.planDate
+    const end = record.planEndDate || record.planDate
+    form.planDateRange = start && end ? [dayjs(start), dayjs(end)] : null
+  }
+  form.contactPerson = record.contactPerson || ''
+  form.contactPhone = record.contactPhone || ''
+  form.leadTimeDays = record.leadTimeDays
+  form.settlementType = record.settlementType || '先款后货'
+  form.settlementCycle = record.settlementCycle || '月结'
+  form.settlementMethod = record.settlementMethod || '现金结算'
+  form.shipWarehouse = record.shipWarehouse || undefined
+  form.remark = record.remark || ''
+  form.lineItems = (record.lineItems || []).map((l) => ({ ...l }))
+  taxModeExcluding.value = true
+  basicInfoCollapsed.value = false
+  prevHeaderShipWarehouse.value = form.shipWarehouse
+}
+
+function loadSeedFromWorkOrder(wo, process = null) {
+  resetForm()
+  if (!wo) return
+  const isProcess = Boolean(process?.id)
+  form.outsourceMode = isProcess ? OUTSOURCE_MODE.PROCESS : OUTSOURCE_MODE.WHOLE
+  const seededQty = Number(props.seedPlanQty)
+  const planQty = isProcess
+    ? seededQty > 0
+      ? seededQty
+      : calcProcessOutsourceRemainQty(wo, process) || getWorkOrderConvertQty(wo) || 1
+    : getWorkOrderConvertQty(wo) || 1
+  const code = wo.materialCode || wo.productCode || ''
+  const name = wo.productName || wo.name || ''
+  form.workOrderName = wo.name || wo.code || ''
+  form.salesOrderNo = wo.sourceOrderNo || ''
+  form.salesOrderId = wo.salesOrderId || ''
+  form.source = resolveWorkOrderProcurementSource(wo)
+  form.sourceOrderNo = wo.code || ''
+  form.sourceWorkOrderId = wo.id || ''
+  form.sourceWorkOrderNo = wo.code || ''
+  if (isProcess) {
+    form.sourceProcessId = process.id || ''
+    form.sourceProcessCode = process.processCode || ''
+    form.sourceProcessName = process.name || ''
+    form.sourceProcessIndex = process.index ?? process.stepNo ?? null
+    form.remark = `来源工单 ${wo.code || ''} 工序「${process.name || ''}」外协`
+  } else {
+    form.remark = `来源工单 ${wo.code || ''} 一键转外协`
+  }
+  form.shipWarehouse = wo.warehouse || undefined
+  if (Array.isArray(wo.planDateRange) && wo.planDateRange[0] && wo.planDateRange[1]) {
+    form.planDateRange = [dayjs(wo.planDateRange[0]), dayjs(wo.planDateRange[1])]
+  } else {
+    const start = dayjs()
+    form.planDateRange = [start, start.add(14, 'day')]
+  }
+  const line = mapPickerToLine({
+    code,
+    name,
+    specModel: wo.specModel || '',
+    material: wo.material || '',
+    drawingNo: wo.drawingNo || '',
+  })
+  line.planQty = planQty
+  if (isProcess) {
+    line.processId = process.id
+    line.processName = process.name
+  }
+  if (form.shipWarehouse) line.shipWarehouse = form.shipWarehouse
+  recalcOutsourcingLine(line, { fromInTax: !taxModeExcluding.value })
+  form.lineItems = [line]
+  prevHeaderShipWarehouse.value = form.shipWarehouse
+}
+
+watch(
+  () => [
+    props.open,
+    props.pageMode,
+    props.editRecord?.id,
+    props.seedWorkOrder?.id,
+    props.seedProcess?.id,
+    props.seedPlanQty,
+  ],
+  () => {
+    if (!isActive.value) return
+    if (props.editRecord) loadEditForm(props.editRecord)
+    else if (props.seedWorkOrder)
+      loadSeedFromWorkOrder(props.seedWorkOrder, props.seedProcess || null)
+    else resetForm()
+  },
+  { immediate: true },
+)
+
+function onSalesOrderChange(val) {
+  form.salesOrderNo = val || ''
+  form.salesOrderId = ''
+}
+
+function clearProcessFields() {
+  form.sourceProcessId = ''
+  form.sourceProcessCode = ''
+  form.sourceProcessName = ''
+  form.sourceProcessIndex = null
+}
+
+function onProcessConfigChange(processId, process) {
+  if (!processId || !process) {
+    clearProcessFields()
+    return
+  }
+  form.sourceProcessId = process.id || processId
+  form.sourceProcessCode = process.code || ''
+  form.sourceProcessName = process.name || ''
+  form.sourceProcessIndex = null
+}
+
+watch(
+  () => form.outsourceMode,
+  (mode, prev) => {
+    if (outsourceTypeLocked.value) return
+    if (
+      normalizeOutsourceMode(prev) === OUTSOURCE_MODE.PROCESS &&
+      normalizeOutsourceMode(mode) === OUTSOURCE_MODE.WHOLE
+    ) {
+      clearProcessFields()
+    }
+  },
+)
+
+function toggleBasicInfo() {
+  basicInfoCollapsed.value = !basicInfoCollapsed.value
+}
+
+function syncLineShipWarehouses(warehouse) {
+  form.lineItems.forEach((line) => {
+    line.shipWarehouse = warehouse || ''
+  })
+}
+
+function onHeaderShipWarehouseChange(newVal) {
+  const oldVal = prevHeaderShipWarehouse.value
+  const changed = newVal !== oldVal
+  prevHeaderShipWarehouse.value = newVal
+
+  if (!changed || !form.lineItems.length) return
+
+  if (!oldVal && newVal) {
+    form.lineItems.forEach((line) => {
+      if (!line.shipWarehouse) line.shipWarehouse = newVal
+    })
+    return
+  }
+
+  if (!newVal) return
+
+  Modal.confirm({
+    title: '预入仓库已修改，是否同步修改明细预入仓库？',
+    okText: '是',
+    cancelText: '否',
+    onOk: () => syncLineShipWarehouses(newVal),
+  })
+}
+
+function openProductPicker() {
+  productPickerOpen.value = true
+}
+
+function mapPickerToLine(payload) {
+  const code = payload.code || payload.productCode || ''
+  const name = payload.name || payload.productName || ''
+  const units = resolveReturnUnitDefaults(code, payload)
+  const line = createOutsourcingLine({
+    productName: name,
+    productCode: code,
+    itemName: name,
+    itemCode: code,
+    specModel: payload.specModel || '',
+    variantSummary: payload.variantSummary || '',
+    material: payload.material || '',
+    drawingNo: payload.drawingNo || '',
+    stockQty: resolveStockQty(code) || Number(payload.stockQty) || 0,
+    planQty: 1,
+    unit: units.defaultUnit,
+    purchaseUnit: units.purchaseUnit,
+    inventoryUnit: units.inventoryUnit,
+    unitOptions: units.unitOptions,
+    shipWarehouse: form.shipWarehouse || '',
+    billingMethod: '按件数',
+    unitPriceExTax: Number(payload.unitPrice) || 0,
+    taxRate: Number(payload.inputTaxRate ?? 13),
+    remark: '',
+  })
+  recalcOutsourcingLine(line, { fromInTax: !taxModeExcluding.value })
+  return line
+}
+
+function onProductsSelected(rows) {
+  const list = (Array.isArray(rows) ? rows : [rows]).filter((r) => r.pickType !== 'spu')
+  if (!list.length) {
+    message.warning('未选择物品')
+    return
+  }
+  addingItems.value = true
+  productPickerOpen.value = false
+  nextTick(() => {
+    try {
+      let added = 0
+      list.forEach((payload) => {
+        const code = payload.code || ''
+        if (!code) return
+        if (form.lineItems.some((l) => (l.productCode || l.itemCode) === code)) return
+        form.lineItems.push(mapPickerToLine(payload))
+        added += 1
+      })
+      if (added > 0) message.success(`已添加 ${added} 条明细`)
+      else message.info('所选物品已在明细中')
+    } finally {
+      addingItems.value = false
+    }
+  })
+}
+
+function onLineChange(record, fromInTax = false) {
+  recalcOutsourcingLine(record, { fromInTax: fromInTax || !taxModeExcluding.value })
+}
+
+function toggleTaxMode() {
+  taxModeExcluding.value = !taxModeExcluding.value
+  form.lineItems.forEach((line) =>
+    recalcOutsourcingLine(line, { fromInTax: !taxModeExcluding.value }),
+  )
+}
+
+function removeLine(id) {
+  const idx = form.lineItems.findIndex((l) => l.id === id)
+  if (idx >= 0) form.lineItems.splice(idx, 1)
+}
+
+function copyLine(record) {
+  const copy = createOutsourcingLine({
+    ...record,
+    id: undefined,
+    receivedQty: 0,
+    appliedReceiptQty: 0,
+    issuedQty: 0,
+  })
+  form.lineItems.push(copy)
+  message.success('已复制一行明细')
+}
+
+function openRemark(record) {
+  remarkTargetId.value = record.id
+  remarkDraft.value = record.remark || ''
+  remarkOpen.value = true
+}
+
+function saveRemark() {
+  const target = form.lineItems.find((l) => l.id === remarkTargetId.value)
+  if (target) target.remark = remarkDraft.value || ''
+  remarkOpen.value = false
+}
+
+function openLineEdit(record) {
+  lineEditSourceId.value = record.id
+  lineEditDraft.value = { ...record }
+  lineEditOpen.value = true
+}
+
+function applyLineEdit() {
+  const draft = lineEditDraft.value
+  if (!draft) {
+    lineEditOpen.value = false
+    return
+  }
+  if (!(Number(draft.planQty) > 0)) {
+    message.warning('请填写计划数量')
+    return
+  }
+  if (!draft.unit) {
+    message.warning('请选择单位')
+    return
+  }
+  if (!draft.shipWarehouse) {
+    message.warning('请选择预入仓库')
+    return
+  }
+  recalcOutsourcingLine(draft, { fromInTax: !taxModeExcluding.value })
+  const target = form.lineItems.find((l) => l.id === lineEditSourceId.value)
+  if (target) Object.assign(target, draft)
+  lineEditOpen.value = false
+}
+
+function buildPayload() {
+  const start =
+    form.planDateRange?.[0] && dayjs.isDayjs(form.planDateRange[0])
+      ? form.planDateRange[0].format('YYYY-MM-DD')
+      : ''
+  const end =
+    form.planDateRange?.[1] && dayjs.isDayjs(form.planDateRange[1])
+      ? form.planDateRange[1].format('YYYY-MM-DD')
+      : ''
+  return {
+    orderNo: String(form.orderNo || '').trim(),
+    workOrderName: form.workOrderName || '',
+    salesOrderNo: form.salesOrderNo || '',
+    contractNo: form.contractNo || '',
+    salesOrderId: form.salesOrderId || '',
+    source: form.source || '新增',
+    sourceOrderNo: form.sourceOrderNo || '',
+    sourceWorkOrderId: form.sourceWorkOrderId || '',
+    sourceWorkOrderNo: form.sourceWorkOrderNo || '',
+    outsourceMode: normalizeOutsourceMode(form.outsourceMode),
+    sourceProcessId: form.sourceProcessId || '',
+    sourceProcessCode: form.sourceProcessCode || '',
+    sourceProcessName: form.sourceProcessName || '',
+    sourceProcessIndex: form.sourceProcessIndex,
+    supplier: form.supplier || '',
+    planStartDate: start,
+    planEndDate: end,
+    planDate: end || start,
+    contactPerson: form.contactPerson || '',
+    contactPhone: form.contactPhone || '',
+    leadTimeDays: form.leadTimeDays,
+    settlementType: form.settlementType,
+    settlementCycle: form.settlementCycle,
+    settlementMethod: form.settlementMethod,
+    shipWarehouse: form.shipWarehouse || '',
+    remark: form.remark || '',
+    lineItems: form.lineItems.map((l) => ({ ...l })),
+  }
+}
+
+function onContractChange(_no, contract) {
+  if (contract?.supplierName && !form.supplier) {
+    form.supplier = contract.supplierName
+  }
+}
+
+function handleSave() {
+  if (isProcessMode.value && !String(form.sourceProcessId || '').trim()) {
+    message.warning('请选择工序')
+    return
+  }
+  if (supplierRequired.value && !String(form.supplier || '').trim()) {
+    message.warning('请选择供应商')
+    return
+  }
+  if (!form.planDateRange?.[0] || !form.planDateRange?.[1]) {
+    message.warning('请选择计划开始与结束日期')
+    return
+  }
+  if (!form.lineItems.length) {
+    message.warning('请至少添加一条外协明细')
+    return
+  }
+  form.lineItems.forEach((line) => {
+    if (!line.shipWarehouse && form.shipWarehouse) {
+      line.shipWarehouse = form.shipWarehouse
+    }
+  })
+  const bad = form.lineItems.find(
+    (l) => !(Number(l.planQty) > 0) || !l.unit || !String(l.shipWarehouse || '').trim(),
+  )
+  if (bad) {
+    message.warning('请完善明细的计划数量、单位、预入仓库')
+    return
+  }
+  if (isEdit.value && !canEditOutsourcingOrder(props.editRecord)) {
+    message.warning('当前外协订单不可编辑')
+    return
+  }
+
+  if (props.seedWorkOrder && !isEdit.value && !isProcessMode.value) {
+    const convertQty = form.lineItems.reduce((s, l) => s + (Number(l.planQty) || 0), 0)
+    const check = validateWorkOrderConvertQty(props.seedWorkOrder, convertQty)
+    if (!check.ok) {
+      message.warning(check.message || '转换数量超出待排产')
+      return
+    }
+  }
+  if (isProcessMode.value && props.seedWorkOrder && props.seedProcess && !isEdit.value) {
+    const convertQty = form.lineItems.reduce((s, l) => s + (Number(l.planQty) || 0), 0)
+    const remain = calcProcessOutsourceRemainQty(props.seedWorkOrder, props.seedProcess)
+    if (convertQty > remain + 1e-9) {
+      message.warning(`工序外协数量不能超过可外协剩余 ${remain}`)
+      return
+    }
+    if (!(convertQty > 0)) {
+      message.warning('请填写工序外协数量')
+      return
+    }
+  }
+
+  saving.value = true
+  try {
+    const payload = buildPayload()
+    form.lineItems.forEach((l) => recalcOutsourcingLine(l, { fromInTax: !taxModeExcluding.value }))
+    payload.lineItems = form.lineItems.map((l) => ({ ...l }))
+    if (isEdit.value) {
+      const updated = updateOutsourcingOrder(props.editRecord.id, payload)
+      if (normalizeOutsourceMode(updated?.outsourceMode) === OUTSOURCE_MODE.PROCESS) {
+        linkWorkOrderProcessOutsource(updated)
+      }
+      message.success('外协订单已更新')
+      emit('saved', updated)
+    } else {
+      const created = addOutsourcingOrder(payload)
+      if (normalizeOutsourceMode(created?.outsourceMode) === OUTSOURCE_MODE.PROCESS) {
+        linkWorkOrderProcessOutsource(created)
+      }
+      message.success(isProcessMode.value ? '工序外协订单已保存' : '外协订单已保存')
+      emit('saved', created)
+    }
+    closeAfterSave()
+  } finally {
+    saving.value = false
+  }
+}
+</script>
+
+<script>
+export default { name: 'CreateOutsourcingOrderModal' }
+</script>
+
+<style lang="less" scoped>
+.wx-form-shell {
+  padding: 0 4px 8px;
+}
+
+.section-block {
+  background: #fff;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 8px;
+  border: 1px solid #f0f0f0;
+
+  .section-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .section-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+
+  .section-title-row .section-title {
+    margin-bottom: 0;
+  }
+
+  .collapse-btn {
+    padding-inline: 4px;
+    height: auto;
+    flex-shrink: 0;
+  }
+
+  &.is-collapsed {
+    padding-top: 10px;
+    padding-bottom: 10px;
+
+    .section-title-row {
+      margin-bottom: 0;
+    }
+  }
+}
+
+.horizontal-form {
+  width: 100%;
+
+  :deep(.ant-form-item) {
+    width: 100%;
+    margin-bottom: 0;
+  }
+
+  :deep(.ant-form-item-label > label) {
+    font-size: 13px;
+  }
+}
+
+.remark-item {
+  width: 100%;
+}
+
+.line-toolbar {
+  margin-bottom: 8px;
+}
+
+.tax-hint {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.product-name-cell {
+  display: inline-flex;
+  gap: 4px;
+  min-width: 0;
+}
+
+.line-idx {
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.remark-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  color: #1677ff;
+}
+
+.remark-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.col-title-required .required-star {
+  color: #ff4d4f;
+  margin-right: 2px;
+}
+</style>

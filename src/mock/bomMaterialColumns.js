@@ -1,0 +1,140 @@
+/** BOM 物料清单列配置（列显隐 / 冻结 / 排序） */
+export const defaultBomColumnSettings = [
+  { key: 'itemName', title: '子项名称', hidden: false, frozen: true, order: 0 },
+  { key: 'materialCode', title: '子项编码', hidden: false, frozen: true, order: 1 },
+  { key: 'specModel', title: '规格型号', hidden: false, frozen: false, order: 2 },
+  { key: 'material', title: '材质', hidden: false, frozen: false, order: 3 },
+  { key: 'variantAttr', title: '变体属性', hidden: false, frozen: false, order: 4 },
+  { key: 'drawingNo', title: '图号', hidden: false, frozen: false, order: 5 },
+  { key: 'stockQty', title: '库存量', hidden: false, frozen: false, order: 6 },
+  { key: 'unitQty', title: '单位用量', hidden: false, frozen: false, order: 7 },
+  { key: 'blankSizeText', title: '下料尺寸', hidden: false, frozen: false, order: 8 },
+  { key: 'unit', title: '库存单位', hidden: false, frozen: false, order: 9 },
+  { key: 'supplyForm', title: '供应型态', hidden: false, frozen: false, order: 10 },
+  { key: 'releaseStatus', title: '投产状态', hidden: false, frozen: false, order: 11 },
+  { key: 'categoryName', title: '物料类别', hidden: false, frozen: false, order: 12 },
+  { key: 'materialType', title: '物料类型', hidden: false, frozen: false, order: 13 },
+  { key: 'remark', title: '备注', hidden: false, frozen: false, order: 14 },
+  { key: 'substitutePart', title: '替代件', hidden: false, frozen: false, order: 15 },
+  { key: 'childBom', title: '子件BOM', hidden: false, frozen: false, order: 16 },
+  { key: 'processRoute', title: '工艺路线', hidden: false, frozen: false, order: 17 },
+  { key: 'processDocName', title: '工艺文件', hidden: false, frozen: false, order: 18 },
+  { key: 'unitPrice', title: '单价', hidden: false, frozen: false, order: 19 },
+]
+
+/** 历史误藏「下料尺寸」列：合并配置时强制恢复可见（用户仍可再藏） */
+export function restoreBomBlankSizeColumn(settings) {
+  if (!Array.isArray(settings)) return settings
+  return settings.map((c) => (c?.key === 'blankSizeText' ? { ...c, hidden: false } : c))
+}
+
+/** 保证「库存量」在「单位用量」前（兼容旧列配置 / 草稿） */
+export function ensureBomStockQtyColumn(settings) {
+  if (!Array.isArray(settings)) return settings
+  const list = settings.map((c) => ({ ...c }))
+  const stockDef = {
+    key: 'stockQty',
+    title: '库存量',
+    hidden: false,
+    frozen: false,
+    order: 0,
+  }
+  let stockIdx = list.findIndex((c) => c.key === 'stockQty')
+  if (stockIdx < 0) {
+    const unitQtyIdx = list.findIndex((c) => c.key === 'unitQty')
+    if (unitQtyIdx >= 0) list.splice(unitQtyIdx, 0, { ...stockDef })
+    else list.push({ ...stockDef })
+  } else {
+    const [stock] = list.splice(stockIdx, 1)
+    stock.title = stock.title || '库存量'
+    const unitQtyIdx = list.findIndex((c) => c.key === 'unitQty')
+    if (unitQtyIdx >= 0) list.splice(unitQtyIdx, 0, stock)
+    else list.push(stock)
+  }
+  return list.map((c, i) => ({ ...c, order: i }))
+}
+
+/** BOM 物料清单列配置归一：补库存量列 + 恢复下料尺寸可见 */
+export function normalizeBomMaterialColumnSettings(settings) {
+  return ensureBomStockQtyColumn(restoreBomBlankSizeColumn(settings))
+}
+
+/** 子件 BOM 展示：BOM 名称 + 版本号 */
+export function formatChildBomLabel(line) {
+  if (!line) return ''
+  const name = String(line.childBom || '').trim()
+  const version = String(line.childBomVersion || '').trim()
+  if (name && version) return `${name} ${version}`
+  return name || version || ''
+}
+
+/** 替代件展示：编码 + 名称 */
+export function formatSubstitutePartLabel(line) {
+  if (!line) return ''
+  const code = String(line.substituteCode || '').trim()
+  const name = String(line.substituteName || '').trim()
+  if (code && name) return `[${code}] ${name}`
+  return name || code || ''
+}
+
+/** 产品 BOM：挂 SKU/单品；基准 BOM：挂产品族（族模板）；发运 BOM：可共用的随货配件清单 */
+export const BOM_TYPE = {
+  PRODUCT: '产品BOM',
+  BASELINE: '基准BOM',
+  ORDER: '订单BOM',
+  CONFIG: '配置BOM',
+  /** 发运随货配件清单；可被多个产品共用，不参与生产 */
+  SHIP: '发运BOM',
+}
+
+/** 发运 BOM 挂载类型：不绑定单一产品，通过 applicableProductIds / 产品.shipBomId 关联 */
+export const SHIP_KIT_ITEM_TYPE = 'shipKit'
+
+export const bomTypeOptions = [
+  BOM_TYPE.PRODUCT,
+  BOM_TYPE.BASELINE,
+  BOM_TYPE.ORDER,
+  BOM_TYPE.CONFIG,
+  BOM_TYPE.SHIP,
+]
+
+export const bomTypeSelectOptions = bomTypeOptions.map((v) => ({
+  label: v === BOM_TYPE.SHIP ? '随货配件' : v,
+  value: v,
+}))
+
+/** 产品 BOM 创建页可选类型（不含订单/配置/随货配件） */
+export const productBomCreateTypeOptions = [
+  { label: BOM_TYPE.PRODUCT, value: BOM_TYPE.PRODUCT },
+  { label: BOM_TYPE.BASELINE, value: BOM_TYPE.BASELINE },
+]
+
+/** 历史「基础BOM」归一为基准 BOM（族模板） */
+export function normalizeBomType(bomType) {
+  if (!bomType || bomType === '基础BOM') return BOM_TYPE.BASELINE
+  return bomType
+}
+
+export function isShipBomType(bomType) {
+  return normalizeBomType(bomType) === BOM_TYPE.SHIP
+}
+
+export function isShipKitItemType(itemType) {
+  return itemType === SHIP_KIT_ITEM_TYPE
+}
+
+/** EBOM 设计专用，产品 BOM 新增/编辑不展示此选项 */
+export const EBOM_TYPE_VALUE = 'EBOM'
+
+export const unitOptions = ['个', '件', '套', '根', '台', '米']
+
+export const processDocOptions = [
+  { label: '机加工艺-泵体', value: '机加工艺-泵体' },
+  { label: '装配工艺-泵头', value: '装配工艺-泵头' },
+  { label: '检验规程-整机', value: '检验规程-整机' },
+]
+
+export const processRouteOptions = [
+  { label: '机加标准路线', value: '机加标准路线' },
+  { label: '装配标准路线', value: '装配标准路线' },
+]

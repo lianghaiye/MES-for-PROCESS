@@ -1,0 +1,505 @@
+<template>
+  <div class="process-report-page">
+    <a-alert
+      v-if="pageError"
+      type="error"
+      show-icon
+      class="page-error-alert"
+      :message="'工序报工数据加载异常'"
+      :description="pageError"
+    >
+      <template #action>
+        <a-button size="small" type="primary" @click="handleResetData">重置演示数据</a-button>
+      </template>
+    </a-alert>
+
+    <ProcessReportStatsPanel :stats="stats" />
+
+    <div class="filter-card">
+      <a-form :model="filters" layout="inline" class="filter-form horizontal-form">
+        <a-row :gutter="[12, 8]" style="width: 100%">
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item label="关键词">
+              <a-input
+                v-model:value="filters.keyword"
+                allow-clear
+                size="small"
+                placeholder="工单号/产品/工序/执行人"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="5">
+            <a-form-item label="状态">
+              <a-select
+                v-model:value="filters.status"
+                allow-clear
+                size="small"
+                placeholder="全部"
+                :options="statusOptions"
+                style="width: 100%"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="5">
+            <a-form-item label="报工方式">
+              <a-select
+                v-model:value="filters.source"
+                allow-clear
+                size="small"
+                placeholder="全部"
+                :options="sourceOptions"
+                style="width: 100%"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item>
+              <a-space>
+                <a-button type="primary" size="small" @click="handleSearch">搜索</a-button>
+                <a-button size="small" @click="handleReset">清空</a-button>
+              </a-space>
+            </a-form-item>
+          </a-col>
+        </a-row>
+      </a-form>
+    </div>
+
+    <div class="toolbar-row">
+      <a-space wrap :size="8">
+        <a-button
+          type="primary"
+          size="small"
+          :disabled="!selectedIds.length"
+          @click="handleBatchApprove"
+        >
+          批量通过
+        </a-button>
+        <a-button size="small" :disabled="!selectedIds.length" @click="openBatchReject">
+          批量拒绝
+        </a-button>
+        <a-button size="small" @click="importOpen = true">导入报工记录</a-button>
+        <a-button size="small" @click="openExportModal">导出报工明细</a-button>
+        <a-button size="small" @click="historyOpen = true">导入导出历史</a-button>
+      </a-space>
+      <a-space :size="4" class="toolbar-icons">
+        <a-button type="text" size="small" @click="handleSearch">
+          <ReloadOutlined />
+        </a-button>
+        <TableColumnSettingButton @click="columnDrawerOpen = true" />
+      </a-space>
+    </div>
+
+    <div class="table-card">
+      <a-table
+        :columns="displayColumns"
+        :data-source="pagedList"
+        row-key="id"
+        size="small"
+        bordered
+        :scroll="{ x: tableScrollX }"
+        :pagination="false"
+        :row-selection="rowSelection"
+        :custom-row="customRow"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'status'">
+            <a-badge :status="statusBadge(record.status)" :text="record.status" />
+          </template>
+          <template v-else-if="column.key === 'reportSourceLabel'">
+            <a-tag v-if="record.isRework" color="orange">返工任务</a-tag>
+            <span v-else>{{ record.reportSourceLabel || '—' }}</span>
+          </template>
+          <template v-else-if="column.key === 'workOrderNo'">
+            <span>{{ record.workOrderNo || '—' }}</span>
+            <a-tag v-if="record.isRework && record.reworkNo" color="orange" class="rework-no-tag">
+              {{ record.reworkNo }}
+            </a-tag>
+          </template>
+          <template v-else-if="column.key === 'scheduleQty'">
+            {{ formatScheduleQty(record.scheduleQty) }}
+          </template>
+          <template v-else-if="column.key === 'salaryAmount'">
+            {{ formatSalaryAmount(record.salaryAmount) }}
+          </template>
+          <template v-else-if="column.key === 'action'">
+            <a-space :size="4">
+              <a-button
+                v-if="record.isRework && record.status === '待报工'"
+                type="link"
+                size="small"
+                @click.stop="openReworkSubmit(record)"
+              >
+                报工
+              </a-button>
+              <a-button
+                v-if="isTaskReport(record)"
+                type="link"
+                size="small"
+                @click.stop="openWorkOrderDetail(record)"
+              >
+                详情
+              </a-button>
+              <a-button v-else type="link" size="small" @click.stop="openQuickDetail(record)">
+                详情
+              </a-button>
+            </a-space>
+          </template>
+          <template v-else>
+            {{ formatCell(record, column) }}
+          </template>
+        </template>
+      </a-table>
+
+      <div class="table-pagination">
+        <a-pagination
+          v-model:current="pagination.current"
+          v-model:page-size="pagination.pageSize"
+          :total="filteredList.length"
+          size="small"
+          show-size-changer
+          :show-total="(t) => `共 ${t} 条`"
+        />
+      </div>
+    </div>
+
+    <ProcessReportRejectModal v-model:open="rejectOpen" @confirm="onRejectConfirm" />
+    <ProcessReportReworkSubmitModal
+      v-model:open="reworkSubmitOpen"
+      :task="reworkSubmitTask"
+      @done="onReworkSubmitDone"
+    />
+
+    <TableColumnSettingDrawer
+      v-model:open="columnDrawerOpen"
+      v-model:settings="columnSettings"
+      :default-settings="defaultColumnSettings"
+    />
+
+    <ImportExcelModal
+      v-model:open="importOpen"
+      :import-def="processReportImportDef"
+      @done="onImportDone"
+    />
+    <ImportExportHistoryModal v-model:open="historyOpen" />
+    <ExportExcelModal
+      v-model:open="exportModalOpen"
+      v-model:settings="exportFieldSettings"
+      :default-settings="defaultExportFieldSettings"
+      :filtered-count="filteredList.length"
+      :selected-count="selectedIds.length"
+      @export="doExport"
+    />
+  </div>
+</template>
+
+<script>
+export default { name: 'ProcessReportManagementView' }
+</script>
+
+<script setup>
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { Modal, message } from 'ant-design-vue'
+import { ReloadOutlined } from '@ant-design/icons-vue'
+import TableColumnSettingDrawer from '@/components/TableColumnSettingDrawer.vue'
+import TableColumnSettingButton from '@/components/TableColumnSettingButton.vue'
+import ImportExcelModal from '@/components/ImportExcelModal.vue'
+import ImportExportHistoryModal from '@/components/ImportExportHistoryModal.vue'
+import ExportExcelModal from '@/components/ExportExcelModal.vue'
+import { useTableColumnSettings } from '@/composables/useTableColumnSettings'
+import { useListExport } from '@/composables/useListExport'
+import { processReportExportFields } from '@/utils/exportFields/processReportExport'
+import { processReportImportDef } from '@/utils/importDefs/processReportImport'
+import {
+  batchApproveProcessReports,
+  batchRejectProcessReports,
+  getProcessReportStats,
+  getProcessReports,
+  processReportState,
+  reloadProcessReports,
+  resetProcessReportMockData,
+} from '@/store/processReportStore'
+import { useTabs } from '@/composables/useTabs'
+import ProcessReportStatsPanel from './components/ProcessReportStatsPanel.vue'
+import ProcessReportRejectModal from './components/ProcessReportRejectModal.vue'
+import ProcessReportReworkSubmitModal from './components/ProcessReportReworkSubmitModal.vue'
+
+const route = useRoute()
+const router = useRouter()
+const { openTab } = useTabs()
+
+const filters = reactive({
+  keyword: '',
+  status: undefined,
+  source: undefined,
+})
+const appliedFilters = ref({ ...filters })
+const pagination = reactive({ current: 1, pageSize: 10 })
+const selectedIds = ref([])
+const rejectOpen = ref(false)
+const importOpen = ref(false)
+const historyOpen = ref(false)
+const pageError = ref('')
+const reworkSubmitOpen = ref(false)
+const reworkSubmitTask = ref(null)
+
+const statusOptions = [
+  { label: '待报工', value: '待报工' },
+  { label: '待审核', value: '待审核' },
+  { label: '已审核', value: '已审核' },
+  { label: '已拒绝', value: '已拒绝' },
+  { label: '已取消', value: '已取消' },
+]
+
+const sourceOptions = [
+  { label: '任务报工', value: 'workorder' },
+  { label: '快速报工', value: 'quick' },
+  { label: '返工任务', value: 'rework' },
+]
+
+const baseColumns = [
+  { title: '状态', key: 'status', width: 90, fixed: 'left' },
+  { title: '报工方式', key: 'reportSourceLabel', dataIndex: 'reportSourceLabel', width: 100 },
+  { title: '工单号', key: 'workOrderNo', dataIndex: 'workOrderNo', width: 150, ellipsis: true },
+  { title: '产品名称', key: 'productName', dataIndex: 'productName', width: 140, ellipsis: true },
+  { title: '产品编码', key: 'productCode', dataIndex: 'productCode', width: 120 },
+  { title: '规格型号', key: 'specModel', dataIndex: 'specModel', width: 110 },
+  { title: '材质', key: 'material', dataIndex: 'material', width: 90 },
+  { title: '报工日期', key: 'reportDate', dataIndex: 'reportDate', width: 110 },
+  { title: '排产数', key: 'scheduleQty', dataIndex: 'scheduleQty', width: 88, align: 'right' },
+  { title: '工作中心', key: 'workCenter', dataIndex: 'workCenter', width: 110 },
+  { title: '计薪(元)', key: 'salaryAmount', dataIndex: 'salaryAmount', width: 100, align: 'right' },
+  { title: '备注', key: 'remark', dataIndex: 'remark', width: 120, ellipsis: true },
+  { title: '操作', key: 'action', width: 120, fixed: 'right' },
+]
+
+const { columnSettings, columnDrawerOpen, displayColumns, tableScrollX, defaultColumnSettings } =
+  useTableColumnSettings('process-report-list', baseColumns, { minScrollX: 1400 })
+
+const stats = computed(() => {
+  void processReportState.records
+  return getProcessReportStats()
+})
+
+const filteredList = computed(() => {
+  void processReportState.records
+  return getProcessReports(appliedFilters.value)
+})
+
+const {
+  exportModalOpen,
+  openExportModal,
+  exportFieldSettings,
+  defaultExportFieldSettings,
+  doExport,
+} = useListExport({
+  storageKey: 'process-report-list-export',
+  fieldDefinitions: processReportExportFields,
+  getFilteredRows: () => filteredList.value,
+  getSelectedRows: () => filteredList.value.filter((r) => selectedIds.value.includes(r.id)),
+  fileNamePrefix: '报工明细',
+  sheetName: '报工明细',
+})
+
+function safeReload() {
+  try {
+    pageError.value = ''
+    reloadProcessReports()
+  } catch (err) {
+    console.error(err)
+    pageError.value = err?.message || '本地报工数据解析失败，可尝试重置演示数据'
+  }
+}
+
+function handleResetData() {
+  resetProcessReportMockData()
+  safeReload()
+  message.success('已重置工序报工演示数据')
+}
+
+onMounted(() => {
+  if (route.query.source === 'rework') {
+    filters.source = 'rework'
+    appliedFilters.value = { ...filters }
+  }
+  safeReload()
+})
+
+const pagedList = computed(() => {
+  const start = (pagination.current - 1) * pagination.pageSize
+  return filteredList.value.slice(start, start + pagination.pageSize)
+})
+
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedIds.value,
+  onChange: (keys) => {
+    selectedIds.value = keys
+  },
+  getCheckboxProps: (record) => ({
+    disabled: record.status !== '待审核',
+  }),
+}))
+
+function isTaskReport(record) {
+  return record.source === 'workorder' || record.isRework
+}
+
+function customRow(record) {
+  return {
+    onClick: () => {
+      if (isTaskReport(record)) openWorkOrderDetail(record)
+      else openQuickDetail(record)
+    },
+    style: { cursor: 'pointer' },
+  }
+}
+
+function statusBadge(status) {
+  if (status === '已审核') return 'success'
+  if (status === '已拒绝' || status === '已取消') return 'error'
+  if (status === '待报工') return 'warning'
+  return 'processing'
+}
+
+function openReworkSubmit(record) {
+  reworkSubmitTask.value = record
+  reworkSubmitOpen.value = true
+}
+
+function onReworkSubmitDone() {
+  handleSearch()
+}
+
+function formatCell(record, column) {
+  const key = column.dataIndex || column.key
+  const val = record[key]
+  if (val === 0) return '0'
+  return val || '—'
+}
+
+function formatScheduleQty(val) {
+  if (val == null || val === '') return '—'
+  return val
+}
+
+function formatSalaryAmount(val) {
+  const num = Number(val)
+  if (!Number.isFinite(num)) return '—'
+  return `¥${num.toFixed(2)}`
+}
+
+function handleSearch() {
+  safeReload()
+  appliedFilters.value = { ...filters }
+  pagination.current = 1
+  selectedIds.value = []
+}
+
+function handleReset() {
+  filters.keyword = ''
+  filters.status = undefined
+  filters.source = undefined
+  handleSearch()
+}
+
+function onImportDone() {
+  handleSearch()
+}
+
+function openWorkOrderDetail(record) {
+  if (!record.workOrderId) {
+    message.warning('缺少工单关联')
+    return
+  }
+  const path = `/report-management/process-report/wo/${record.workOrderId}`
+  openTab(path, record.workOrderNo || '任务报工详情')
+  router.push(path)
+}
+
+function openQuickDetail(record) {
+  const path = `/report-management/process-report/${record.id}`
+  openTab(path, `${record.processName} · ${record.productName}`)
+  router.push(path)
+}
+
+function handleBatchApprove() {
+  Modal.confirm({
+    title: '批量通过',
+    content: `确认通过选中的 ${selectedIds.value.length} 条工序报工？`,
+    onOk: () => {
+      const res = batchApproveProcessReports(selectedIds.value)
+      if (!res.ok) {
+        message.warning(res.message)
+        return
+      }
+      message.success(res.message)
+      selectedIds.value = []
+      handleSearch()
+    },
+  })
+}
+
+function openBatchReject() {
+  rejectOpen.value = true
+}
+
+function onRejectConfirm(reason) {
+  const res = batchRejectProcessReports(selectedIds.value, reason)
+  if (!res.ok) {
+    message.warning(res.message)
+    return
+  }
+  message.success(res.message)
+  selectedIds.value = []
+  handleSearch()
+}
+</script>
+
+<style lang="less" scoped>
+.process-report-page {
+  .rework-no-tag {
+    margin-left: 6px;
+  }
+
+  .page-error-alert {
+    margin-bottom: 12px;
+  }
+
+  .filter-card,
+  .table-card {
+    background: #fff;
+    border: 1px solid var(--divider, #e5e6eb);
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  }
+
+  .filter-card {
+    padding: 12px 16px;
+    margin-bottom: 8px;
+  }
+
+  .toolbar-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .toolbar-icons {
+    flex-shrink: 0;
+  }
+
+  .table-card {
+    width: 100%;
+    min-height: 320px;
+    padding: 8px 12px;
+    box-sizing: border-box;
+  }
+
+  .table-pagination {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 12px;
+  }
+}
+</style>

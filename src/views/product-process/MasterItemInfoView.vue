@@ -1,0 +1,1709 @@
+<template>
+  <div class="product-info-page master-item-info-page">
+    <div class="page-layout">
+      <div
+        class="category-panel"
+        :style="{ width: `${categoryPanelWidth}px`, flexBasis: `${categoryPanelWidth}px` }"
+      >
+        <div class="category-search">
+          <a-input v-model:value="categoryKeyword" allow-clear size="small" placeholder="搜索类别">
+            <template #suffix>
+              <SearchOutlined />
+            </template>
+          </a-input>
+          <a-button type="primary" size="small" class="add-cat-btn" @click="onAddCategory">
+            <PlusOutlined />
+          </a-button>
+        </div>
+        <div class="category-tree-wrap">
+          <a-tree
+            v-if="displayTree.length"
+            :tree-data="displayTree"
+            :expanded-keys="expandedKeys"
+            :selected-keys="selectedCategoryKeys"
+            block-node
+            @expand="onExpand"
+            @select="onSelectCategory"
+            @rightClick="onCategoryRightClick"
+          >
+            <template #title="node">
+              <a-dropdown :trigger="['contextmenu']" :disabled="isAllModeRootKey(node.key)">
+                <span class="cat-node-title">{{ node.title }}</span>
+                <template #overlay>
+                  <a-menu @click="({ key }) => onCategoryMenu(key, node)">
+                    <a-menu-item key="moveUp">上移</a-menu-item>
+                    <a-menu-item key="moveDown">下移</a-menu-item>
+                    <a-menu-divider />
+                    <a-menu-item key="rename">修改名称</a-menu-item>
+                    <a-menu-item key="delete" :disabled="isSystemCategoryKey(node.key)" danger>
+                      删除
+                    </a-menu-item>
+                  </a-menu>
+                </template>
+              </a-dropdown>
+            </template>
+          </a-tree>
+          <a-empty v-else :image="false" description="无匹配类别" />
+        </div>
+      </div>
+
+      <div
+        class="panel-resizer"
+        title="拖动调整宽度"
+        @mousedown.prevent="onCategoryResizeMouseDown"
+      />
+
+      <div class="main-panel">
+        <div class="filter-card">
+          <a-form :model="filters" layout="inline" class="filter-form horizontal-form">
+            <a-row :gutter="[12, 8]" style="width: 100%">
+              <a-col :xs="24" :sm="12" :md="8" :lg="4">
+                <a-form-item label="编号">
+                  <a-input
+                    v-model:value="filters.code"
+                    allow-clear
+                    size="small"
+                    placeholder="请输入编号"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :xs="24" :sm="12" :md="8" :lg="4">
+                <a-form-item label="名称">
+                  <a-input
+                    v-model:value="filters.name"
+                    allow-clear
+                    size="small"
+                    placeholder="请输入名称"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :xs="24" :sm="12" :md="8" :lg="4">
+                <a-form-item label="条码类型">
+                  <a-select
+                    v-model:value="filters.barcodeType"
+                    allow-clear
+                    size="small"
+                    placeholder="请选择 条码类型"
+                    :options="barcodeOpts"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :xs="24" :sm="12" :md="8" :lg="4">
+                <a-form-item label="产品类型">
+                  <a-select
+                    v-model:value="filters.itemKind"
+                    allow-clear
+                    size="small"
+                    placeholder="请选择 产品类型"
+                    :options="itemKindFilterOpts"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :xs="24" :sm="12" :md="8" :lg="4">
+                <a-form-item label="规格型号">
+                  <a-input
+                    v-model:value="filters.specModel"
+                    allow-clear
+                    size="small"
+                    placeholder="请输入 规格型号"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :xs="24" :sm="12" :md="8" :lg="4">
+                <a-form-item label="材质">
+                  <a-input
+                    v-model:value="filters.material"
+                    allow-clear
+                    size="small"
+                    placeholder="请输入 材质"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :xs="24" :sm="12" :md="8" :lg="4">
+                <a-form-item label="图号">
+                  <a-input
+                    v-model:value="filters.drawingNo"
+                    allow-clear
+                    size="small"
+                    placeholder="请输入 图号"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :xs="24" :sm="12" :md="8" :lg="4">
+                <a-form-item label="业务类型">
+                  <a-select
+                    v-model:value="filters.businessType"
+                    allow-clear
+                    size="small"
+                    placeholder="请选择 业务类型"
+                    :options="businessTypeFilterOpts"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :xs="24" :sm="12" :md="8" :lg="4">
+                <a-form-item label="工作中心">
+                  <a-select
+                    v-model:value="filters.workCenter"
+                    allow-clear
+                    size="small"
+                    placeholder="请选择 工作中心"
+                    :options="workCenterFilterOpts"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :xs="24" :sm="12" :md="8" :lg="4">
+                <a-form-item class="filter-actions-item">
+                  <a-space>
+                    <a-button type="primary" size="small" @click="handleSearch">
+                      <SearchOutlined />
+                      搜索
+                    </a-button>
+                    <a-button size="small" @click="handleReset">清空</a-button>
+                  </a-space>
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </a-form>
+        </div>
+
+        <div class="toolbar-row list-action-card">
+          <a-space wrap :size="8" align="center">
+            <a-button type="primary" @click="openCreate">
+              <PlusOutlined />
+              新增
+            </a-button>
+            <a-button @click="handleBatchDelete">
+              <DeleteOutlined />
+              删除
+            </a-button>
+            <a-button v-if="listTab === 'active'" @click="handleBatchArchive">
+              <InboxOutlined />
+              归档
+            </a-button>
+            <a-button v-else @click="handleBatchUnarchive">取消归档</a-button>
+            <a-button @click="handleSyncSpec">
+              <SyncOutlined />
+              同步规格属性
+            </a-button>
+            <a-button @click="openLabelPrint">
+              <PrinterOutlined />
+              打印标签
+            </a-button>
+            <a-dropdown>
+              <a-button>
+                批量操作
+                <DownOutlined />
+              </a-button>
+              <template #overlay>
+                <a-menu @click="onBatchMenu">
+                  <a-menu-item key="import">批量导入</a-menu-item>
+                  <a-menu-item key="export">批量导出</a-menu-item>
+                  <a-menu-item key="history">导入导出历史</a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
+          </a-space>
+          <a-space :size="8" class="toolbar-icons" align="center">
+            <a-radio-group
+              v-model:value="listViewMode"
+              button-style="solid"
+              @change="pagination.current = 1"
+            >
+              <a-radio-button value="sku">SKU 视图</a-radio-button>
+              <a-radio-button value="template">模板视图</a-radio-button>
+            </a-radio-group>
+            <a-tooltip title="刷新">
+              <a-button type="text" @click="handleSearch">
+                <ReloadOutlined />
+              </a-button>
+            </a-tooltip>
+            <TableColumnSettingButton @click="columnDrawerOpen = true" />
+          </a-space>
+        </div>
+
+        <a-tabs
+          v-if="listViewMode === 'sku'"
+          v-model:activeKey="listTab"
+          size="small"
+          class="list-status-tabs"
+          @change="onListTabChange"
+        >
+          <a-tab-pane key="active" tab="启用" />
+          <a-tab-pane key="archived" tab="已归档" />
+        </a-tabs>
+
+        <div class="table-card">
+          <div ref="tableWrapRef" class="table-wrap">
+            <a-table
+              v-if="listViewMode === 'sku'"
+              :columns="tableColumns"
+              :data-source="pagedList"
+              row-key="id"
+              size="small"
+              bordered
+              :scroll="{ x: tableScrollX, y: tableScrollY }"
+              :pagination="false"
+              :row-selection="rowSelection"
+              @change="onTableChange"
+            >
+              <template #bodyCell="{ column, record, index }">
+                <template v-if="column.key === 'index'">
+                  {{ rowIndex(index) }}
+                </template>
+                <template v-else-if="column.key === 'itemKind'">
+                  <a-tag>{{ record.itemKindLabel || '—' }}</a-tag>
+                </template>
+                <template v-else-if="column.key === 'businessType'">
+                  <span class="attr-ellipsis">{{ formatProductBusinessType(record) }}</span>
+                </template>
+                <template v-else-if="column.key === 'bomInfo'">
+                  <span class="attr-ellipsis">{{ formatProductBomInfo(record) }}</span>
+                </template>
+                <template v-else-if="column.key === 'productAttribute'">
+                  <span class="attr-ellipsis">{{ record.productAttribute || '—' }}</span>
+                </template>
+                <template v-else-if="column.key === 'materialType'">
+                  {{ record.materialType || '—' }}
+                </template>
+                <template v-else-if="column.key === 'supplyForm'">
+                  {{ record.supplyForm || '—' }}
+                </template>
+                <template v-else-if="column.key === 'weight'">
+                  {{ formatWeight(record.weight) }}
+                </template>
+                <template v-else-if="column.key === 'inventoryUnit'">
+                  <a-tag color="blue" class="unit-tag">{{ record.inventoryUnit || '—' }}</a-tag>
+                </template>
+                <template v-else-if="column.key === 'unitPrice'">
+                  {{ formatPrice(record.unitPrice) }}
+                </template>
+                <template v-else-if="column.key === 'matchingRequirements'">
+                  {{ record.matchingRequirements || record.remark || '—' }}
+                </template>
+                <template v-else-if="column.dataIndex === 'techParams'">
+                  {{ record.techParams || '—' }}
+                </template>
+                <template v-else-if="column.key === 'defaultWorkCenter'">
+                  {{ record.production?.defaultWorkCenter || '—' }}
+                </template>
+                <template v-else-if="column.key === 'defaultSupplier'">
+                  {{
+                    formatPurchaseSuppliersSummary(
+                      record.purchaseSuppliers || record.production?.purchaseSuppliers,
+                    ) ||
+                    record.production?.defaultSupplier ||
+                    '—'
+                  }}
+                </template>
+                <template v-else-if="column.key === 'defaultOutsourceSupplier'">
+                  {{ record.production?.defaultOutsourceSupplier || '—' }}
+                </template>
+                <template v-else-if="column.key === 'isProductMaterial'">
+                  <a-tag :color="record.isProductMaterial ? 'success' : 'error'">
+                    {{ record.isProductMaterial ? '是' : '否' }}
+                  </a-tag>
+                </template>
+                <template v-else-if="column.key === 'creator'">
+                  {{ record.creator || '—' }}
+                </template>
+                <template v-else-if="column.key === 'status'">
+                  <a-tag
+                    v-if="isProductSideRecord(record)"
+                    :color="productStatusColor(record.status)"
+                  >
+                    {{ normalizeProductStatus(record.status) }}
+                  </a-tag>
+                  <span v-else>—</span>
+                </template>
+                <template v-else-if="column.key === 'action'">
+                  <MasterInfoRowActions
+                    :show-archive="isProductSideRecord(record) && isProductActive(record)"
+                    :show-unarchive="isProductSideRecord(record) && isProductArchived(record)"
+                    @edit="openEdit(record)"
+                    @bom="openBomMaintenance(record)"
+                    @delete="confirmDelete(record)"
+                    @clone="handleClone(record)"
+                    @archive="confirmArchive(record)"
+                    @unarchive="handleUnarchive(record)"
+                  />
+                </template>
+              </template>
+            </a-table>
+
+            <a-table
+              v-else
+              :columns="templateColumns"
+              :data-source="pagedTemplateList"
+              row-key="id"
+              size="small"
+              bordered
+              :scroll="{ y: tableScrollY }"
+              :pagination="false"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'variantAxes'">
+                  {{ (record.variantAxes || []).map((a) => a.label).join(' + ') || '—' }}
+                </template>
+                <template v-else-if="column.key === 'bomStrategy'">
+                  {{ bomStrategyLabel(record.bomStrategy) }}
+                </template>
+                <template v-else-if="column.key === 'skuCount'">
+                  {{ listSkusForSpu(record.id).length }}
+                </template>
+                <template v-else-if="column.key === 'templateAction'">
+                  <a-space :size="4">
+                    <a-button type="link" size="small" @click="openEditSpu(record)"
+                      >编辑模板</a-button
+                    >
+                    <a-button type="link" size="small" @click="openMatrix(record)"
+                      >变体矩阵</a-button
+                    >
+                    <a-button type="link" size="small" @click="openTemplateBom(record)"
+                      >模板 BOM</a-button
+                    >
+                  </a-space>
+                </template>
+              </template>
+            </a-table>
+          </div>
+
+          <div class="table-pagination">
+            <a-pagination
+              v-model:current="pagination.current"
+              v-model:page-size="pagination.pageSize"
+              :total="listViewMode === 'sku' ? filteredList.length : filteredTemplateList.length"
+              size="small"
+              show-size-changer
+              :page-size-options="['10', '20', '50', '100']"
+              :show-total="(t) => `共 ${t} 条`"
+              show-quick-jumper
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <MasterItemFormModal
+      :key="modalSessionKey"
+      v-model:open="formModalOpen"
+      :edit-record="editRecord"
+      :edit-spu="editSpu"
+      :view-only="viewOnly"
+      @saved="onSaved"
+    />
+
+    <MasterItemCategoryFormModal
+      v-model:open="categoryFormOpen"
+      :mode="categoryFormMode"
+      :record="categoryEditRecord"
+      @saved="onCategorySaved"
+    />
+
+    <a-modal
+      v-model:open="matrixOpen"
+      :title="`变体矩阵 — ${matrixSpu?.name || ''}`"
+      width="920px"
+      destroy-on-close
+      @ok="generateMatrixSkus"
+    >
+      <VariantSkuMatrixPreview
+        v-if="matrixSpu"
+        ref="matrixPreviewRef"
+        :spu="matrixSpu"
+        :variant-axes="matrixSpu.variantAxes"
+        :sku-code-pattern="matrixSpu.skuCodePattern"
+        :enabled-keys="matrixSpu.enabledCombinations"
+      />
+      <template #footer>
+        <a-button @click="matrixOpen = false">关闭</a-button>
+        <a-button type="primary" @click="generateMatrixSkus">生成 SKU</a-button>
+      </template>
+    </a-modal>
+
+    <TableColumnSettingDrawer
+      v-model:open="columnDrawerOpen"
+      v-model:settings="columnSettings"
+      :default-settings="defaultColumnSettings"
+    />
+
+    <ImportExcelModal
+      v-model:open="importOpen"
+      :import-def="masterItemImportDef"
+      @done="handleSearch"
+    />
+    <ImportExportHistoryModal v-model:open="historyOpen" />
+
+    <ProductLabelPrintModal v-model:open="labelPrintOpen" :items="labelPrintItems" />
+
+    <ProductArchiveReferenceModal
+      v-model:open="archiveRefOpen"
+      :item-name="archiveTarget?.name || ''"
+      :item-code="archiveTarget?.code || ''"
+      :exclude-item-id="archiveTarget?.id || ''"
+      :refs="archiveParentRefs"
+      @confirm="onArchiveRefConfirm"
+      @cancel="onArchiveRefCancel"
+    />
+  </div>
+</template>
+
+<script>
+export default { name: 'MasterItemInfoView' }
+</script>
+
+<script setup>
+import { computed, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { Modal, message } from 'ant-design-vue'
+import {
+  PlusOutlined,
+  SearchOutlined,
+  ReloadOutlined,
+  DeleteOutlined,
+  DownOutlined,
+  SyncOutlined,
+  PrinterOutlined,
+  InboxOutlined,
+} from '@ant-design/icons-vue'
+import { filterCategoryTree } from '@/mock/productCategories'
+import {
+  filterCategoryTree as filterMaterialCategoryTree,
+  isSystemCategory,
+} from '@/mock/materialCategories'
+import {
+  productCategoryState,
+  deleteProductCategory,
+  findProductCategory,
+  moveProductCategory,
+} from '@/store/productCategoryStore'
+import {
+  materialCategoryState,
+  deleteMaterialCategory,
+  findMaterialCategory,
+  moveMaterialCategory,
+} from '@/store/materialCategoryStore'
+import { buildCategoryItemCountMap, sortCategoryTreeForDisplay } from '@/utils/categoryTreeSort'
+import { barcodeTypeOptions, workCenterOpts } from '@/mock/materialInfoOptions'
+import { productInfoState, archiveProduct, unarchiveProduct } from '@/store/productInfoStore'
+import {
+  findDirectBomRefsForItem,
+  applyProductArchiveBomRefActions,
+} from '@/utils/itemBomReference'
+import ProductArchiveReferenceModal from './components/ProductArchiveReferenceModal.vue'
+import {
+  isProductActive,
+  isProductArchived,
+  normalizeProductStatus,
+  productStatusColor,
+} from '@/utils/productStatus'
+import { materialInfoState } from '@/store/materialInfoStore'
+import MasterItemFormModal from './components/MasterItemFormModal.vue'
+import MasterItemCategoryFormModal from './components/MasterItemCategoryFormModal.vue'
+import MasterInfoRowActions from './components/MasterInfoRowActions.vue'
+import ProductLabelPrintModal from './components/ProductLabelPrintModal.vue'
+import TableColumnSettingDrawer from '@/components/TableColumnSettingDrawer.vue'
+import TableColumnSettingButton from '@/components/TableColumnSettingButton.vue'
+import { useTableColumnSettings } from '@/composables/useTableColumnSettings'
+import { useTabs } from '@/composables/useTabs'
+import { findCreatePageByListPath } from '@/config/createPages'
+import { openCreateTab } from '@/utils/openCreateTab'
+import { resolveItemBomNavigation } from '@/utils/itemBomNavigation'
+import { formatPurchaseSuppliersSummary } from '@/utils/purchaseSuppliers'
+import { formatBusinessTypeLabels, MASTER_BUSINESS_TYPE_OPTIONS } from '@/utils/businessTypeLabel'
+import { productBomState, getBomInfoLabelForItem, getBomsForItem } from '@/store/productBomStore'
+import { buildUnifiedListRows, filterUnifiedListRows } from '@/utils/masterItemList'
+import {
+  CATEGORY_TREE_ALL_ROOT,
+  CATEGORY_TREE_MODE,
+  ITEM_KIND,
+  decodeCategoryTreeKey,
+  encodeCategoryTreeKey,
+  itemKindLabel,
+  resolveBomItemTypeForKind,
+} from '@/utils/masterItemKind'
+import { saveMasterItem, deleteMasterItem, cloneMasterItem } from '@/utils/masterItemSave'
+import { spuState, listSpus, updateSpu } from '@/store/spuStore'
+import { listSkusForSpu, batchGenerateSkus } from '@/utils/spuSkuSave'
+import { matrixRowsToSkuCombos } from '@/utils/spuMatrix'
+import { SPU_BOM_STRATEGY_LABELS } from '@/constants/spu'
+import VariantSkuMatrixPreview from '@/views/product-process/components/VariantSkuMatrixPreview.vue'
+import ImportExcelModal from '@/components/ImportExcelModal.vue'
+import ImportExportHistoryModal from '@/components/ImportExportHistoryModal.vue'
+import { masterItemImportDef } from '@/utils/importDefs/masterItemImport'
+
+const router = useRouter()
+const { openTab } = useTabs()
+const productCreatePage = findCreatePageByListPath('/product-process/products')
+
+const CATEGORY_PANEL_WIDTH_KEY = 'master-item-category-panel-width'
+const MIN_CATEGORY_PANEL_WIDTH = 180
+const MAX_CATEGORY_PANEL_WIDTH = 480
+const DEFAULT_CATEGORY_PANEL_WIDTH = 220
+
+function readCategoryPanelWidth() {
+  const raw = Number(localStorage.getItem(CATEGORY_PANEL_WIDTH_KEY))
+  if (!Number.isFinite(raw)) return DEFAULT_CATEGORY_PANEL_WIDTH
+  return Math.min(MAX_CATEGORY_PANEL_WIDTH, Math.max(MIN_CATEGORY_PANEL_WIDTH, raw))
+}
+
+const categoryPanelWidth = ref(readCategoryPanelWidth())
+let categoryResizing = false
+let categoryResizeStartX = 0
+let categoryResizeStartWidth = 0
+
+const categoryTreeMode = ref(CATEGORY_TREE_MODE.PRODUCT)
+const categoryKeyword = ref('')
+const selectedCategoryKey = ref('')
+const expandedKeys = ref([])
+const selectedCategoryKeys = computed(() =>
+  selectedCategoryKey.value ? [selectedCategoryKey.value] : [],
+)
+const categoryFormOpen = ref(false)
+const categoryEditRecord = ref(null)
+
+const categoryFormMode = computed(() => {
+  if (categoryTreeMode.value === CATEGORY_TREE_MODE.ALL) {
+    const decoded = decodeCategoryTreeKey(selectedCategoryKey.value, CATEGORY_TREE_MODE.PRODUCT)
+    return decoded.side || CATEGORY_TREE_MODE.PRODUCT
+  }
+  return categoryTreeMode.value
+})
+
+function isAllModeRootKey(key) {
+  return key === CATEGORY_TREE_ALL_ROOT.PRODUCT || key === CATEGORY_TREE_ALL_ROOT.MATERIAL
+}
+
+function resolveCategorySide(encodedKey) {
+  if (categoryTreeMode.value === CATEGORY_TREE_MODE.ALL) {
+    return decodeCategoryTreeKey(encodedKey, CATEGORY_TREE_MODE.PRODUCT).side
+  }
+  return categoryTreeMode.value
+}
+
+function resolveRawCategoryKey(encodedKey) {
+  if (categoryTreeMode.value === CATEGORY_TREE_MODE.ALL) {
+    const decoded = decodeCategoryTreeKey(encodedKey, CATEGORY_TREE_MODE.PRODUCT)
+    return decoded.isRoot ? '' : decoded.key
+  }
+  return encodedKey
+}
+
+const filters = reactive({
+  code: '',
+  name: '',
+  barcodeType: undefined,
+  categoryKey: undefined,
+  specModel: '',
+  material: '',
+  drawingNo: '',
+  businessType: undefined,
+  workCenter: undefined,
+  itemKind: undefined,
+})
+const appliedFilters = ref({ ...filters })
+const selectedRowKeys = ref([])
+const formModalOpen = ref(false)
+const editRecord = ref(null)
+const editSpu = ref(null)
+const viewOnly = ref(false)
+const modalSessionKey = ref(0)
+const labelPrintOpen = ref(false)
+const labelPrintItems = ref([])
+const listViewMode = ref('sku')
+/** 启用 / 已归档（产品侧；纯物料始终出现在启用） */
+const listTab = ref('active')
+const matrixOpen = ref(false)
+const matrixSpu = ref(null)
+const matrixPreviewRef = ref(null)
+watch(formModalOpen, (open) => {
+  if (!open) viewOnly.value = false
+})
+const pagination = reactive({ current: 1, pageSize: 20 })
+const tableWrapRef = ref(null)
+const tableScrollY = ref(420)
+let tableResizeObserver = null
+
+const barcodeOpts = barcodeTypeOptions.map((v) => ({ label: v, value: v }))
+const businessTypeFilterOpts = MASTER_BUSINESS_TYPE_OPTIONS.map((o) => ({
+  label: o.label,
+  value: o.key,
+}))
+const itemKindFilterOpts = [
+  { label: itemKindLabel(ITEM_KIND.PRODUCT), value: ITEM_KIND.PRODUCT },
+  { label: itemKindLabel(ITEM_KIND.MATERIAL), value: ITEM_KIND.MATERIAL },
+  { label: itemKindLabel(ITEM_KIND.PRODUCT_MATERIAL), value: ITEM_KIND.PRODUCT_MATERIAL },
+]
+const workCenterFilterOpts = workCenterOpts
+
+const productCategoryCountMap = computed(() => {
+  void productInfoState.products
+  void productCategoryState.tree
+  const keys = productInfoState.products.flatMap((p) => [
+    p.categoryKey,
+    p.productCategoryKey,
+    p.parentCategoryKey,
+  ])
+  return buildCategoryItemCountMap(productCategoryState.tree, keys)
+})
+
+const materialCategoryCountMap = computed(() => {
+  void materialInfoState.materials
+  void materialCategoryState.tree
+  const keys = materialInfoState.materials.flatMap((m) => [
+    m.categoryKey,
+    m.materialCategoryKey,
+    m.parentCategoryKey,
+  ])
+  return buildCategoryItemCountMap(materialCategoryState.tree, keys)
+})
+
+const sortedProductCategoryTree = computed(() =>
+  sortCategoryTreeForDisplay(productCategoryState.tree, productCategoryCountMap.value),
+)
+
+const sortedMaterialCategoryTree = computed(() =>
+  sortCategoryTreeForDisplay(materialCategoryState.tree, materialCategoryCountMap.value),
+)
+
+const sortedCategoryTree = computed(() => {
+  void productCategoryState.tree
+  void materialCategoryState.tree
+  if (categoryTreeMode.value === CATEGORY_TREE_MODE.MATERIAL) {
+    return sortedMaterialCategoryTree.value
+  }
+  if (categoryTreeMode.value === CATEGORY_TREE_MODE.PRODUCT) {
+    return sortedProductCategoryTree.value
+  }
+  return [
+    {
+      key: CATEGORY_TREE_ALL_ROOT.PRODUCT,
+      title: '产品',
+      code: 'P',
+      children: sortedProductCategoryTree.value,
+    },
+    {
+      key: CATEGORY_TREE_ALL_ROOT.MATERIAL,
+      title: '物料',
+      code: 'M',
+      children: sortedMaterialCategoryTree.value,
+    },
+  ]
+})
+
+function pickDefaultCategoryKey() {
+  // 产品分类树默认不选中，右侧展示全量列表
+  return ''
+}
+
+watch(
+  sortedCategoryTree,
+  (tree) => {
+    if (!selectedCategoryKey.value && tree?.length) {
+      selectedCategoryKey.value = pickDefaultCategoryKey(tree)
+      expandedKeys.value = (tree || []).map((n) => n.key).filter(Boolean)
+    }
+  },
+  { immediate: true },
+)
+
+watch(categoryTreeMode, () => {
+  const tree = sortedCategoryTree.value
+  selectedCategoryKey.value = pickDefaultCategoryKey(tree)
+  if (categoryTreeMode.value === CATEGORY_TREE_MODE.ALL) {
+    expandedKeys.value = [CATEGORY_TREE_ALL_ROOT.PRODUCT, CATEGORY_TREE_ALL_ROOT.MATERIAL]
+  } else {
+    expandedKeys.value = selectedCategoryKey.value ? [selectedCategoryKey.value] : []
+  }
+  filters.categoryKey = undefined
+  pagination.current = 1
+})
+
+function mapTreeNodes(nodes, side = null) {
+  const defaultSide =
+    side ||
+    (categoryTreeMode.value === CATEGORY_TREE_MODE.MATERIAL
+      ? CATEGORY_TREE_MODE.MATERIAL
+      : CATEGORY_TREE_MODE.PRODUCT)
+  return (nodes || []).map((node) => {
+    const isVirtualRoot = isAllModeRootKey(node.key)
+    const nodeSide = isVirtualRoot
+      ? node.key === CATEGORY_TREE_ALL_ROOT.MATERIAL
+        ? CATEGORY_TREE_MODE.MATERIAL
+        : CATEGORY_TREE_MODE.PRODUCT
+      : defaultSide
+    const rawKey = node.key
+    const displayKey =
+      categoryTreeMode.value === CATEGORY_TREE_MODE.ALL && !isVirtualRoot
+        ? encodeCategoryTreeKey(nodeSide, rawKey)
+        : rawKey
+    const countMap =
+      nodeSide === CATEGORY_TREE_MODE.MATERIAL
+        ? materialCategoryCountMap.value
+        : productCategoryCountMap.value
+    const count = isVirtualRoot ? 0 : countMap[rawKey] || 0
+    const title = isVirtualRoot
+      ? node.title
+      : `(${node.code}) ${node.title}${count ? ` · ${count}` : ''}`
+    return {
+      key: displayKey,
+      title,
+      system: Boolean(node.system),
+      children: node.children?.length ? mapTreeNodes(node.children, nodeSide) : undefined,
+    }
+  })
+}
+
+function isSystemCategoryKey(key) {
+  if (isAllModeRootKey(key)) return true
+  const side = resolveCategorySide(key)
+  const rawKey = resolveRawCategoryKey(key)
+  if (!rawKey) return true
+  const node =
+    side === CATEGORY_TREE_MODE.MATERIAL
+      ? findMaterialCategory(rawKey)
+      : findProductCategory(rawKey)
+  return isSystemCategory(node)
+}
+
+function onCategoryRightClick() {
+  /* ant-tree rightClick；实际菜单由 dropdown contextmenu 触发 */
+}
+
+function onCategoryMenu(key, node) {
+  if (isAllModeRootKey(node.key)) return
+  const side = resolveCategorySide(node.key)
+  const rawKey = resolveRawCategoryKey(node.key)
+  const record =
+    side === CATEGORY_TREE_MODE.MATERIAL
+      ? findMaterialCategory(rawKey)
+      : findProductCategory(rawKey)
+  if (!record) return
+  if (key === 'moveUp' || key === 'moveDown') {
+    const dir = key === 'moveUp' ? -1 : 1
+    const res =
+      side === CATEGORY_TREE_MODE.MATERIAL
+        ? moveMaterialCategory(record.key, dir)
+        : moveProductCategory(record.key, dir)
+    if (!res.ok) message.warning(res.message)
+    return
+  }
+  if (key === 'rename') {
+    categoryEditRecord.value = { ...record }
+    categoryFormOpen.value = true
+    return
+  }
+  if (key === 'delete') {
+    if (isSystemCategory(record)) {
+      message.warning('系统默认类别不可删除')
+      return
+    }
+    Modal.confirm({
+      title: '确认删除该类别？',
+      content: `将删除「${record.title}」`,
+      okType: 'danger',
+      onOk: () => {
+        const res =
+          side === CATEGORY_TREE_MODE.MATERIAL
+            ? deleteMaterialCategory(record.key)
+            : deleteProductCategory(record.key)
+        if (!res.ok) {
+          message.warning(res.message)
+          return
+        }
+        if (selectedCategoryKey.value === node.key) {
+          selectedCategoryKey.value = pickDefaultCategoryKey(sortedCategoryTree.value)
+        }
+        message.success('已删除')
+      },
+    })
+  }
+}
+
+function onCategorySaved() {
+  /* store 已响应式更新树 */
+}
+
+const displayTree = computed(() => {
+  const tree = sortedCategoryTree.value
+  if (categoryTreeMode.value === CATEGORY_TREE_MODE.ALL) {
+    const kw = String(categoryKeyword.value || '').trim()
+    const productFiltered = filterCategoryTree(sortedProductCategoryTree.value, kw)
+    const materialFiltered = filterMaterialCategoryTree(sortedMaterialCategoryTree.value, kw)
+    return mapTreeNodes([
+      {
+        key: CATEGORY_TREE_ALL_ROOT.PRODUCT,
+        title: '产品',
+        code: 'P',
+        children: productFiltered,
+      },
+      {
+        key: CATEGORY_TREE_ALL_ROOT.MATERIAL,
+        title: '物料',
+        code: 'M',
+        children: materialFiltered,
+      },
+    ])
+  }
+  const filterFn =
+    categoryTreeMode.value === CATEGORY_TREE_MODE.MATERIAL
+      ? filterMaterialCategoryTree
+      : filterCategoryTree
+  return mapTreeNodes(filterFn(tree, categoryKeyword.value))
+})
+
+const unifiedList = computed(() => {
+  void productInfoState.products
+  void materialInfoState.materials
+  return buildUnifiedListRows(productInfoState.products, materialInfoState.materials)
+})
+
+const filteredList = computed(() => {
+  let rows = filterUnifiedListRows(
+    unifiedList.value,
+    appliedFilters.value,
+    selectedCategoryKey.value,
+    categoryTreeMode.value,
+  )
+  if (listTab.value === 'archived') {
+    // 已归档：仅产品侧且状态为已归档
+    rows = rows.filter((r) => isProductSideRecord(r) && isProductArchived(r))
+  } else {
+    // 启用：排除已归档产品；纯物料照常展示
+    rows = rows.filter((r) => !isProductSideRecord(r) || isProductActive(r))
+  }
+  return rows
+})
+
+function isProductSideRecord(record) {
+  return (productInfoState.products || []).some((p) => p.id === record?.id)
+}
+
+function onListTabChange() {
+  pagination.current = 1
+  selectedRowKeys.value = []
+}
+
+const filteredTemplateList = computed(() => {
+  void spuState.spus
+  return listSpus({ keyword: appliedFilters.value.name || appliedFilters.value.code })
+})
+
+const templateColumns = [
+  { title: '模板编码', dataIndex: 'code', width: 110 },
+  { title: '名称', dataIndex: 'name', width: 140 },
+  { title: '分类', dataIndex: 'categoryName', width: 100 },
+  { title: '变体维度', key: 'variantAxes', width: 140 },
+  { title: 'BOM策略', key: 'bomStrategy', width: 100 },
+  { title: 'SKU数', key: 'skuCount', width: 72 },
+  { title: '操作', key: 'templateAction', width: 220, fixed: 'right' },
+]
+
+const pagedTemplateList = computed(() => {
+  const start = (pagination.current - 1) * pagination.pageSize
+  return filteredTemplateList.value.slice(start, start + pagination.pageSize)
+})
+
+function bomStrategyLabel(v) {
+  return SPU_BOM_STRATEGY_LABELS[v] || v || '—'
+}
+
+/** 编号排序：ascend / descend / undefined */
+const codeSortOrder = ref()
+
+const pagedList = computed(() => {
+  const list = [...filteredList.value]
+  if (codeSortOrder.value === 'ascend') {
+    list.sort((a, b) =>
+      String(a.code || '').localeCompare(String(b.code || ''), 'zh-CN', { numeric: true }),
+    )
+  } else if (codeSortOrder.value === 'descend') {
+    list.sort((a, b) =>
+      String(b.code || '').localeCompare(String(a.code || ''), 'zh-CN', { numeric: true }),
+    )
+  }
+  const start = (pagination.current - 1) * pagination.pageSize
+  return list.slice(start, start + pagination.pageSize)
+})
+
+const rowSelection = computed(() => ({
+  fixed: true,
+  columnWidth: 40,
+  selectedRowKeys: selectedRowKeys.value,
+  onChange: (keys) => {
+    selectedRowKeys.value = keys
+  },
+}))
+
+function openCreate() {
+  openCreateTab(router, openTab, {
+    path: productCreatePage.newPath,
+    title: productCreatePage.title,
+  })
+}
+
+function openEdit(record) {
+  if (!record?.id) return
+  openCreateTab(router, openTab, {
+    path: `/product-process/products/${record.id}/edit`,
+    title: `编辑产品 ${record.code || record.name || ''}`.trim(),
+  })
+}
+
+function openDetail(record) {
+  if (!record?.id) return
+  const path = `/product-process/products/${record.id}`
+  openTab(path, `产品 ${record.code || record.name || ''}`.trim())
+  router.push({ name: 'product-process-products-detail', params: { id: record.id } })
+}
+
+function renderProductCodeLink({ text, record }) {
+  return h(
+    'a',
+    {
+      class: 'link-code',
+      onClick: (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        openDetail(record)
+      },
+    },
+    text ?? record?.code ?? '',
+  )
+}
+
+const baseColumns = [
+  { title: '#', key: 'index', width: 52, align: 'center', fixed: 'left' },
+  {
+    title: '编号',
+    key: 'code',
+    dataIndex: 'code',
+    width: 148,
+    fixed: 'left',
+    // 不可与 sorter 同开 ellipsis：表头会 overflow:hidden，排序箭头被裁切
+    sorter: true,
+    sortDirections: ['ascend', 'descend'],
+    showSorterTooltip: { title: '点击按编号排序' },
+    customRender: renderProductCodeLink,
+  },
+  { title: '名称', dataIndex: 'name', width: 200, fixed: 'left', ellipsis: true },
+  { title: '产品族', dataIndex: 'spuName', width: 100, ellipsis: true },
+  { title: '产品类型', key: 'itemKind', width: 96, align: 'center' },
+  { title: '规格型号', dataIndex: 'specModel', width: 100 },
+  { title: '材质', dataIndex: 'material', width: 80 },
+  { title: '图号', dataIndex: 'drawingNo', width: 100, ellipsis: true },
+  { title: '业务类型', key: 'businessType', width: 140, ellipsis: true },
+  { title: '类别', dataIndex: 'categoryName', width: 88 },
+  { title: '产品属性', key: 'productAttribute', width: 110, ellipsis: true },
+  { title: '标准规范', dataIndex: 'standardSpec', width: 100, ellipsis: true },
+  { title: '物料类型', key: 'materialType', width: 90 },
+  { title: '供应型态', key: 'supplyForm', width: 90 },
+  { title: '技术参数', dataIndex: 'techParams', width: 120, ellipsis: true },
+  { title: '配套要求', key: 'matchingRequirements', width: 120, ellipsis: true },
+  { title: '重量', key: 'weight', width: 88, align: 'right' },
+  { title: '库存单位', key: 'inventoryUnit', width: 88, align: 'center' },
+  { title: '标准单价(不含税)', key: 'unitPrice', width: 120, align: 'right' },
+  { title: 'BOM信息', key: 'bomInfo', width: 200, ellipsis: true },
+  { title: '默认工作中心', key: 'defaultWorkCenter', width: 110 },
+  { title: '默认采购供应商', key: 'defaultSupplier', width: 120, ellipsis: true },
+  { title: '默认外协供应商', key: 'defaultOutsourceSupplier', width: 120, ellipsis: true },
+  { title: '产品物料', key: 'isProductMaterial', width: 90, align: 'center' },
+  { title: '创建日期', dataIndex: 'createdAt', width: 110 },
+  { title: '更新日期', dataIndex: 'updatedAt', width: 110 },
+  { title: '创建人', key: 'creator', width: 88 },
+  { title: '状态', key: 'status', width: 88 },
+  { title: '操作', key: 'action', width: 220, fixed: 'right' },
+]
+
+const { columnSettings, columnDrawerOpen, displayColumns, tableScrollX, defaultColumnSettings } =
+  useTableColumnSettings('master-item-list-v3', baseColumns, { minScrollX: 2920 })
+
+const tableColumns = computed(() =>
+  displayColumns.value.map((col) => {
+    if (col.key !== 'code' && col.dataIndex !== 'code') return col
+    return {
+      ...col,
+      sorter: true,
+      sortDirections: ['ascend', 'descend'],
+      showSorterTooltip: { title: '点击按编号排序' },
+      sortOrder: codeSortOrder.value || null,
+    }
+  }),
+)
+
+function onTableChange(_pagination, _filters, sorter) {
+  const active = Array.isArray(sorter) ? sorter[0] : sorter
+  if (active?.columnKey === 'code' || active?.field === 'code') {
+    codeSortOrder.value = active.order || undefined
+    pagination.current = 1
+  }
+}
+
+function formatProductBusinessType(record) {
+  return formatBusinessTypeLabels(record, MASTER_BUSINESS_TYPE_OPTIONS)
+}
+
+function formatProductBomInfo(record) {
+  void productBomState.boms
+  const itemType = resolveBomItemTypeForKind(record.itemKind)
+  const label = getBomInfoLabelForItem(itemType, record.id)
+  if (!label) return '—'
+  if (record.spuId && !getBomsForItem(itemType, record.id).length) {
+    return `${label}（继承模板）`
+  }
+  return label
+}
+
+function rowIndex(index) {
+  return (pagination.current - 1) * pagination.pageSize + index + 1
+}
+
+function formatPrice(val) {
+  if (val === '' || val == null) return ''
+  return Number(val).toFixed(2)
+}
+
+function formatWeight(val) {
+  if (val === '' || val == null) return ''
+  return Number(val).toFixed(2)
+}
+
+function onExpand(keys) {
+  expandedKeys.value = keys
+}
+
+function onSelectCategory(keys) {
+  selectedCategoryKey.value = keys[0] || null
+  pagination.current = 1
+}
+
+function handleSearch() {
+  appliedFilters.value = { ...filters }
+  pagination.current = 1
+}
+
+function handleReset() {
+  filters.code = ''
+  filters.name = ''
+  filters.barcodeType = undefined
+  filters.categoryKey = undefined
+  filters.specModel = ''
+  filters.material = ''
+  filters.drawingNo = ''
+  filters.businessType = undefined
+  filters.workCenter = undefined
+  filters.itemKind = undefined
+  appliedFilters.value = { ...filters }
+  pagination.current = 1
+}
+
+function onSaved(payload) {
+  if (payload?.mode === 'multiVariant') {
+    message.success('模板已保存')
+    return
+  }
+  if (payload?.alreadySaved) return
+  const { isEdit, id, productPayload, materialPayload } = payload
+  saveMasterItem({ isEdit, id, productPayload, materialPayload })
+}
+
+function openEditSpu(record) {
+  editRecord.value = null
+  editSpu.value = { ...record }
+  viewOnly.value = false
+  modalSessionKey.value += 1
+  formModalOpen.value = true
+}
+
+function openMatrix(record) {
+  matrixSpu.value = { ...record }
+  matrixOpen.value = true
+}
+
+function generateMatrixSkus() {
+  if (!matrixSpu.value?.id) return
+  const rows = matrixPreviewRef.value?.getEnabledRows?.() || []
+  const combos = matrixRowsToSkuCombos(rows)
+  if (!combos.length) {
+    message.warning('请至少启用一个组合')
+    return
+  }
+  const enabledKeys = rows.filter((r) => r.enabled).map((r) => r.rowKey)
+  updateSpu(matrixSpu.value.id, { enabledCombinations: enabledKeys })
+  const results = batchGenerateSkus(matrixSpu.value.id, combos)
+  const created = results.filter((r) => r.created).length
+  message.success(`已生成/更新 ${results.length} 个 SKU（新建 ${created}）`)
+  matrixSpu.value = { ...matrixSpu.value, enabledCombinations: enabledKeys }
+  matrixPreviewRef.value?.rebuildMatrix?.()
+}
+
+function openTemplateBom(record) {
+  router.push({
+    path: '/product-process/bom/new',
+    query: { itemType: 'spu', itemId: record.id, itemName: record.name, bomType: '基准BOM' },
+  })
+}
+
+function confirmDelete(record) {
+  Modal.confirm({
+    title: '确认删除',
+    content: `确定删除「${record.name}」吗？`,
+    okType: 'danger',
+    onOk: () => {
+      deleteMasterItem(record)
+      selectedRowKeys.value = selectedRowKeys.value.filter((k) => k !== record.id)
+      message.success('已删除')
+    },
+  })
+}
+
+function handleBatchDelete() {
+  if (!selectedRowKeys.value.length) {
+    message.warning('请先选择要删除的记录')
+    return
+  }
+  Modal.confirm({
+    title: '确认删除',
+    content: `确定删除选中的 ${selectedRowKeys.value.length} 条记录吗？`,
+    okType: 'danger',
+    onOk: () => {
+      const rows = unifiedList.value.filter((r) => selectedRowKeys.value.includes(r.id))
+      rows.forEach((row) => deleteMasterItem(row))
+      selectedRowKeys.value = []
+      message.success('已删除')
+    },
+  })
+}
+
+function handleClone(record) {
+  const cloned = cloneMasterItem(record)
+  if (cloned) message.success('已克隆')
+}
+
+const archiveRefOpen = ref(false)
+const archiveTarget = ref(null)
+const archiveParentRefs = ref([])
+/** 批量归档时待处理队列（有 BOM 引用需弹窗） */
+const archiveQueue = ref([])
+const archiveBatchDone = ref(0)
+
+function clearArchiveRefState() {
+  archiveTarget.value = null
+  archiveParentRefs.value = []
+}
+
+function doArchiveProduct(record, { removeRefs = [], replaceRefs = [], silent = false } = {}) {
+  if (!record) return { removed: 0, replaced: 0, autoPublished: 0 }
+  const { removed, replaced, autoPublished } = applyProductArchiveBomRefActions({
+    removeRefs,
+    replaceRefs,
+  })
+  archiveProduct(record.id)
+  selectedRowKeys.value = selectedRowKeys.value.filter((k) => k !== record.id)
+  if (!silent) {
+    const parts = ['已归档']
+    if (removed) parts.push(`已从 ${removeRefs.length} 个 BOM 移除引用（${removed} 行）`)
+    if (replaced) parts.push(`已在 ${replaceRefs.length} 个 BOM 替换为替代件（${replaced} 行）`)
+    if (autoPublished) parts.push(`其中 ${autoPublished} 个生效母件 BOM 已自动升版并发布`)
+    message.success(parts.join('，'))
+  }
+  return { removed, replaced, autoPublished }
+}
+
+function openArchiveRefModal(record, refs) {
+  archiveTarget.value = record
+  archiveParentRefs.value = refs
+  archiveRefOpen.value = true
+}
+
+function processNextArchiveInQueue() {
+  const next = archiveQueue.value.shift()
+  if (!next) {
+    if (archiveBatchDone.value > 0) {
+      message.success(`已归档 ${archiveBatchDone.value} 条`)
+      archiveBatchDone.value = 0
+    }
+    return
+  }
+  const refs = findDirectBomRefsForItem(next)
+  if (!refs.length) {
+    doArchiveProduct(next, { silent: true })
+    archiveBatchDone.value += 1
+    processNextArchiveInQueue()
+    return
+  }
+  openArchiveRefModal(next, refs)
+}
+
+function confirmArchive(record) {
+  if (!isProductSideRecord(record)) {
+    message.warning('仅产品信息支持归档')
+    return
+  }
+  void productBomState.boms
+  const refs = findDirectBomRefsForItem(record)
+  if (refs.length) {
+    archiveQueue.value = []
+    openArchiveRefModal(record, refs)
+    return
+  }
+  Modal.confirm({
+    title: '确认归档',
+    content: `确定归档「${record.name}」吗？归档后选品时不再展示；当前无未归档 BOM 直接引用该产品。`,
+    onOk: () => {
+      doArchiveProduct(record)
+    },
+  })
+}
+
+function onArchiveRefConfirm({ removeRefs = [], replaceRefs = [] }) {
+  if (!archiveTarget.value) return
+  const inBatch = archiveQueue.value.length > 0 || archiveBatchDone.value > 0
+  doArchiveProduct(archiveTarget.value, { removeRefs, replaceRefs, silent: inBatch })
+  if (inBatch) archiveBatchDone.value += 1
+  clearArchiveRefState()
+  processNextArchiveInQueue()
+}
+
+function onArchiveRefCancel() {
+  clearArchiveRefState()
+  if (archiveQueue.value.length) {
+    message.info('已取消当前条归档，其余待确认项已停止')
+    archiveQueue.value = []
+    if (archiveBatchDone.value > 0) {
+      message.success(`已归档 ${archiveBatchDone.value} 条`)
+      archiveBatchDone.value = 0
+    }
+  }
+}
+
+function handleUnarchive(record) {
+  if (!isProductSideRecord(record)) return
+  unarchiveProduct(record.id)
+  selectedRowKeys.value = selectedRowKeys.value.filter((k) => k !== record.id)
+  message.success('已取消归档')
+}
+
+function handleBatchArchive() {
+  const rows = filteredList.value.filter(
+    (r) => selectedRowKeys.value.includes(r.id) && isProductSideRecord(r) && isProductActive(r),
+  )
+  if (!rows.length) {
+    message.warning('请先勾选要归档的产品')
+    return
+  }
+  void productBomState.boms
+  const withRefs = []
+  const withoutRefs = []
+  rows.forEach((row) => {
+    const refs = findDirectBomRefsForItem(row)
+    if (refs.length) withRefs.push(row)
+    else withoutRefs.push(row)
+  })
+  Modal.confirm({
+    title: '批量归档',
+    content:
+      withRefs.length > 0
+        ? `将归档 ${rows.length} 条产品，其中 ${withRefs.length} 条被 BOM 直接引用，需逐条确认如何处理引用。`
+        : `确定归档选中的 ${rows.length} 条产品吗？归档后选品时不再展示。`,
+    onOk: () => {
+      withoutRefs.forEach((r) => doArchiveProduct(r, { silent: true }))
+      selectedRowKeys.value = []
+      if (!withRefs.length) {
+        message.success(`已归档 ${withoutRefs.length} 条`)
+        return
+      }
+      archiveBatchDone.value = withoutRefs.length
+      if (withoutRefs.length) {
+        message.success(`已先归档 ${withoutRefs.length} 条无 BOM 引用的产品`)
+      }
+      archiveQueue.value = [...withRefs]
+      processNextArchiveInQueue()
+    },
+  })
+}
+
+function handleBatchUnarchive() {
+  const rows = filteredList.value.filter(
+    (r) => selectedRowKeys.value.includes(r.id) && isProductSideRecord(r) && isProductArchived(r),
+  )
+  if (!rows.length) {
+    message.warning('请先勾选要取消归档的产品')
+    return
+  }
+  rows.forEach((r) => unarchiveProduct(r.id))
+  selectedRowKeys.value = []
+  message.success(`已取消归档 ${rows.length} 条`)
+}
+
+function openBomMaintenance(record) {
+  const itemType = resolveBomItemTypeForKind(record.itemKind)
+  const nav = resolveItemBomNavigation(itemType, record.id)
+  openTab(nav.path, nav.title)
+  router.push(nav.query ? { path: nav.path, query: nav.query } : nav.path)
+}
+
+function handleSyncSpec() {
+  message.info('同步规格属性功能开发中')
+}
+
+function openLabelPrint() {
+  const rows = selectedRowKeys.value.length
+    ? unifiedList.value.filter((r) => selectedRowKeys.value.includes(r.id))
+    : []
+  if (!rows.length) {
+    message.warning('请先勾选要打印标签的产品/物料')
+    return
+  }
+  labelPrintItems.value = rows
+  labelPrintOpen.value = true
+}
+
+const importOpen = ref(false)
+const historyOpen = ref(false)
+
+function onBatchMenu({ key }) {
+  if (key === 'import') {
+    importOpen.value = true
+    return
+  }
+  if (key === 'history') {
+    historyOpen.value = true
+    return
+  }
+  message.info('批量导出功能开发中')
+}
+
+function onAddCategory() {
+  categoryEditRecord.value = null
+  categoryFormOpen.value = true
+}
+
+function onCategoryResizeMouseDown(e) {
+  categoryResizing = true
+  categoryResizeStartX = e.clientX
+  categoryResizeStartWidth = categoryPanelWidth.value
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+}
+
+function onCategoryResizeMouseMove(e) {
+  if (!categoryResizing) return
+  const next = categoryResizeStartWidth + (e.clientX - categoryResizeStartX)
+  categoryPanelWidth.value = Math.min(
+    MAX_CATEGORY_PANEL_WIDTH,
+    Math.max(MIN_CATEGORY_PANEL_WIDTH, next),
+  )
+}
+
+function onCategoryResizeMouseUp() {
+  if (!categoryResizing) return
+  categoryResizing = false
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  localStorage.setItem(CATEGORY_PANEL_WIDTH_KEY, String(categoryPanelWidth.value))
+}
+
+function syncTableScrollY() {
+  const el = tableWrapRef.value
+  if (!el) return
+  const header = el.querySelector('.ant-table-header') || el.querySelector('.ant-table-thead')
+  const headerH = header?.offsetHeight || 39
+  tableScrollY.value = Math.max(240, Math.floor(el.clientHeight - headerH))
+}
+
+function unbindTableResize() {
+  tableResizeObserver?.disconnect()
+  tableResizeObserver = null
+}
+
+function bindTableResize() {
+  unbindTableResize()
+  const el = tableWrapRef.value
+  if (!el) return
+  if (typeof ResizeObserver !== 'undefined') {
+    tableResizeObserver = new ResizeObserver(() => syncTableScrollY())
+    tableResizeObserver.observe(el)
+  }
+  syncTableScrollY()
+}
+
+watch(listViewMode, async () => {
+  await nextTick()
+  bindTableResize()
+})
+
+onMounted(() => {
+  document.addEventListener('mousemove', onCategoryResizeMouseMove)
+  document.addEventListener('mouseup', onCategoryResizeMouseUp)
+  nextTick(() => bindTableResize())
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('mousemove', onCategoryResizeMouseMove)
+  document.removeEventListener('mouseup', onCategoryResizeMouseUp)
+  unbindTableResize()
+})
+</script>
+
+<style lang="less" scoped>
+.product-info-page {
+  margin: -12px;
+  padding: 12px;
+  background: var(--page-bg, #f0f2f5);
+  height: calc(100vh - 56px - 40px - 24px);
+  min-height: calc(100vh - 56px - 40px - 24px);
+  box-sizing: border-box;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 0;
+  align-items: stretch;
+}
+
+.category-panel {
+  flex: 0 0 auto;
+  width: 220px;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+
+  .category-search {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+
+    .add-cat-btn {
+      flex-shrink: 0;
+      padding-inline: 8px;
+    }
+  }
+
+  .category-tree-wrap {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+
+    :deep(.ant-tree-title) {
+      font-size: 13px;
+    }
+
+    .cat-node-title {
+      display: inline-block;
+      width: 100%;
+    }
+  }
+}
+
+.panel-resizer {
+  flex: 0 0 6px;
+  margin: 0 3px;
+  cursor: col-resize;
+  border-radius: 3px;
+  position: relative;
+  align-self: stretch;
+
+  &:hover,
+  &:active {
+    background: rgba(22, 119, 255, 0.12);
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 2px;
+    height: 36px;
+    border-radius: 1px;
+    background: #d9d9d9;
+  }
+}
+
+.main-panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.filter-card,
+.table-card {
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.filter-card {
+  flex-shrink: 0;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+}
+
+.horizontal-form {
+  width: 100%;
+
+  :deep(.ant-form-item) {
+    width: 100%;
+    margin-bottom: 0;
+  }
+
+  :deep(.ant-form-item-row) {
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+
+  :deep(.ant-form-item-label > label) {
+    height: 24px;
+    line-height: 24px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  .filter-actions-item {
+    :deep(.ant-form-item-label) {
+      display: none;
+    }
+  }
+}
+
+.toolbar-row {
+  flex-shrink: 0;
+}
+
+.list-status-tabs {
+  flex-shrink: 0;
+  margin-bottom: 0;
+  background: #fff;
+  border: 1px solid var(--divider, #e5e6eb);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  padding: 0 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+
+  :deep(.ant-tabs-nav) {
+    margin: 0;
+  }
+}
+
+.list-status-tabs + .table-card {
+  border-radius: 0 0 6px 6px;
+}
+
+.table-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px 8px;
+
+  :deep(.ant-table-thead > tr > th),
+  :deep(.ant-table-tbody > tr > td) {
+    height: 48px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+    font-size: 13px;
+  }
+
+  :deep(.ant-table-thead > tr > th) {
+    background: #fafafa;
+    font-weight: 500;
+  }
+
+  :deep(.ant-table-thead th.ant-table-column-has-sorters) {
+    overflow: visible;
+  }
+
+  :deep(.ant-table-column-sorter) {
+    color: #8c8c8c;
+  }
+
+  .unit-tag {
+    margin: 0;
+    line-height: 20px;
+    font-size: 12px;
+  }
+
+  .attr-ellipsis {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .link-code {
+    color: #1677ff;
+    cursor: pointer;
+  }
+}
+
+.table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+
+  :deep(.ant-table-wrapper),
+  :deep(.ant-spin-nested-loading),
+  :deep(.ant-spin-container),
+  :deep(.ant-table),
+  :deep(.ant-table-container) {
+    height: 100%;
+  }
+}
+
+.table-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 992px) {
+  .product-info-page {
+    height: auto;
+    min-height: calc(100vh - 56px - 40px - 24px);
+    overflow: auto;
+  }
+
+  .page-layout {
+    flex-direction: column;
+    flex: none;
+  }
+
+  .category-panel {
+    width: 100% !important;
+    flex-basis: auto !important;
+    height: auto;
+    max-height: 220px;
+  }
+
+  .panel-resizer {
+    display: none;
+  }
+
+  .main-panel,
+  .table-card,
+  .table-wrap {
+    flex: none;
+    min-height: auto;
+    height: auto;
+  }
+}
+</style>

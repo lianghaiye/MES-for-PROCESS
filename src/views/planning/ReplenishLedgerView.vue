@@ -1,0 +1,359 @@
+<template>
+  <div class="replenish-ledger-page">
+    <div class="filter-card">
+      <a-form :model="filters" layout="inline" class="filter-form horizontal-form">
+        <a-row :gutter="[12, 8]" style="width: 100%">
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item label="台账号">
+              <a-input
+                v-model:value="filters.ledgerNo"
+                allow-clear
+                placeholder="请输入"
+                size="small"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item label="物料编码">
+              <a-input
+                v-model:value="filters.itemCode"
+                allow-clear
+                placeholder="请输入"
+                size="small"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item label="物料名称">
+              <a-input
+                v-model:value="filters.itemName"
+                allow-clear
+                placeholder="请输入"
+                size="small"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item label="来源">
+              <a-select
+                v-model:value="filters.source"
+                allow-clear
+                placeholder="全部"
+                size="small"
+                style="width: 100%"
+                :options="sourceOpts"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item label="状态">
+              <a-select
+                v-model:value="filters.status"
+                allow-clear
+                placeholder="全部"
+                size="small"
+                style="width: 100%"
+                :options="statusOpts"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item label="补货动作">
+              <a-select
+                v-model:value="filters.action"
+                allow-clear
+                placeholder="全部"
+                size="small"
+                style="width: 100%"
+                :options="actionOpts"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="8">
+            <a-form-item label="处理日期">
+              <a-range-picker v-model:value="filters.dateRange" size="small" style="width: 100%" />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6">
+            <a-form-item class="filter-actions-item">
+              <a-space>
+                <a-button type="primary" size="small" @click="handleSearch">
+                  <SearchOutlined />
+                  搜索
+                </a-button>
+                <a-button size="small" @click="handleReset">清空</a-button>
+              </a-space>
+            </a-form-item>
+          </a-col>
+        </a-row>
+      </a-form>
+    </div>
+
+    <div class="toolbar-row">
+      <a-space wrap :size="8">
+        <a-button type="primary" size="small" @click="manualModalOpen = true">
+          <PlusOutlined />
+          手工补货
+        </a-button>
+      </a-space>
+      <a-space :size="4" class="toolbar-icons">
+        <a-tooltip title="刷新">
+          <a-button type="text" size="small" @click="handleSearch">
+            <ReloadOutlined />
+          </a-button>
+        </a-tooltip>
+      </a-space>
+    </div>
+
+    <div class="table-card">
+      <a-table
+        size="small"
+        row-key="id"
+        bordered
+        :columns="columns"
+        :data-source="pagedRows"
+        :pagination="false"
+        :scroll="{ x: 1400 }"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'status'">
+            <a-tag :color="replenishLedgerStatusColor(record.status)">
+              {{ replenishLedgerStatusLabel(record.status) }}
+            </a-tag>
+          </template>
+          <template v-else-if="column.key === 'action'">
+            {{ actionLabel(record.action) }}
+          </template>
+          <template v-else-if="column.key === 'source'">
+            <a-tag :color="record.source === 'manual' ? 'geekblue' : 'cyan'">
+              {{ replenishLedgerSourceLabel(record.source) }}
+            </a-tag>
+          </template>
+          <template v-else-if="column.key === 'refs'">
+            <div
+              v-if="record.planOrderNo || record.purchaseReqNo || record.workOrderNo"
+              class="ref-links"
+            >
+              <a v-if="record.planOrderNo" class="link" @click.prevent="goPlan(record)">
+                计划 {{ record.planOrderNo }}
+              </a>
+              <a v-if="record.purchaseReqNo" class="link" @click.prevent="goPurchase(record)">
+                申请 {{ record.purchaseReqNo }}
+              </a>
+              <a v-if="record.workOrderNo" class="link" @click.prevent="goWorkOrder(record)">
+                工单 {{ record.workOrderNo }}
+              </a>
+            </div>
+            <span v-else class="muted">—</span>
+          </template>
+        </template>
+      </a-table>
+      <div class="table-pagination">
+        <a-pagination
+          v-model:current="pagination.current"
+          v-model:page-size="pagination.pageSize"
+          :total="filteredRows.length"
+          size="small"
+          show-size-changer
+          :show-total="(t) => `共 ${t} 条`"
+        />
+      </div>
+    </div>
+
+    <ManualReplenishModal v-model:open="manualModalOpen" @executed="onManualExecuted" />
+  </div>
+</template>
+
+<script>
+export default { name: 'ReplenishLedgerView' }
+</script>
+
+<script setup>
+import { computed, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { SearchOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
+import { useTabs } from '@/composables/useTabs'
+import {
+  replenishLedgerState,
+  filterReplenishLedgers,
+  REPLENISH_LEDGER_STATUS_OPTIONS,
+  REPLENISH_LEDGER_SOURCE_OPTIONS,
+  replenishLedgerStatusLabel,
+  replenishLedgerStatusColor,
+  replenishLedgerSourceLabel,
+} from '@/store/replenishLedgerStore'
+import { REPLENISH_ACTION_OPTIONS, replenishActionLabel } from '@/utils/stockReplenish'
+import ManualReplenishModal from './components/ManualReplenishModal.vue'
+
+const router = useRouter()
+const { openTab } = useTabs()
+
+const manualModalOpen = ref(false)
+
+const filters = reactive({
+  ledgerNo: '',
+  itemCode: '',
+  itemName: '',
+  source: undefined,
+  status: undefined,
+  action: undefined,
+  dateRange: null,
+})
+const appliedFilters = ref({ ...filters })
+
+const pagination = reactive({
+  current: 1,
+  pageSize: 10,
+})
+
+const statusOpts = REPLENISH_LEDGER_STATUS_OPTIONS.filter((o) => o.value)
+const sourceOpts = REPLENISH_LEDGER_SOURCE_OPTIONS.filter((o) => o.value)
+const actionOpts = REPLENISH_ACTION_OPTIONS
+
+const columns = [
+  { title: '台账号', dataIndex: 'ledgerNo', width: 140, fixed: 'left' },
+  { title: '状态', key: 'status', width: 96 },
+  { title: '来源', key: 'source', width: 88 },
+  { title: '物料编码', dataIndex: 'itemCode', width: 120 },
+  { title: '物料名称', dataIndex: 'itemName', width: 160, ellipsis: true },
+  { title: '规格型号', dataIndex: 'specModel', width: 100, ellipsis: true },
+  { title: '触发库存', dataIndex: 'triggerStockQty', width: 88, align: 'right' },
+  { title: '最低', dataIndex: 'minStockQty', width: 72, align: 'right' },
+  { title: '最高', dataIndex: 'maxStockQty', width: 72, align: 'right' },
+  { title: '建议数量', dataIndex: 'suggestQty', width: 88, align: 'right' },
+  { title: '处理数量', dataIndex: 'handleQty', width: 88, align: 'right' },
+  { title: '动作', key: 'action', width: 88 },
+  { title: '关联单据', key: 'refs', width: 180 },
+  { title: '触发时间', dataIndex: 'triggeredAt', width: 140 },
+  { title: '处理时间', dataIndex: 'handledAt', width: 140 },
+]
+
+const filteredRows = computed(() => {
+  const f = { ...appliedFilters.value }
+  if (f.dateRange?.length === 2) {
+    f.dateRange = [f.dateRange[0].format('YYYY-MM-DD'), f.dateRange[1].format('YYYY-MM-DD')]
+  } else {
+    f.dateRange = null
+  }
+  return filterReplenishLedgers(replenishLedgerState.records, f)
+})
+
+const pagedRows = computed(() => {
+  const start = (pagination.current - 1) * pagination.pageSize
+  return filteredRows.value.slice(start, start + pagination.pageSize)
+})
+
+function actionLabel(action) {
+  return replenishActionLabel(action)
+}
+
+function handleSearch() {
+  appliedFilters.value = { ...filters }
+  pagination.current = 1
+}
+
+function handleReset() {
+  filters.ledgerNo = ''
+  filters.itemCode = ''
+  filters.itemName = ''
+  filters.source = undefined
+  filters.status = undefined
+  filters.action = undefined
+  filters.dateRange = null
+  appliedFilters.value = { ...filters }
+  pagination.current = 1
+}
+
+function onManualExecuted() {
+  pagination.current = 1
+}
+
+function goPlan() {
+  openTab('/planning/production-plan', '生产计划')
+  router.push('/planning/production-plan')
+}
+
+function goPurchase(record) {
+  if (record.purchaseReqId) {
+    const path = `/procurement/purchase-req/${record.purchaseReqId}`
+    openTab(path, '采购申请详情')
+    router.push(path)
+    return
+  }
+  openTab('/procurement/purchase-req', '采购申请')
+  router.push('/procurement/purchase-req')
+}
+
+function goWorkOrder() {
+  openTab('/production/work-orders', '生产工单')
+  router.push('/production/work-orders')
+}
+</script>
+
+<style lang="less" scoped>
+.replenish-ledger-page {
+  margin: -12px;
+  padding: 12px;
+  background: var(--page-bg, #f0f2f5);
+  min-height: calc(100vh - 112px);
+  box-sizing: border-box;
+}
+
+.filter-card,
+.table-card {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.filter-card {
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+
+.toolbar-row {
+  margin-bottom: 8px;
+}
+
+.table-card {
+  padding: 12px;
+  border: 1px solid #e5e6eb;
+}
+
+.horizontal-form {
+  width: 100%;
+
+  :deep(.ant-form-item) {
+    width: 100%;
+    margin-bottom: 0;
+  }
+}
+
+.filter-actions-item {
+  :deep(.ant-form-item-control) {
+    display: flex;
+    justify-content: flex-end;
+  }
+}
+
+.table-pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 4px 4px;
+}
+
+.ref-links {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.link {
+  color: #1677ff;
+  cursor: pointer;
+}
+
+.muted {
+  color: rgba(0, 0, 0, 0.45);
+}
+</style>

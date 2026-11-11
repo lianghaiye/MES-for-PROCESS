@@ -1,0 +1,223 @@
+import dayjs from 'dayjs'
+import {
+  calcPoLineAppliedOccupyQty,
+  calcPoLineReceivedQty,
+  formatInboundProgress,
+} from '@/utils/purchaseLineInbound'
+import { resolveLineInboundQcRequirement } from '@/utils/inboundQcRequirement'
+import { formatQty } from '@/utils/numberFormat'
+
+function lineProductName(line) {
+  return line.productName || line.itemName || ''
+}
+
+function lineProductCode(line) {
+  return line.productCode || line.itemCode || ''
+}
+
+/** 根据采购入库单汇总明细行的入库日期 */
+export function resolveInboundDatesForPoLine(
+  inboundOrders,
+  purchaseOrderId,
+  orderNo,
+  poLineId,
+  itemCode,
+) {
+  const dates = []
+  for (const inbound of inboundOrders || []) {
+    const matchedPo =
+      (purchaseOrderId && inbound.purchaseOrderId === purchaseOrderId) ||
+      (orderNo &&
+        inbound.sourceOrderNo === orderNo &&
+        (inbound.sourceType === '采购订单' ||
+          inbound.sourceType === '采购单' ||
+          inbound.inboundType === '采购入库'))
+    if (!matchedPo) continue
+    for (const line of inbound.lineItems || []) {
+      const lineMatched =
+        (poLineId && line.poLineId === poLineId) || (itemCode && line.itemCode === itemCode)
+      if (lineMatched && inbound.inboundDate) {
+        dates.push(String(inbound.inboundDate).slice(0, 10))
+      }
+    }
+  }
+  return [...new Set(dates)].sort().join('、')
+}
+
+/** 将采购订单明细展开为行级列表 */
+export function buildPurchaseDetailLines(orders = [], inboundOrders = []) {
+  const rows = []
+  for (const order of orders) {
+    for (const line of order.lineItems || []) {
+      const itemCode = lineProductCode(line)
+      const purchaseQty = Number(line.purchaseQty) || 0
+      const receivedQty = calcPoLineReceivedQty(order, line)
+      const appliedInboundQty = calcPoLineAppliedOccupyQty(order, line)
+      rows.push({
+        id: `${order.id}-${line.id}`,
+        orderId: order.id,
+        lineId: line.id,
+        orderNo: order.orderNo,
+        inboundProgress: formatInboundProgress(receivedQty, appliedInboundQty, purchaseQty),
+        productName: lineProductName(line),
+        productCode: itemCode,
+        specModel: line.specModel || '',
+        material: line.material || '',
+        drawingNo: line.drawingNo || '',
+        purchaseQty,
+        unitPriceExTax: line.unitPriceExTax,
+        taxRate: line.taxRate,
+        unitPriceInTax: line.unitPriceInTax,
+        totalPriceInTax: line.totalPriceInTax,
+        totalPriceExTax: line.totalPriceExTax,
+        receivingWarehouse: line.receivingWarehouse || order.receivingWarehouse || '',
+        inboundQcRequirement: resolveLineInboundQcRequirement(line),
+        receivedQty,
+        deliveryDate: line.deliveryDate || order.deliveryDate || '',
+        inboundDate: resolveInboundDatesForPoLine(
+          inboundOrders,
+          order.id,
+          order.orderNo,
+          line.id,
+          itemCode,
+        ),
+        workOrderNo: order.workOrderNo || '',
+        salesOrderNo: order.salesOrderNo || '',
+        purchaser: order.purchaser || '',
+        creator: order.creator || '',
+        createdAt: order.createdAt || '',
+        documentDate: order.documentDate || '',
+        supplier: order.supplier || '',
+        status: order.status || '',
+      })
+    }
+  }
+  return rows
+}
+
+export function filterPurchaseDetailLines(rows, filters = {}) {
+  return rows.filter((row) => {
+    if (filters.orderNo && !String(row.orderNo).includes(String(filters.orderNo).trim())) {
+      return false
+    }
+    if (filters.supplier && row.supplier !== filters.supplier) {
+      return false
+    }
+    if (
+      filters.productName &&
+      !String(row.productName).includes(String(filters.productName).trim())
+    ) {
+      return false
+    }
+    if (
+      filters.productCode &&
+      !String(row.productCode || '').includes(String(filters.productCode).trim())
+    ) {
+      return false
+    }
+    if (filters.specModel && !String(row.specModel).includes(String(filters.specModel).trim())) {
+      return false
+    }
+    if (filters.material && !String(row.material).includes(String(filters.material).trim())) {
+      return false
+    }
+    if (filters.drawingNo && !String(row.drawingNo).includes(String(filters.drawingNo).trim())) {
+      return false
+    }
+    if (filters.receivingWarehouse && row.receivingWarehouse !== filters.receivingWarehouse) {
+      return false
+    }
+    if (filters.purchaser && row.purchaser !== filters.purchaser) {
+      return false
+    }
+    if (filters.deliveryDateRange?.length === 2) {
+      const [start, end] = filters.deliveryDateRange
+      const startStr = typeof start === 'string' ? start : start?.format?.('YYYY-MM-DD')
+      const endStr = typeof end === 'string' ? end : end?.format?.('YYYY-MM-DD')
+      if (!row.deliveryDate || !startStr || !endStr) return false
+      if (
+        dayjs(row.deliveryDate).isBefore(startStr, 'day') ||
+        dayjs(row.deliveryDate).isAfter(endStr, 'day')
+      ) {
+        return false
+      }
+    }
+    if (filters.createdAtRange?.length === 2) {
+      const [start, end] = filters.createdAtRange
+      const startStr = typeof start === 'string' ? start : start?.format?.('YYYY-MM-DD HH:mm:ss')
+      const endStr = typeof end === 'string' ? end : end?.format?.('YYYY-MM-DD HH:mm:ss')
+      if (!row.createdAt || !startStr || !endStr) return false
+      if (
+        dayjs(row.createdAt).isBefore(dayjs(startStr)) ||
+        dayjs(row.createdAt).isAfter(dayjs(endStr))
+      ) {
+        return false
+      }
+    }
+    if (filters.documentDateRange?.length === 2) {
+      const [start, end] = filters.documentDateRange
+      const startStr = typeof start === 'string' ? start : start?.format?.('YYYY-MM-DD')
+      const endStr = typeof end === 'string' ? end : end?.format?.('YYYY-MM-DD')
+      if (!row.documentDate || !startStr || !endStr) return false
+      if (
+        dayjs(row.documentDate).isBefore(startStr, 'day') ||
+        dayjs(row.documentDate).isAfter(endStr, 'day')
+      ) {
+        return false
+      }
+    }
+    return true
+  })
+}
+
+export function formatPurchaseDetailQty(val) {
+  return formatQty(val)
+}
+
+export function formatPurchaseDetailMoney(val) {
+  return formatQty(val)
+}
+
+export function formatPurchaseDetailDate(val) {
+  if (!val) return '—'
+  return String(val).slice(0, 10)
+}
+
+/** 默认排序：先按采购单号聚拢（便于订单级字段 rowspan），同单内再按行 */
+export function comparePurchaseDetailLinesDefault(a, b) {
+  const noCmp = String(b.orderNo || '').localeCompare(String(a.orderNo || ''), 'zh-CN')
+  if (noCmp) return noCmp
+  const idA = String(a.orderId || a.orderNo || '')
+  const idB = String(b.orderId || b.orderNo || '')
+  if (idA !== idB) return idA.localeCompare(idB)
+  return String(a.lineId || '').localeCompare(String(b.lineId || ''))
+}
+
+/** 当前页内按订单计算 rowspan：首行 = 连续行数，后续行 = 0 */
+export function buildPurchaseDetailLineRowSpans(rows = []) {
+  const spans = new Array(rows.length).fill(1)
+  let i = 0
+  while (i < rows.length) {
+    const key = String(rows[i]?.orderId || rows[i]?.orderNo || '')
+    let j = i + 1
+    while (j < rows.length) {
+      const next = String(rows[j]?.orderId || rows[j]?.orderNo || '')
+      if (next !== key) break
+      j += 1
+    }
+    spans[i] = j - i
+    for (let k = i + 1; k < j; k += 1) spans[k] = 0
+    i = j
+  }
+  return spans
+}
+
+/** 订单级可合并列 */
+export const PURCHASE_LINE_ORDER_MERGE_KEYS = [
+  'orderNo',
+  'status',
+  'supplier',
+  'purchaser',
+  'createdAt',
+  'creator',
+]

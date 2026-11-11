@@ -1,0 +1,534 @@
+import dayjs from 'dayjs'
+import { materialInfoState } from '@/store/materialInfoStore'
+import { productInfoState } from '@/store/productInfoStore'
+import { processRouteState } from '@/store/processRouteStore'
+import {
+  processRouteOptions,
+  workCenterOptions as mockWorkCenterOptions,
+} from '@/mock/workOrderOptions'
+import { workCenterOptions as groupWorkCenterOptions } from '@/store/employeeGroupStore'
+import { supplierOptions as poSupplierOptions } from '@/mock/purchaseOrderOptions'
+import { supplierOptions as reqSupplierOptions } from '@/mock/purchaseRequisitionOptions'
+import { formatBlankSizeText } from '@/utils/bomBlankSize'
+import { SUPPLY_FORM_OPTIONS } from '@/utils/masterDataMigrate'
+import { flattenMaterials, calcDemandQty } from '@/utils/material'
+import { createPlanMaterial, resolveMaterialsFromEbomSnapshot } from '@/utils/ebomSnapshot'
+import {
+  calcDefaultPlanQty,
+  calcPlanQtyFromDemand,
+  isDeductInventoryEnabled,
+} from '@/utils/productionPlanWorkItem'
+import { isMaterialReleasable } from '@/constants/ecnPlanReschedule'
+
+export const supplyTypeOptions = SUPPLY_FORM_OPTIONS.map((v) => ({ label: v, value: v }))
+
+/** 顶级物料供应型态（组装 / 自制件 / 外购） */
+export const topLevelSupplyTypeOptions = [
+  { label: '组装', value: '组装' },
+  { label: '自制件', value: '自制件' },
+  { label: '外购', value: '外购' },
+]
+
+export function resolveWorkItemProduct(wi) {
+  if (!wi) return null
+  if (wi.productId) {
+    const byId = productInfoState.products.find((p) => String(p.id) === String(wi.productId))
+    if (byId) return byId
+  }
+  if (wi.productCode) {
+    return productInfoState.products.find((p) => p.code === wi.productCode) || null
+  }
+  return null
+}
+
+export function cascadeMaterialPlanQtyFromParent(parentPlanQty, children) {
+  const parent = Number(parentPlanQty) || 0
+  ;(children || []).forEach((child) => {
+    const unitUsage = Number(child.unitUsage) || 1
+    child.planQty = parent * unitUsage
+    if (child.children?.length) {
+      cascadeMaterialPlanQtyFromParent(child.planQty, child.children)
+    }
+  })
+}
+
+export function resolveWorkItemPlanQty(workItem, deductInventory = true) {
+  const orderQty = Number(workItem?.orderQty ?? workItem?.salesQty ?? 0)
+  const stockQty = Number(workItem?.stockQty ?? 0)
+  if (workItem?.planQty != null && workItem.planQty !== '') {
+    return Number(workItem.planQty)
+  }
+  return calcDefaultPlanQty(orderQty, stockQty, deductInventory)
+}
+
+/**
+ * 按「扣减库存」开关重算工作项及物料树计划数（覆盖已有计划数）
+ * 开启：计划数 = 单位用量×订单排产数量 − 库存数量；关闭：= 单位用量×订单排产数量
+ */
+export function applyPlanQtyByDeductMode(workItem, deductInventory = true) {
+  if (!workItem) return
+  const orderQty = Number(workItem.orderQty ?? workItem.salesQty ?? 0)
+  const stockQty = Number(workItem.stockQty ?? 0)
+  workItem.planQty = calcDefaultPlanQty(orderQty, stockQty, deductInventory)
+
+  const walk = (nodes) => {
+    nodes?.forEach((m) => {
+      const demand =
+        m.demandQty != null && m.demandQty !== ''
+          ? Number(m.demandQty)
+          : calcDemandQty(m.unitUsage, orderQty)
+      m.demandQty = demand
+      const inv = Number(m.stockQty ?? 0)
+      m.planQty = calcPlanQtyFromDemand(demand, inv, deductInventory)
+      if (m.children?.length) walk(m.children)
+    })
+  }
+  walk(workItem.materials)
+}
+
+const PLAN_QTY_EDITABLE_WI_STATUS = new Set(['待下达', '待BOM', '设计中'])
+
+/** 工作项计划数量是否可改：待下达/待BOM/设计中允许修改 */
+export function isWorkItemPlanQtyLocked(workItem, order) {
+  if (!workItem) return false
+  const st = workItem.status || ''
+  if (PLAN_QTY_EDITABLE_WI_STATUS.has(st)) return false
+  if (order?.planQtyLocked) return true
+  const all = []
+  flattenMaterials(workItem.materials, all)
+  return all.some((m) => m.status === '进行中' || m.status === '已完成')
+}
+
+/** 订单级锁定（扣减库存等）：整单待下达类状态不锁；否则看是否已有下达单据 */
+export function isOrderPlanQtyLocked(order) {
+  if (!order) return false
+  const orderSt = order.orderStatus || ''
+  if (PLAN_QTY_EDITABLE_WI_STATUS.has(orderSt)) return false
+  if (order.planQtyLocked) return true
+  return (order.workItems || []).some((wi) => isWorkItemPlanQtyLocked(wi, order))
+}
+
+export function lockOrderPlanQty(order) {
+  if (order) order.planQtyLocked = true
+}
+
+export function syncWorkItemMaterialPlanQty(workItem, deductInventory = true) {
+  if (!workItem) return
+  const planQty = resolveWorkItemPlanQty(workItem, deductInventory)
+  workItem.planQty = planQty
+  cascadeMaterialPlanQtyFromParent(planQty, workItem.materials)
+}
+
+/** 对订单下全部工作项按扣减库存开关重算计划数 */
+export function applyOrderPlanQtyByDeductMode(order) {
+  if (!order) return
+  const deduct = isDeductInventoryEnabled(order)
+  ;(order.workItems || []).forEach((wi) => {
+    const orderQty = Number(wi.orderQty ?? wi.salesQty ?? 0)
+    const materials = resolveWorkItemMaterials(wi)
+    const walkDemand = (nodes) => {
+      nodes?.forEach((m) => {
+        m.demandQty = calcDemandQty(m.unitUsage, orderQty)
+        if (m.children?.length) walkDemand(m.children)
+      })
+    }
+    walkDemand(materials)
+    applyPlanQtyByDeductMode(wi, deduct)
+  })
+}
+
+export function resolveWorkItemMaterials(workItem) {
+  if (!workItem) return []
+  if (workItem.materials?.length) return workItem.materials
+  const qty = Number(workItem.orderQty ?? workItem.salesQty) || 1
+  const fromSnapshot = resolveMaterialsFromEbomSnapshot(workItem.ebomSnapshot, qty)
+  if (fromSnapshot.length) {
+    workItem.materials = fromSnapshot
+    if (workItem.ebomSnapshot && !workItem.ebomSnapshot.materials?.length) {
+      workItem.ebomSnapshot.materials = fromSnapshot
+    }
+  }
+  return workItem.materials || []
+}
+
+function syncTopMaterialFromWorkItem(top, workItem) {
+  if (!top || !workItem) return
+  const orderQty = Number(workItem.orderQty ?? workItem.salesQty ?? 0)
+  const stockQty = Number(workItem.stockQty ?? 0)
+  const supplyType = resolveTopLevelSupplyType(workItem)
+  const planQty = resolveWorkItemPlanQty(workItem)
+  const demandQty = orderQty
+  const gapQty = Math.max(0, demandQty - stockQty)
+
+  top.name = workItem.productName || ''
+  top.code = workItem.productCode || ''
+  top.spec = workItem.specModel || workItem.model || ''
+  top.material = workItem.material || ''
+  top.drawingNo = workItem.drawingNo || ''
+  top.stockQty = stockQty
+  top.availableStock = stockQty
+  top.demandQty = demandQty
+  top.gapQty = gapQty
+  top.planQty = planQty
+  top.supplyType = supplyType
+  top.joinPlan = supplyType === '自制件' ? '是' : '否'
+  top.bom = workItem.bomName || workItem.ebomSnapshot?.bomName || ''
+}
+
+export function resolveTopLevelSupplyType(workItem) {
+  if (workItem?.topLevelSupplyType) return workItem.topLevelSupplyType
+  const product = resolveWorkItemProduct(workItem)
+  if (product?.isAssemblyPart || product?.supplyForm === '组装') return '组装'
+  return '自制件'
+}
+
+export function buildTopLevelPlanMaterial(workItem) {
+  if (!workItem) return null
+  const orderQty = Number(workItem.orderQty ?? workItem.salesQty ?? 0)
+  const stockQty = Number(workItem.stockQty ?? 0)
+  const supplyType = resolveTopLevelSupplyType(workItem)
+  const defaults = getMasterDefaults(workItem.productCode)
+  const demandQty = orderQty
+  const availableStock = stockQty
+  const gapQty = Math.max(0, demandQty - availableStock)
+  const planQty = resolveWorkItemPlanQty(workItem)
+
+  return createPlanMaterial({
+    id: `top-${workItem.id}`,
+    isTopLevel: true,
+    workItemId: workItem.id,
+    status: workItem.status === '设计中' ? '设计中' : '待下达',
+    name: workItem.productName || '',
+    code: workItem.productCode || '',
+    spec: workItem.specModel || workItem.model || '',
+    specAttr: workItem.spec || '',
+    material: workItem.material || '',
+    type: workItem.productType || '半成品',
+    drawingNo: workItem.drawingNo || '',
+    unitUsage: 1,
+    unit: workItem.unit || '件',
+    supplyType,
+    stockQty,
+    availableStock,
+    demandQty,
+    gapQty,
+    planQty,
+    joinPlan: supplyType === '自制件' ? '是' : '否',
+    processRoute: workItem.processRoute || defaults.processRoute || '',
+    bom: workItem.bomName || workItem.ebomSnapshot?.bomName || '',
+    children: workItem.materials || [],
+  })
+}
+
+function normalizeMaterialTreeLeaves(materials) {
+  materials?.forEach((node) => {
+    if (node.children?.length) {
+      normalizeMaterialTreeLeaves(node.children)
+      return
+    }
+    if (Array.isArray(node.children) && !node.children.length) {
+      delete node.children
+    }
+  })
+}
+
+export function buildDisplayMaterialTree(workItem, order) {
+  if (!workItem) return []
+  const materials = resolveWorkItemMaterials(workItem)
+  normalizeMaterialTreeLeaves(materials)
+  enrichPlanMaterialTree(materials, order, workItem)
+  // 运行时加载，避免 store ↔ productionPlanMaterial 循环依赖
+  const { applyPurchaseInTransitToMaterialTree } = require('@/utils/planPurchaseInTransit')
+  const { applyWoAllocatedToMaterialTree } = require('@/utils/planWoAllocated')
+  applyPurchaseInTransitToMaterialTree(materials)
+  applyWoAllocatedToMaterialTree(materials)
+
+  const topId = `top-${workItem.id}`
+  if (!workItem._topMaterial || workItem._topMaterial.id !== topId) {
+    workItem._topMaterial = buildTopLevelPlanMaterial(workItem)
+  } else {
+    syncTopMaterialFromWorkItem(workItem._topMaterial, workItem)
+  }
+  workItem._topMaterial.children = materials
+  enrichPlanMaterial(workItem._topMaterial, order, workItem)
+  applyPurchaseInTransitToMaterialTree([workItem._topMaterial])
+  applyWoAllocatedToMaterialTree([workItem._topMaterial])
+  return [workItem._topMaterial]
+}
+
+/** 收集物料树全部行 id（用于默认展开完整 BOM） */
+export function collectAllMaterialRowKeys(materials = []) {
+  const keys = []
+  const walk = (nodes) => {
+    nodes?.forEach((node) => {
+      if (node.id) keys.push(node.id)
+      if (node.children?.length) walk(node.children)
+    })
+  }
+  walk(materials)
+  return keys
+}
+
+/** 计划物料行附带工作项投产 BOM 身份（供工单同步透传） */
+function withWorkItemBomIdentity(material, wi, extra = {}) {
+  if (!material) return null
+  return {
+    ...material,
+    workItemId: wi?.id || material.workItemId || '',
+    productId: wi?.productId || material.productId || '',
+    bomId: wi?.bomId || material.bomId || '',
+    bomName: wi?.bomName || material.bomName || '',
+    bomVersion: wi?.bomVersion || material.bomVersion || '',
+    ebomSnapshot: wi?.ebomSnapshot || material.ebomSnapshot || null,
+    salesLineId: wi?.salesLineId || material.salesLineId || '',
+    ...extra,
+  }
+}
+
+/** 加工工单：子级自制件 + 顶级为自制件/自制的物料 */
+export function getSelfMadeMaterialsForPlan(order) {
+  const all = []
+  order?.workItems?.forEach((wi) => {
+    if (wi?.status === '设计中' || wi?.status === '待BOM') return
+    resolveWorkItemMaterials(wi)
+    const top = wi._topMaterial || buildTopLevelPlanMaterial(wi)
+    if (top && isTopLevelSelfMade(top.supplyType)) {
+      all.push(withWorkItemBomIdentity(top, wi))
+    }
+    const flat = []
+    flattenMaterials(wi.materials, flat)
+    flat.forEach((m) => all.push(withWorkItemBomIdentity(m, wi)))
+  })
+  return all.filter(
+    (m) =>
+      (m.supplyType === '自制件' || m.supplyType === '自制') &&
+      isMaterialReleasable(m) &&
+      !m.phase2Deferred,
+  )
+}
+
+export function isTopLevelSelfMade(supplyType) {
+  return supplyType === '自制件' || supplyType === '自制'
+}
+
+/** 总装/部装工单：顶级组装件 → 总装工单；子级组装件 → 部装工单 */
+export function getAssemblyMaterialsForPlan(order) {
+  const all = []
+  order?.workItems?.forEach((wi) => {
+    if (wi?.status === '设计中' || wi?.status === '待BOM') return
+    resolveWorkItemMaterials(wi)
+    const top = wi._topMaterial || buildTopLevelPlanMaterial(wi)
+    if (top?.supplyType === '组装') {
+      all.push(withWorkItemBomIdentity(top, wi, { orderCategory: '总装工单' }))
+    }
+    const flat = []
+    flattenMaterials(wi.materials, flat)
+    flat
+      .filter((m) => m.supplyType === '组装' && isMaterialReleasable(m) && !m.phase2Deferred)
+      .forEach((m) => all.push(withWorkItemBomIdentity(m, wi, { orderCategory: '部装工单' })))
+  })
+  return all.filter((m) => isMaterialReleasable(m) && !m.phase2Deferred)
+}
+
+/** 按物料行 / 编码回找生产计划工作项 */
+export function findWorkItemForPlanRow(sourceOrder, row) {
+  const workItems = sourceOrder?.workItems || []
+  if (!workItems.length || !row) return null
+  if (row.workItemId) {
+    const byId = workItems.find((wi) => wi.id === row.workItemId)
+    if (byId) return byId
+  }
+  const code = String(row.code || row.materialCode || '').trim()
+  const name = String(row.productName || row.name || '').trim()
+  for (const wi of workItems) {
+    if (code && wi.productCode && wi.productCode === code) return wi
+    if (name && wi.productName && wi.productName === name) return wi
+  }
+  return workItems.length === 1 ? workItems[0] : null
+}
+
+const supplierOptionMap = new Map()
+;[...poSupplierOptions, ...reqSupplierOptions].forEach((opt) => {
+  supplierOptionMap.set(opt.value, opt)
+})
+export const planSupplierOptions = [...supplierOptionMap.values()]
+
+export function isPurchasedOrOutsourced(supplyType) {
+  return supplyType === '外购件' || supplyType === '外购' || supplyType === '外协件'
+}
+
+export function getProcessRouteSelectOptions() {
+  void processRouteState.routes
+  const map = new Map()
+  processRouteState.routes
+    .filter((r) => r.status === '使用中')
+    .forEach((r) => map.set(r.name, { label: r.name, value: r.name }))
+  processRouteOptions.forEach((name) => {
+    if (!map.has(name)) map.set(name, { label: name, value: name })
+  })
+  return [...map.values()]
+}
+
+/** 工作中心：合并工单 Mock 与员工组别配置中的工作中心 */
+export function getWorkCenterSelectOptions() {
+  const map = new Map()
+  ;[...mockWorkCenterOptions, ...groupWorkCenterOptions].forEach((name) => {
+    if (name && !map.has(name)) map.set(name, { label: name, value: name })
+  })
+  return [...map.values()]
+}
+
+/** 工艺文件选项暂留空，组件形态与工艺路线一致 */
+export const processFileOptions = []
+
+function findMasterByCode(code) {
+  if (!code) return null
+  const material = materialInfoState.materials.find((m) => m.code === code)
+  if (material) return material
+  return productInfoState.products.find((p) => p.code === code) || null
+}
+
+export function getMasterDefaults(code) {
+  const master = findMasterByCode(code)
+  if (!master) return {}
+  const production = master.production || {}
+  const supplyForm = master.supplyForm || master.supplyType
+  return {
+    supplyType: supplyForm || '',
+    processRoute: production.defaultProcessRoute || master.defaultProcessRoute || '',
+    processFile: '',
+    inventoryUnit: master.inventoryUnit || master.stockUnit || '',
+    standardCycle:
+      production.standardCycleDays != null && production.standardCycleDays !== ''
+        ? String(production.standardCycleDays)
+        : '',
+    supplier: production.defaultSupplier || '',
+  }
+}
+
+export function calcLatestProcessTime(planAssemblyDate, standardCycle) {
+  if (!planAssemblyDate) return ''
+  const days = Number(standardCycle)
+  if (Number.isNaN(days)) return ''
+  return dayjs(planAssemblyDate).subtract(days, 'day').format('YYYY-MM-DD')
+}
+
+export function resolvePlanAssemblyDate(order) {
+  return order?.planAssemblyDate || order?.workItems?.[0]?.deliveryDate || order?.deliveryDate || ''
+}
+
+/** 从 EBOM 行补齐下料尺寸（兼容旧快照未展开到物料行的情况） */
+function fillBlankSizeFromEbomLine(material, lineItems) {
+  if (!material || material.blankSizeText) return
+  if (!lineItems?.length || !material.code) return
+  const line = lineItems.find((l) => l.materialCode === material.code)
+  if (!line) return
+  if (line.blankSizeText) {
+    material.blankSizeText = line.blankSizeText
+    material.blankSize = line.blankSize || null
+    material.blankSizeMode = line.blankSizeMode || ''
+    material.blankLength = line.blankLength ?? null
+    material.blankArea = line.blankArea ?? null
+    return
+  }
+  if (line.blankSize) {
+    material.blankSize = line.blankSize
+    material.blankSizeText = formatBlankSizeText(line.blankSize)
+    material.blankSizeMode = line.blankSizeMode || ''
+    material.blankLength = line.blankLength ?? null
+    material.blankArea = line.blankArea ?? null
+  }
+}
+
+export function enrichPlanMaterial(material, order, workItem = null) {
+  if (!material) return material
+  const defaults = getMasterDefaults(material.code)
+
+  if (!material.supplyType && defaults.supplyType) {
+    material.supplyType = defaults.supplyType
+  }
+  if (!material.processRoute && defaults.processRoute) {
+    material.processRoute = defaults.processRoute
+  }
+  if (!material.standardCycle && defaults.standardCycle) {
+    material.standardCycle = defaults.standardCycle
+  }
+  if (!material.supplier && defaults.supplier) {
+    material.supplier = defaults.supplier
+  }
+  if (defaults.inventoryUnit) {
+    material.unit = defaults.inventoryUnit
+  }
+  if (material.processFile == null) material.processFile = ''
+  if (material.designateSupplier == null) material.designateSupplier = false
+  if (material.blankSizeText == null) material.blankSizeText = ''
+
+  fillBlankSizeFromEbomLine(material, workItem?.ebomSnapshot?.lineItems)
+
+  if (!material.latestProcessTime && material.standardCycle) {
+    material.latestProcessTime = calcLatestProcessTime(
+      resolvePlanAssemblyDate(order),
+      material.standardCycle,
+    )
+  }
+
+  if (!isPurchasedOrOutsourced(material.supplyType)) {
+    material.designateSupplier = false
+  }
+
+  if (material.children?.length) {
+    material.children.forEach((child) => enrichPlanMaterial(child, order, workItem))
+  }
+  return material
+}
+
+export function enrichPlanMaterialTree(materials, order, workItem = null) {
+  ;(materials || []).forEach((node) => enrichPlanMaterial(node, order, workItem))
+  return materials
+}
+
+export function recalcMaterialLatestProcessTimes(materials, order) {
+  const assemblyDate = resolvePlanAssemblyDate(order)
+  const walk = (nodes) => {
+    nodes?.forEach((node) => {
+      if (node.standardCycle) {
+        node.latestProcessTime = calcLatestProcessTime(assemblyDate, node.standardCycle)
+      }
+      if (node.children?.length) walk(node.children)
+    })
+  }
+  walk(materials)
+}
+
+export function onMaterialSupplyTypeChange(record) {
+  if (!isPurchasedOrOutsourced(record.supplyType)) {
+    record.designateSupplier = false
+  }
+}
+
+export function onMaterialDesignateSupplierChange(record, checked) {
+  record.designateSupplier = !!checked
+  if (!checked) return
+}
+
+export function onMaterialStandardCycleChange(record, order) {
+  record.latestProcessTime = calcLatestProcessTime(
+    resolvePlanAssemblyDate(order),
+    record.standardCycle,
+  )
+}
+
+export function validateDesignatedSuppliers(materials) {
+  const flat = []
+  flattenMaterials(materials, flat)
+  const missing = flat.find(
+    (m) =>
+      m.designateSupplier &&
+      isPurchasedOrOutsourced(m.supplyType) &&
+      !String(m.supplier || '').trim(),
+  )
+  if (missing) {
+    return { ok: false, message: `已指定供应商的「${missing.name}」需填写供方单位` }
+  }
+  return { ok: true }
+}

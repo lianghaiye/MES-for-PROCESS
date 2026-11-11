@@ -1,0 +1,377 @@
+import dayjs from 'dayjs'
+import { productBomState, getOwnActiveBomForItem } from '@/store/productBomStore'
+import { normalizeVersionDisplay } from '@/utils/bomVersion'
+import { isCatalogSeedBom, hydrateCatalogBom } from '@/mock/productBomSeed'
+import { mockProducts } from '@/mock/productInfo'
+import { isBomArchived, isBomPending } from '@/mock/productBomOptions'
+import { expandActiveBomOneLevelUnderLine } from '@/utils/bomImport'
+
+function resolveSubstituteItemType(substitute) {
+  if (substitute?.itemType === 'product' || substitute?.itemType === 'material') {
+    return substitute.itemType
+  }
+  return substitute?.itemType === '产品' ? 'product' : 'material'
+}
+
+function resolveSubstitutePickerItemType(substitute) {
+  const t = resolveSubstituteItemType(substitute)
+  return t === 'product' ? '产品' : '物料'
+}
+
+function normalizeUnitQty(value, fallback = 1) {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n < 0) return fallback
+  return n
+}
+
+export function getBomLineItems(bom) {
+  if (!bom) return []
+  if (bom.lineItems?.length) return bom.lineItems
+  if (isCatalogSeedBom(bom)) {
+    // 就地水合，保证后续按 lineId 改母件时 id 一致
+    return hydrateCatalogBom(bom, mockProducts).lineItems || []
+  }
+  return []
+}
+
+/** 子项行是否引用指定 BOM 版本 */
+export function lineReferencesBom(line, bom) {
+  if (!line || !bom) return false
+  if (line.childBomId && line.childBomId === bom.id) return true
+
+  const lineVer = normalizeVersionDisplay(line.childBomVersion)
+  const bomVer = normalizeVersionDisplay(bom.version)
+  if (!lineVer || lineVer !== bomVer) return false
+
+  if (
+    line.referencedItemId &&
+    line.referencedItemId === bom.itemId &&
+    line.referencedItemType === bom.itemType
+  ) {
+    return true
+  }
+
+  const childBom = String(line.childBom || '').trim()
+  return childBom === bom.bomName || childBom === bom.bomNo
+}
+
+/** 母件产品展示：编号/名称/规格型号/材质 */
+export function formatParentBomItemLabel(parent = {}) {
+  const parts = [parent.itemCode, parent.itemName, parent.specModel, parent.material]
+    .map((v) => String(v || '').trim())
+    .filter(Boolean)
+  return parts.length ? parts.join('/') : parent.itemName || '—'
+}
+
+/** 查找引用了该 BOM 版本的父级 BOM */
+export function findParentBomReferences(bom) {
+  if (!bom) return []
+  const refs = []
+
+  productBomState.boms.forEach((parent) => {
+    if (parent.id === bom.id || isBomArchived(parent)) return
+    const lines = getBomLineItems(parent)
+    const matched = lines.filter((line) => lineReferencesBom(line, bom))
+    if (!matched.length) return
+    refs.push({
+      parentBomId: parent.id,
+      parentBomName: parent.bomName,
+      parentItemName: parent.itemName,
+      parentItemCode: parent.itemCode || '',
+      parentSpecModel: parent.specModel || '',
+      parentMaterial: parent.material || '',
+      parentItemLabel: formatParentBomItemLabel(parent),
+      parentVersion: parent.version,
+      lineIds: matched.map((l) => l.id),
+      count: matched.length,
+    })
+  })
+
+  return refs
+}
+
+/** 启用新版本前：查找引用同物品旧版 BOM 的父级 */
+export function findParentRefsForBomUpgrade(newBom) {
+  if (!newBom) return []
+  const olderBoms = productBomState.boms.filter(
+    (b) =>
+      b.itemType === newBom.itemType &&
+      b.itemId === newBom.itemId &&
+      b.id !== newBom.id &&
+      !isBomPending(b),
+  )
+  const seen = new Set()
+  const refs = []
+  olderBoms.forEach((oldBom) => {
+    findParentBomReferences(oldBom).forEach((ref) => {
+      if (seen.has(ref.parentBomId)) return
+      seen.add(ref.parentBomId)
+      refs.push(ref)
+    })
+  })
+  return refs
+}
+
+/** 父级 BOM 子项引用同步升级到新版本 */
+export function upgradeParentBomReferences(newBom, refs) {
+  if (!newBom || !refs?.length) return 0
+  const ts = dayjs().format('YYYY-MM-DD HH:mm')
+  let updated = 0
+
+  refs.forEach((ref) => {
+    const parent = productBomState.boms.find((b) => b.id === ref.parentBomId)
+    if (!parent?.lineItems?.length) return
+    parent.lineItems.forEach((line) => {
+      if (!ref.lineIds.includes(line.id)) return
+      line.childBomId = newBom.id
+      line.childBom = newBom.bomName || newBom.bomNo || line.childBom
+      line.childBomVersion = newBom.version
+      line.referencedItemId = newBom.itemId
+      line.referencedItemType = newBom.itemType
+      updated += 1
+    })
+    parent.updatedAt = ts
+  })
+
+  return updated
+}
+
+/** 确保母件具备可写的 treeNodes / lineItems（catalog 种子按需水合） */
+function ensureParentWritable(parent) {
+  if (!parent) return null
+  if (parent.lineItems?.length) return parent
+  if (isCatalogSeedBom(parent)) {
+    const hydrated = hydrateCatalogBom(parent, mockProducts)
+    parent.treeNodes = hydrated.treeNodes || []
+    parent.lineItems = hydrated.lineItems || []
+    if (parent.seedSource === 'catalog') parent.seedSource = 'catalog-hydrated'
+  }
+  return parent
+}
+
+function collectSubtreeNodeIds(treeNodes = [], rootNodeId) {
+  if (!rootNodeId) return new Set()
+  const ids = new Set([rootNodeId])
+  let grew = true
+  while (grew) {
+    grew = false
+    treeNodes.forEach((n) => {
+      if (n?.parentId && ids.has(n.parentId) && !ids.has(n.id)) {
+        ids.add(n.id)
+        grew = true
+      }
+    })
+  }
+  return ids
+}
+
+function removeSubtreeFromParent(parent, nodeIds) {
+  if (!parent || !nodeIds?.size) return
+  parent.treeNodes = (parent.treeNodes || []).filter((n) => !nodeIds.has(n.id))
+  parent.lineItems = (parent.lineItems || []).filter((line) => {
+    if (nodeIds.has(line.treeNodeId)) return false
+    if (line.treeNodeId) return true
+    // 无 treeNodeId 时仅按行 id 由调用方处理
+    return true
+  })
+}
+
+/**
+ * 从母件中移除该子件（含本级）：删除引用行及其树节点、下级结构
+ * @returns {number} 删除的引用行数
+ */
+export function removeParentBomReferences(refs = []) {
+  if (!refs.length) return 0
+  const ts = dayjs().format('YYYY-MM-DD HH:mm')
+  let removed = 0
+
+  refs.forEach((ref) => {
+    const parent = ensureParentWritable(productBomState.boms.find((b) => b.id === ref.parentBomId))
+    if (!parent?.lineItems?.length) return
+
+    const lineIdSet = new Set(ref.lineIds || [])
+    const linesToRemove = parent.lineItems.filter((line) => lineIdSet.has(line.id))
+    if (!linesToRemove.length) return
+
+    const nodeIds = new Set()
+    linesToRemove.forEach((line) => {
+      if (line.treeNodeId) {
+        collectSubtreeNodeIds(parent.treeNodes, line.treeNodeId).forEach((id) => nodeIds.add(id))
+      }
+      removed += 1
+    })
+
+    if (nodeIds.size) {
+      removeSubtreeFromParent(parent, nodeIds)
+    }
+    parent.lineItems = parent.lineItems.filter((line) => !lineIdSet.has(line.id))
+    // 清理挂在已删节点上、但 lineId 未在 ref.lineIds 中的下级行
+    if (nodeIds.size) {
+      parent.lineItems = parent.lineItems.filter((line) => !nodeIds.has(line.treeNodeId))
+    }
+    parent.updatedAt = ts
+  })
+
+  return removed
+}
+
+/**
+ * 将母件中的子件行替换为替代物料/产品
+ * - 使用 ref.unitQty（可填）；默认沿用原用量
+ * - 清除旧展开下级；若替代件有生效 BOM，按用量系数展开一层下级（下级用量 × 本级用量）
+ * @param {Array<{ parentBomId: string, lineIds?: string[], substitute: object, unitQty?: number }>} refs
+ * @returns {number} 替换的引用行数
+ */
+export function replaceParentBomItemReferences(refs = []) {
+  if (!refs.length) return 0
+  const ts = dayjs().format('YYYY-MM-DD HH:mm')
+  let updated = 0
+
+  refs.forEach((ref) => {
+    const substitute = ref.substitute
+    if (!substitute?.id && !substitute?.code) return
+    const parent = ensureParentWritable(productBomState.boms.find((b) => b.id === ref.parentBomId))
+    if (!parent?.lineItems?.length) return
+
+    const itemType = resolveSubstituteItemType(substitute)
+    const activeBom = getOwnActiveBomForItem(itemType, substitute.id)
+    const lineIdSet = new Set(ref.lineIds || [])
+    const unitQty = normalizeUnitQty(ref.unitQty, 1)
+    const pickerMaterial = {
+      id: substitute.id,
+      itemId: substitute.id,
+      itemType: resolveSubstitutePickerItemType(substitute),
+      code: substitute.code,
+      name: substitute.name,
+      specModel: substitute.specModel,
+      categoryName: substitute.categoryName,
+      materialType: substitute.materialType,
+      supplyForm: substitute.supplyForm,
+      material: substitute.material,
+      drawingNo: substitute.drawingNo,
+      inventoryUnit: substitute.inventoryUnit,
+      unitPrice: substitute.unitPrice,
+    }
+
+    // 先清旧下级，再改本级并按需展开
+    const descendantNodeIds = new Set()
+    parent.lineItems.forEach((line) => {
+      if (!lineIdSet.has(line.id) || !line.treeNodeId) return
+      ;(parent.treeNodes || []).forEach((n) => {
+        if (n.parentId === line.treeNodeId) {
+          collectSubtreeNodeIds(parent.treeNodes, n.id).forEach((id) => descendantNodeIds.add(id))
+        }
+      })
+    })
+    if (descendantNodeIds.size) {
+      removeSubtreeFromParent(parent, descendantNodeIds)
+    }
+
+    const targetLineIds = parent.lineItems.filter((l) => lineIdSet.has(l.id)).map((l) => l.id)
+    targetLineIds.forEach((lineId) => {
+      const line = parent.lineItems.find((l) => l.id === lineId)
+      if (!line) return
+
+      line.materialCode = substitute.code || ''
+      line.itemCode = substitute.code || ''
+      line.itemName = substitute.name || ''
+      line.specModel = substitute.specModel || ''
+      line.categoryName = substitute.categoryName || line.categoryName || ''
+      line.materialType = substitute.materialType || line.materialType || ''
+      line.supplyForm = substitute.supplyForm || line.supplyForm || ''
+      line.material = substitute.material || ''
+      line.drawingNo = substitute.drawingNo || ''
+      if (substitute.inventoryUnit) line.unit = substitute.inventoryUnit
+      if (substitute.unitPrice != null && substitute.unitPrice !== '') {
+        line.unitPrice = substitute.unitPrice
+      }
+      line.unitQty = unitQty
+      line.referencedItemId = substitute.id
+      line.referencedItemType = itemType
+      line.itemId = substitute.id
+      line.childBomId = undefined
+      line.childBom = ''
+      line.childBomVersion = ''
+
+      const node = (parent.treeNodes || []).find((n) => n.id === line.treeNodeId)
+      if (node) {
+        node.title = `${substitute.code || ''} ${substitute.name || ''}`.trim()
+        node.materialCode = substitute.code || ''
+        node.quantity = unitQty
+        node.nodeType = 'material'
+      }
+
+      if (activeBom) {
+        const expanded = expandActiveBomOneLevelUnderLine(
+          parent.treeNodes || [],
+          parent.lineItems || [],
+          line.id,
+          pickerMaterial,
+          unitQty,
+        )
+        parent.treeNodes = expanded.flatNodes
+        parent.lineItems = expanded.lineItems
+        const nodeAfter = (parent.treeNodes || []).find((n) => n.id === line.treeNodeId)
+        if (nodeAfter) nodeAfter.nodeType = 'bom-ref'
+      }
+
+      updated += 1
+    })
+
+    parent.updatedAt = ts
+  })
+
+  return updated
+}
+
+/**
+ * 仅保留该子件本级，移除其下级：清空 BOM 引用，删除展开出来的下级节点
+ * @param {object} [childBom] 用于回填本级物品信息
+ * @returns {number} 处理的引用行数
+ */
+export function detachChildBomKeepLine(refs = [], childBom = null) {
+  if (!refs.length) return 0
+  const ts = dayjs().format('YYYY-MM-DD HH:mm')
+  let updated = 0
+
+  refs.forEach((ref) => {
+    const parent = ensureParentWritable(productBomState.boms.find((b) => b.id === ref.parentBomId))
+    if (!parent?.lineItems?.length) return
+
+    const lineIdSet = new Set(ref.lineIds || [])
+    const descendantNodeIds = new Set()
+
+    parent.lineItems.forEach((line) => {
+      if (!lineIdSet.has(line.id)) return
+
+      if (!line.materialCode && childBom?.itemCode) line.materialCode = childBom.itemCode
+      if (!line.itemName && childBom?.itemName) line.itemName = childBom.itemName
+      if (!line.specModel && childBom?.specModel) line.specModel = childBom.specModel
+
+      line.childBomId = undefined
+      line.childBom = ''
+      line.childBomVersion = ''
+      line.referencedItemId = undefined
+      line.referencedItemType = undefined
+
+      const node = (parent.treeNodes || []).find((n) => n.id === line.treeNodeId)
+      if (node) {
+        node.nodeType = 'material'
+        // 本级节点保留；收集其直接下级及更下层以便删除
+        ;(parent.treeNodes || []).forEach((n) => {
+          if (n.parentId === node.id) {
+            collectSubtreeNodeIds(parent.treeNodes, n.id).forEach((id) => descendantNodeIds.add(id))
+          }
+        })
+      }
+      updated += 1
+    })
+
+    if (descendantNodeIds.size) {
+      removeSubtreeFromParent(parent, descendantNodeIds)
+    }
+    parent.updatedAt = ts
+  })
+
+  return updated
+}

@@ -1,0 +1,539 @@
+<template>
+  <div class="inventory-deduct-detail-page">
+    <div class="page-header">
+      <div class="header-left">
+        <template v-if="record">
+          <span class="page-title">{{ record.deductNo }}</span>
+          <span class="status-tag" :class="statusClass(record.status)">{{ record.status }}</span>
+        </template>
+        <span v-else class="page-title">扣减记录详情</span>
+      </div>
+      <a-space :size="8">
+        <template v-if="record && actionKeys.length">
+          <a-button v-if="actionKeys.includes('edit')" size="small" @click="openEdit"
+            >编辑</a-button
+          >
+          <a-button
+            v-if="actionKeys.includes('confirm')"
+            type="primary"
+            size="small"
+            @click="onConfirm"
+          >
+            确认
+          </a-button>
+          <a-button v-if="actionKeys.includes('undoConfirm')" size="small" @click="onUndoConfirm">
+            撤销确认
+          </a-button>
+          <a-button v-if="actionKeys.includes('retry')" size="small" @click="onRetry"
+            >重试</a-button
+          >
+          <a-button v-if="actionKeys.includes('void')" danger size="small" @click="onVoid">
+            作废
+          </a-button>
+        </template>
+        <a-button size="small" @click="goBack">返回列表</a-button>
+      </a-space>
+    </div>
+
+    <div class="page-body">
+      <a-empty v-if="!record" description="扣减记录不存在或已删除" />
+
+      <template v-else>
+        <a-alert
+          v-if="record.status === STATUS.PENDING"
+          type="info"
+          show-icon
+          class="phase-alert"
+          message="当前为预扣状态：需在本单实扣的物料按 BOM×完工数量锁定扣减仓库存；「下料结算扣减」行仅展示，线边消耗在下料结算完成。确认后正式实扣；库存不足则该行失败。"
+        />
+        <a-alert
+          v-else-if="locked"
+          type="warning"
+          show-icon
+          class="phase-alert"
+          message="确认已超过 30 天，单据已锁定，不可再撤销、作废或重试。"
+        />
+        <a-alert
+          v-else-if="isConfirmedStatus"
+          type="success"
+          show-icon
+          class="phase-alert"
+          message="已确认实扣：库存已从预扣冻结转为正式扣减。"
+        />
+        <a-alert
+          v-else-if="record.status === STATUS.VOIDED"
+          type="warning"
+          show-icon
+          class="phase-alert"
+          message="单据已作废：预扣已解冻退回，不可再重新发起。"
+        />
+
+        <DetailSectionCard title="基本信息">
+          <InventoryDeductBasicInfoSection
+            :record="record"
+            :status-class="statusClass(record.status)"
+            @open-doc="openSourceDoc"
+          />
+        </DetailSectionCard>
+
+        <DetailSectionCard :title="`扣减明细（${record.lines?.length || 0}）`">
+          <a-table
+            :columns="lineColumns"
+            :data-source="record.lines || []"
+            row-key="id"
+            size="small"
+            bordered
+            :pagination="false"
+            :scroll="{ x: 1680 }"
+            :locale="{ emptyText: '暂无扣减明细' }"
+          >
+            <template #headerCell="{ column }">
+              <template v-if="column.key === 'stockDisplay'">
+                <span class="col-title-with-tip">
+                  当前库存量
+                  <a-tooltip :title="STOCK_DISPLAY_TIP">
+                    <InfoCircleOutlined class="col-tip-icon" />
+                  </a-tooltip>
+                </span>
+              </template>
+              <template v-else>{{ column.title }}</template>
+            </template>
+            <template #bodyCell="{ column, record: line, index }">
+              <template v-if="column.key === 'index'">
+                {{ index + 1 }}
+              </template>
+              <template v-else-if="column.key === 'lineStatus'">
+                <span class="status-tag sm" :class="lineStatusClass(line.status)">
+                  {{ lineStatusLabel(line.status) }}
+                </span>
+              </template>
+              <template v-else-if="column.key === 'issueMode'">
+                <a-tag :color="lineIssueMode(line) === '倒冲' ? 'orange' : 'blue'" size="small">
+                  {{ lineIssueMode(line) }}
+                </a-tag>
+              </template>
+              <template v-else-if="column.key === 'specModel'">
+                {{ line.specModel || '—' }}
+              </template>
+              <template v-else-if="column.key === 'material'">
+                {{ line.material || '—' }}
+              </template>
+              <template v-else-if="column.key === 'drawingNo'">
+                {{ line.drawingNo || '—' }}
+              </template>
+              <template v-else-if="column.key === 'variantAttr'">
+                {{ lineVariantText(line) || '—' }}
+              </template>
+              <template v-else-if="column.key === 'blankSizeText'">
+                {{ line.blankSizeText || '—' }}
+              </template>
+              <template v-else-if="column.key === 'stockDisplay'">
+                <span class="stock-display">{{ formatStockDisplay(line) }}</span>
+              </template>
+              <template v-else-if="column.key === 'unitUsage'">
+                {{ formatUnitUsage(line) }}
+              </template>
+              <template v-else-if="column.key === 'shouldQty'">
+                {{ formatShouldQty(line) }}
+              </template>
+              <template v-else-if="column.key === 'planQty'">
+                {{ formatQty(line.planQty) }}
+              </template>
+              <template v-else-if="column.key === 'failReason'">
+                {{ line.failReason || '—' }}
+              </template>
+            </template>
+          </a-table>
+        </DetailSectionCard>
+      </template>
+    </div>
+  </div>
+</template>
+
+<script>
+export default { name: 'InventoryDeductDetailView' }
+</script>
+
+<script setup>
+import DetailSectionCard from '@/components/DetailSectionCard.vue'
+import InventoryDeductBasicInfoSection from './components/InventoryDeductBasicInfoSection.vue'
+import { computed, createVNode, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { message, Modal } from 'ant-design-vue'
+import { ExclamationCircleOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
+import {
+  MATERIAL_DEDUCT_STATUS,
+  normalizeMaterialDeductStatus,
+  resolveInventoryDeductDocNo,
+  isQuickMaterialDeduct,
+} from '@/mock/materialRequisitionRecords'
+import {
+  getMaterialDeductById,
+  getMaterialDeductLockedQty,
+  confirmMaterialDeduct,
+  undoConfirmMaterialDeduct,
+  voidMaterialDeduct,
+  retryMaterialDeduct,
+  isMaterialDeductLocked,
+  materialRequisitionState,
+} from '@/store/materialRequisitionStore'
+import { getStockQty, stockState } from '@/store/stockStore'
+import { lineVariantSummary } from '@/utils/spuLineResolve'
+import { formatNumber } from '@/utils/numberFormat'
+import { openInventoryDeductSourceDoc } from '@/utils/openInventoryDeductSourceDoc'
+import { useTabs } from '@/composables/useTabs'
+import { openCreateTab } from '@/utils/openCreateTab'
+
+const route = useRoute()
+const router = useRouter()
+const { openTab } = useTabs()
+const STATUS = MATERIAL_DEDUCT_STATUS
+const tick = ref(0)
+
+const STOCK_DISPLAY_TIP =
+  '展示为 锁定量/库存量。锁定量=所选仓库下全部待确认扣减单对该物料的预扣合计（含本单及其他单，非仅本单）；库存量=所选仓库现存量。'
+
+const record = computed(() => {
+  tick.value
+  return getMaterialDeductById(String(route.params.id || ''))
+})
+
+const lineColumns = [
+  { title: '序号', key: 'index', width: 56, align: 'center' },
+  { title: '状态', key: 'lineStatus', width: 96 },
+  { title: '物料编码', dataIndex: 'materialCode', key: 'materialCode', width: 110 },
+  { title: '物料名称', dataIndex: 'materialName', key: 'materialName', width: 120 },
+  { title: '发料方式', key: 'issueMode', width: 88 },
+  { title: '规格型号', key: 'specModel', width: 110, ellipsis: true },
+  { title: '材质', key: 'material', width: 90, ellipsis: true },
+  { title: '图号', key: 'drawingNo', width: 110, ellipsis: true },
+  { title: '变体属性', key: 'variantAttr', width: 140, ellipsis: true },
+  { title: '下料尺寸', key: 'blankSizeText', width: 160, ellipsis: true },
+  { title: '当前库存量', key: 'stockDisplay', width: 130 },
+  { title: 'BOM单位用量', key: 'unitUsage', width: 110, align: 'right' },
+  { title: '应扣', key: 'shouldQty', width: 80, align: 'right' },
+  { title: '扣减数量', key: 'planQty', width: 90, align: 'right' },
+  { title: '失败原因', key: 'failReason', width: 120, ellipsis: true },
+]
+
+const isConfirmedStatus = computed(() => {
+  const s = record.value?.status
+  return s === STATUS.SUCCESS || s === STATUS.PARTIAL || s === STATUS.FAILED
+})
+
+const locked = computed(() => isMaterialDeductLocked(record.value))
+
+const actionKeys = computed(() => {
+  const s = record.value?.status
+  if (!s || s === STATUS.VOIDED || locked.value) return []
+  if (s === STATUS.PENDING) return ['edit', 'confirm', 'void']
+  if (s === STATUS.SUCCESS) return ['undoConfirm', 'void']
+  if (s === STATUS.PARTIAL || s === STATUS.FAILED) return ['undoConfirm', 'retry', 'void']
+  return []
+})
+
+function refresh() {
+  tick.value += 1
+}
+
+function lineVariantText(line) {
+  return lineVariantSummary(line) || line.variantSummary || ''
+}
+
+function lineIssueMode(line) {
+  if (line?.issueMode) return line.issueMode
+  return line?.isBackflush ? '倒冲' : '领料'
+}
+
+function lineStatusLabel(status) {
+  const s = normalizeMaterialDeductStatus(status)
+  if (s === STATUS.PENDING) return '待扣减'
+  if (s === STATUS.SUCCESS) return '扣减成功'
+  if (s === STATUS.FAILED) return '扣减失败'
+  return s || '待扣减'
+}
+
+function lineStatusClass(status) {
+  const s = normalizeMaterialDeductStatus(status)
+  if (s === STATUS.SUCCESS) return 'is-success'
+  if (s === STATUS.FAILED) return 'is-failed'
+  if (s === STATUS.PENDING) return 'is-pending'
+  return statusClass(s)
+}
+
+function resolveUnitUsage(line) {
+  const fromBom = Number(line?.unitUsage ?? line?.unitQty)
+  if (fromBom > 0) return fromBom
+  const rq = Number(record.value?.reportQty) || 0
+  const pq = Number(line?.planQty) || 0
+  if (rq > 0 && pq > 0) return Math.round((pq / rq) * 1000) / 1000
+  return pq > 0 ? pq : 0
+}
+
+function formatQty(val) {
+  return formatNumber(val, 3, { empty: '—' })
+}
+
+function formatUnitUsage(line) {
+  const n = resolveUnitUsage(line)
+  return n > 0 ? formatQty(n) : '—'
+}
+
+function formatShouldQty(line) {
+  const unitUsage = resolveUnitUsage(line)
+  const reportQty = Number(record.value?.reportQty) || 0
+  if (!(unitUsage > 0) || !(reportQty > 0)) return '—'
+  return formatQty(Math.round(unitUsage * reportQty * 1000) / 1000)
+}
+
+function formatStockDisplay(line) {
+  void materialRequisitionState.records
+  void stockState.records
+  const code = line?.materialCode
+  const wh = record.value?.warehouseName
+  if (!code || !wh) return '—'
+  const lockedQty = getMaterialDeductLockedQty(code, { warehouseName: wh })
+  const onHand = getStockQty(wh, code)
+  return `${formatQty(lockedQty)} / ${formatQty(onHand)}`
+}
+
+function statusClass(status) {
+  const map = {
+    [STATUS.SUCCESS]: 'is-success',
+    [STATUS.FAILED]: 'is-failed',
+    [STATUS.PARTIAL]: 'is-partial',
+    [STATUS.VOIDED]: 'is-voided',
+    [STATUS.PENDING]: 'is-pending',
+    [STATUS.SKIPPED]: 'is-skipped',
+    [STATUS.CUT_SETTLE]: 'is-skipped',
+  }
+  return map[status] || ''
+}
+
+function openSourceDoc() {
+  openInventoryDeductSourceDoc(record.value, { router, openTab })
+}
+
+function goBack() {
+  router.push('/inventory/deduct-records')
+}
+
+function openEdit() {
+  const row = record.value
+  if (!row?.id) return
+  openCreateTab(router, openTab, {
+    path: `/inventory/deduct-records/${row.id}/edit`,
+    title: `编辑扣减记录 ${row.deductNo || ''}`.trim(),
+  })
+}
+
+function onConfirm() {
+  const row = record.value
+  if (!row) return
+  Modal.confirm({
+    title: '确认扣减？',
+    content: `确认通过${isQuickMaterialDeduct(row) ? '领料单' : '工单'} ${resolveInventoryDeductDocNo(row)} 的库存扣减？通过后将按物料执行扣减。`,
+    okText: '确认',
+    cancelText: '取消',
+    onOk() {
+      const res = confirmMaterialDeduct(row.id)
+      if (!res.ok) {
+        message.warning(res.message)
+        return
+      }
+      message.success(`已确认，状态：${res.record.status}`)
+      refresh()
+    },
+  })
+}
+
+function onUndoConfirm() {
+  const row = record.value
+  if (!row) return
+  Modal.confirm({
+    title: '撤销确认？',
+    content:
+      '撤销确认后，已实扣的库存将退回至扣减仓库，单据恢复为「待确认」，预扣锁定继续保留。是否继续？',
+    okText: '撤销确认',
+    cancelText: '取消',
+    onOk() {
+      const res = undoConfirmMaterialDeduct(row.id)
+      if (!res.ok) {
+        message.warning(res.message)
+        return
+      }
+      message.success('已撤销确认，单据已恢复为待确认')
+      refresh()
+    },
+  })
+}
+
+function onVoid() {
+  const row = record.value
+  if (!row) return
+  Modal.confirm({
+    title: '确认作废？',
+    icon: createVNode(ExclamationCircleOutlined, { style: { color: '#ff4d4f' } }),
+    content: createVNode('div', { class: 'void-confirm-content' }, [
+      createVNode(
+        'p',
+        { style: { color: '#cf1322', marginBottom: '8px', fontWeight: 600 } },
+        '作废后不可恢复',
+      ),
+      createVNode(
+        'p',
+        { style: { color: '#cf1322', marginBottom: 0 } },
+        `${isQuickMaterialDeduct(row) ? '领料单' : '工单'} ${resolveInventoryDeductDocNo(row)} 的扣减单作废后将永久失效：预扣库存解冻退回，且不可再重新发起。如需再次扣减，请联系仓管员另行处理。`,
+      ),
+    ]),
+    okText: '确认作废',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk() {
+      const res = voidMaterialDeduct(row.id)
+      if (!res.ok) {
+        message.warning(res.message)
+        return
+      }
+      message.success('单据已作废')
+      refresh()
+    },
+  })
+}
+
+function onRetry() {
+  const row = record.value
+  if (!row) return
+  const res = retryMaterialDeduct(row.id)
+  if (!res.ok) {
+    message.warning(res.message)
+    return
+  }
+  message.success(`已重试，状态：${res.record.status}`)
+  refresh()
+}
+</script>
+
+<style lang="less" scoped>
+.inventory-deduct-detail-page {
+  margin: -12px;
+  padding: 12px;
+  height: calc(100vh - 56px - 40px - 24px);
+  background: var(--page-bg, #f0f2f5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.page-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #fff;
+  border-bottom: 1px solid #f0f0f0;
+  z-index: 30;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.page-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.page-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
+.phase-alert {
+  margin-bottom: 8px;
+}
+
+.section-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 8px;
+  border: 1px solid #f0f0f0;
+}
+
+.section-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.status-tag {
+  display: inline-block;
+  padding: 0 8px;
+  height: 22px;
+  line-height: 20px;
+  border-radius: 4px;
+  font-size: 12px;
+  border: 1px solid transparent;
+
+  &.sm {
+    height: 20px;
+    line-height: 18px;
+    padding: 0 6px;
+  }
+
+  &.is-success {
+    color: #fff;
+    background: #52c41a;
+  }
+  &.is-failed {
+    color: #fff;
+    background: #ff4d4f;
+  }
+  &.is-partial {
+    color: #fff;
+    background: #fa8c16;
+  }
+  &.is-voided {
+    color: #fff;
+    background: #8c8c8c;
+  }
+  &.is-pending {
+    color: #d46b08;
+    background: #fff7e6;
+    border-color: #ffd591;
+  }
+  &.is-skipped {
+    color: #595959;
+    background: #f5f5f5;
+    border-color: #d9d9d9;
+  }
+}
+
+.col-title-with-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.col-tip-icon {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  cursor: help;
+}
+
+.stock-display {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+</style>

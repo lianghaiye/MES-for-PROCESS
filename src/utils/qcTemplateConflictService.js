@@ -1,0 +1,228 @@
+import { QC_TEMPLATE_SCOPE_TYPE } from '@/mock/qcTemplates'
+import {
+  formatProcessOverlapLabel,
+  isProcessInspectBizScope,
+  isProcessLinkedTemplate,
+  resolveProcessLinkOverlap,
+  stripOverlappingProcessLinks,
+} from '@/utils/qcTemplateProcessLink'
+
+function isEnabledCustom(row) {
+  return row && !row.isSystem && row.status === '启用'
+}
+
+function objectKey(obj = {}) {
+  const type = String(obj.type || '').trim()
+  const value = String(obj.value || obj.code || '').trim()
+  return `${type}:${value}`
+}
+
+function sameObject(a, b) {
+  if (!a || !b) return false
+  const av = String(a.value || a.code || '').trim()
+  const bv = String(b.value || b.code || '').trim()
+  if (!av || !bv) return false
+  if (av === bv) return true
+  const ac = String(a.code || '').trim()
+  const bc = String(b.code || '').trim()
+  return Boolean(ac && bc && ac === bc)
+}
+
+function formatNow() {
+  const d = new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+
+export function formatObjectLabel(obj = {}, scopeType) {
+  if (scopeType === QC_TEMPLATE_SCOPE_TYPE.SINGLE) {
+    const name = obj.label || obj.name || obj.value || ''
+    const spec = obj.specModel ? ` ${obj.specModel}` : ''
+    return `${name}${spec}`.trim() || String(obj.value || '—')
+  }
+  return obj.label || obj.title || obj.value || '—'
+}
+
+/**
+ * 同范围类型下的启用冲突（质检模板 / 随货配件共用）。
+ * bizScope 有值时仅在相同业务类型内比较。
+ */
+export function findEnabledScopeConflicts(
+  rows = [],
+  { id, bizScope, scopeType, objects = [], processLinks } = {},
+  { isEnabled = isEnabledCustom, nameOf = (row) => row?.name, codeOf = (row) => row?.code } = {},
+) {
+  if (!scopeType) return { hasConflict: false, conflicts: [], kind: scopeType }
+  const scope = bizScope != null ? String(bizScope).trim() : ''
+  const currentLinks = { processLinks, bizScope }
+  const inspectProcess = isProcessInspectBizScope(scope)
+
+  const others = (rows || []).filter((t) => {
+    if (!isEnabled(t) || t.scopeType !== scopeType || t.id === id) return false
+    if (scope && t.bizScope !== scope) return false
+    if (inspectProcess && !resolveProcessLinkOverlap(currentLinks, t).overlap) return false
+    return true
+  })
+
+  if (scopeType === QC_TEMPLATE_SCOPE_TYPE.GLOBAL) {
+    if (!others.length) return { hasConflict: false, conflicts: [], kind: 'global' }
+    return {
+      hasConflict: true,
+      kind: 'global',
+      conflicts: others.map((hit, index) => {
+        const overlap = inspectProcess
+          ? resolveProcessLinkOverlap(currentLinks, hit)
+          : { overlap: true, unrestricted: true, links: [] }
+        return {
+          key: `global:${hit.id}`,
+          index: index + 1,
+          objectLabel: '全局',
+          processLabel: inspectProcess ? formatProcessOverlapLabel(overlap) : '',
+          overlapProcessLinks: overlap.links || [],
+          otherUnrestricted: inspectProcess ? !isProcessLinkedTemplate(hit) : true,
+          currentTemplateId: hit.id,
+          currentTemplateName: nameOf(hit),
+          currentTemplateCode: codeOf(hit),
+        }
+      }),
+    }
+  }
+
+  const objs = Array.isArray(objects) ? objects : []
+  if (!objs.length) return { hasConflict: false, conflicts: [], kind: scopeType }
+
+  const conflicts = []
+  objs.forEach((obj, index) => {
+    const hit = others.find((t) => (t.objects || []).some((o) => sameObject(o, obj)))
+    if (!hit) return
+    const overlap = inspectProcess
+      ? resolveProcessLinkOverlap(currentLinks, hit)
+      : { overlap: true, unrestricted: true, links: [] }
+    conflicts.push({
+      key: objectKey(obj) || `row-${index}`,
+      index: index + 1,
+      object: { ...obj },
+      objectLabel: formatObjectLabel(obj, scopeType),
+      processLabel: inspectProcess ? formatProcessOverlapLabel(overlap) : '',
+      overlapProcessLinks: overlap.links || [],
+      otherUnrestricted: inspectProcess ? !isProcessLinkedTemplate(hit) : true,
+      currentTemplateId: hit.id,
+      currentTemplateName: nameOf(hit),
+      currentTemplateCode: codeOf(hit),
+    })
+  })
+
+  return {
+    hasConflict: conflicts.length > 0,
+    kind: scopeType,
+    conflicts,
+  }
+}
+
+/** 纯函数：传入模板列表做冲突检测 */
+export function findQcTemplateConflicts(templates = [], payload = {}) {
+  const scope = String(payload.bizScope || '').trim()
+  if (!scope || !payload.scopeType) {
+    return { hasConflict: false, conflicts: [], kind: payload.scopeType }
+  }
+  return findEnabledScopeConflicts(templates, payload)
+}
+
+export function applyQcTemplateConflictReplace(
+  templates = [],
+  conflicts = [],
+  operator = 'admin1',
+) {
+  const now = formatNow()
+  const touched = new Set()
+  ;(conflicts || []).forEach((c) => {
+    const row = (templates || []).find((t) => t.id === c.currentTemplateId)
+    if (!row || row.isSystem) return
+    touched.add(row.id)
+
+    if (row.scopeType === QC_TEMPLATE_SCOPE_TYPE.GLOBAL) {
+      const overlapLinks = c.overlapProcessLinks || []
+      if (isProcessLinkedTemplate(row) && overlapLinks.length) {
+        const { emptied } = stripOverlappingProcessLinks(row, overlapLinks)
+        if (emptied) row.status = '停用'
+      } else {
+        row.status = '停用'
+      }
+      row.updater = operator
+      row.updatedAt = now
+      return
+    }
+
+    const overlapLinks = c.overlapProcessLinks || []
+    if (isProcessLinkedTemplate(row) && overlapLinks.length) {
+      const { emptied } = stripOverlappingProcessLinks(row, overlapLinks)
+      if (emptied) row.status = '停用'
+    } else {
+      row.objects = (row.objects || []).filter((o) => !sameObject(o, c.object))
+      if (!row.objects.length) row.status = '停用'
+    }
+    row.updater = operator
+    row.updatedAt = now
+  })
+  return { ok: true, touchedIds: [...touched] }
+}
+
+export function filterObjectsSkippingConflicts(objects = [], conflicts = []) {
+  const conflictKeys = new Set((conflicts || []).map((c) => objectKey(c.object)))
+  return (objects || []).filter((o) => !conflictKeys.has(objectKey(o)))
+}
+
+/**
+ * 将冲突决议拆成「替换 / 跳过」两组。
+ * - mode=replace|skip：整单处理（兼容旧逻辑）
+ * - decisions: [{ key, mode }]：逐行处理
+ */
+export function resolveConflictBuckets(conflicts = [], resolution = {}) {
+  const list = Array.isArray(conflicts) ? conflicts : []
+  if (!resolution) return { replaceConflicts: [], skipConflicts: [] }
+
+  const decisions = Array.isArray(resolution.decisions) ? resolution.decisions : null
+  if (decisions?.length) {
+    const modeByKey = new Map(decisions.map((d) => [d.key, d.mode]))
+    const replaceConflicts = []
+    const skipConflicts = []
+    list.forEach((c) => {
+      const mode = modeByKey.get(c.key) || 'replace'
+      if (mode === 'skip') skipConflicts.push(c)
+      else replaceConflicts.push(c)
+    })
+    return { replaceConflicts, skipConflicts }
+  }
+
+  if (Array.isArray(resolution.replaceConflicts) || Array.isArray(resolution.skipConflicts)) {
+    return {
+      replaceConflicts: resolution.replaceConflicts || [],
+      skipConflicts: resolution.skipConflicts || [],
+    }
+  }
+
+  if (resolution.mode === 'skip') {
+    return { replaceConflicts: [], skipConflicts: list }
+  }
+  // replace / global / 默认
+  return { replaceConflicts: list, skipConflicts: [] }
+}
+
+/** 按决议处理冲突，返回保存用的 objects */
+export function applyQcTemplateConflictResolution(
+  templates = [],
+  objects = [],
+  conflicts = [],
+  resolution = {},
+  operator = 'admin1',
+) {
+  const { replaceConflicts, skipConflicts } = resolveConflictBuckets(conflicts, resolution)
+  if (replaceConflicts.length) {
+    applyQcTemplateConflictReplace(templates, replaceConflicts, operator)
+  }
+  let objectsToSave = objects
+  if (skipConflicts.length) {
+    objectsToSave = filterObjectsSkippingConflicts(objects, skipConflicts)
+  }
+  return { objectsToSave, replaceConflicts, skipConflicts }
+}

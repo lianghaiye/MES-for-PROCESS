@@ -1,0 +1,1745 @@
+import { createRouter, createWebHistory } from 'vue-router'
+import { isLoggedIn } from '@/utils/auth'
+import { topModules, moreModules, resolveModuleDefaultPath, routeTitles } from '@/config/menus'
+import { createPageRegistry } from '@/config/createPages'
+import { tabStore } from '@/composables/useTabs'
+
+const MainLayout = () => import('@/layout/MainLayout.vue')
+
+const emptyChild = (name, title) => ({
+  name,
+  component: () => import('@/views/placeholder/EmptyPage.vue'),
+  meta: { title },
+})
+
+/** 顶栏模块占位路径（如 /sales）重定向到侧栏首项，兼容旧版直接 push mod.path 的导航 */
+const moduleRedirectRoutes = [...topModules, ...moreModules]
+  .map((mod) => {
+    const target = resolveModuleDefaultPath(mod)
+    if (!target) return null
+    const bare = `/${mod.key}`
+    if (target === bare) return null
+    return { path: mod.key, redirect: target }
+  })
+  .filter(Boolean)
+
+/** 新增页路由须在带 :id 的动态路由之前注册，避免 /xxx/new 被当成详情 id */
+const createPageRoutes = createPageRegistry.map((page) => ({
+  path: page.newPath.slice(1),
+  name: page.name,
+  component: page.view,
+  meta: { title: page.title, listPath: page.listPath },
+}))
+
+const routes = [
+  {
+    path: '/login',
+    name: 'login',
+    component: () => import('@/views/login/LoginView.vue'),
+    meta: { public: true, title: '登录' },
+  },
+  {
+    path: '/product-process/bom/preview',
+    name: 'product-process-bom-preview',
+    component: () => import('@/views/product-process/BomPrintPreviewView.vue'),
+    meta: { title: 'BOM预览', standalone: true },
+  },
+  {
+    path: '/product-process/product-label-print-preview',
+    name: 'product-process-product-label-preview',
+    component: () => import('@/views/product-process/ProductLabelPrintPreviewView.vue'),
+    meta: { title: '产品标签打印', standalone: true },
+  },
+  {
+    path: '/production/work-orders/preview',
+    name: 'production-work-order-preview',
+    component: () => import('@/views/production/WorkOrderPrintPreviewView.vue'),
+    meta: { title: '工单预览', standalone: true },
+  },
+  {
+    path: '/procurement/purchase-orders/preview',
+    name: 'procurement-purchase-order-preview',
+    component: () => import('@/views/procurement/PurchaseOrderPrintPreviewView.vue'),
+    meta: { title: '采购订单预览', standalone: true },
+  },
+  {
+    path: '/procurement/purchase-receipts/preview',
+    name: 'procurement-purchase-receipt-preview',
+    component: () => import('@/views/procurement/PurchaseReceiptPrintPreviewView.vue'),
+    meta: { title: '采购收货明细预览', standalone: true },
+  },
+  {
+    path: '/quality/qc-tasks/preview',
+    name: 'quality-qc-task-preview',
+    component: () => import('@/views/quality/QcTaskPrintPreviewView.vue'),
+    meta: { title: '质检单打印预览', standalone: true },
+  },
+  {
+    path: '/procurement/purchase-returns/preview',
+    name: 'procurement-purchase-return-preview',
+    component: () => import('@/views/procurement/PurchaseReturnPrintPreviewView.vue'),
+    meta: { title: '采购退货明细预览', standalone: true },
+  },
+  {
+    path: '/procurement/outsourcing-orders/preview',
+    name: 'procurement-outsourcing-order-preview',
+    component: () => import('@/views/procurement/OutsourcingOrderPrintPreviewView.vue'),
+    meta: { title: '外协订单打印预览', standalone: true },
+  },
+  {
+    path: '/procurement/outsourcing-receipts/preview',
+    name: 'procurement-outsourcing-receipt-preview',
+    component: () => import('@/views/procurement/OutsourcingReceiptPrintPreviewView.vue'),
+    meta: { title: '外协收货明细预览', standalone: true },
+  },
+  {
+    path: '/procurement/outsourcing-returns/preview',
+    name: 'procurement-outsourcing-return-preview',
+    component: () => import('@/views/procurement/OutsourcingReturnPrintPreviewView.vue'),
+    meta: { title: '外协异常处理明细预览', standalone: true },
+  },
+  {
+    path: '/procurement/purchase-req/preview',
+    name: 'procurement-purchase-req-preview',
+    component: () => import('@/views/procurement/PurchaseRequisitionPrintPreviewView.vue'),
+    meta: { title: '采购申请明细预览', standalone: true },
+  },
+  {
+    path: '/sales/orders/preview',
+    name: 'sales-order-preview',
+    component: () => import('@/views/sales/SalesOrderPrintPreviewView.vue'),
+    meta: { title: '销售订单预览', standalone: true },
+  },
+  {
+    path: '/settlement/purchase-settles/preview',
+    name: 'settlement-purchase-settle-preview',
+    component: () => import('@/views/procurement/PurchaseSettlePrintPreviewView.vue'),
+    meta: { title: '采购对账单预览', standalone: true },
+  },
+  {
+    path: '/sales/delivery/preview',
+    name: 'sales-delivery-preview',
+    component: () => import('@/views/sales/DeliveryOrderPrintPreviewView.vue'),
+    meta: { title: '发货单预览', standalone: true },
+  },
+  {
+    path: '/inventory/outbound/preview',
+    name: 'inventory-outbound-preview',
+    component: () => import('@/views/inventory/OutboundOrderPrintPreviewView.vue'),
+    meta: { title: '出库单预览', standalone: true },
+  },
+  {
+    path: '/production/material-requisition/preview',
+    name: 'production-material-requisition-preview',
+    component: () => import('@/views/production/MaterialRequisitionPrintPreviewView.vue'),
+    meta: { title: '领料单预览', standalone: true },
+  },
+  {
+    path: '/inventory/inbound/preview',
+    name: 'inventory-inbound-preview',
+    component: () => import('@/views/inventory/InboundOrderPrintPreviewView.vue'),
+    meta: { title: '入库单预览', standalone: true },
+  },
+  {
+    path: '/engineering-change/ecn/print',
+    name: 'engineering-change-ecn-print',
+    component: () => import('@/views/engineering-change/EcnPrintPreviewView.vue'),
+    meta: { title: 'ECN打印', standalone: true },
+  },
+  {
+    path: '/board/work-order-monitor/screen',
+    name: 'board-work-order-monitor-screen',
+    component: () => import('@/views/board/WorkOrderMonitorView.vue'),
+    meta: { title: '工单监管看板', standalone: true },
+  },
+  {
+    path: '/board/kit-supply/screen',
+    name: 'board-kit-supply-screen',
+    component: () => import('@/views/board/KitSupplyBoardView.vue'),
+    meta: { title: '齐套与供应看板', standalone: true },
+  },
+  {
+    path: '/board/carousel/play/:schemeId',
+    name: 'board-carousel-play',
+    component: () => import('@/views/board/BoardCarouselPlayView.vue'),
+    meta: { title: '看板轮播播放', standalone: true },
+  },
+  {
+    path: '/',
+    component: MainLayout,
+    redirect: '/home/dashboard',
+    children: [
+      {
+        path: 'home/dashboard',
+        name: 'home-dashboard',
+        component: () => import('@/views/home/WorkbenchDashboardView.vue'),
+        meta: { title: '工作台' },
+      },
+      {
+        path: 'home/feedback',
+        name: 'home-feedback',
+        component: () => import('@/views/home/FeedbackListView.vue'),
+        meta: { title: '意见反馈' },
+      },
+      {
+        path: 'home/workbench-admin',
+        name: 'home-workbench-admin',
+        component: () => import('@/views/home/WorkbenchContentAdminView.vue'),
+        meta: { title: '工作台内容管理' },
+      },
+      {
+        path: 'home/workbench-admin/releases/new',
+        name: 'home-workbench-release-new',
+        component: () => import('@/views/home/WorkbenchReleaseEditView.vue'),
+        meta: { title: '新增功能发布', listPath: '/home/workbench-admin?tab=releases' },
+      },
+      {
+        path: 'home/workbench-admin/releases/:id/edit',
+        name: 'home-workbench-release-edit',
+        component: () => import('@/views/home/WorkbenchReleaseEditView.vue'),
+        meta: { title: '编辑功能发布', listPath: '/home/workbench-admin?tab=releases' },
+      },
+      {
+        path: 'home/data-cockpit',
+        name: 'home-data-cockpit',
+        component: () => import('@/views/home/DataCockpitView.vue'),
+        meta: { title: '数据驾驶舱' },
+      },
+      {
+        path: 'home/director-dashboard',
+        name: 'home-director-dashboard',
+        component: () => import('@/views/home/WorkshopDirectorDashboardView.vue'),
+        meta: { title: '车间主任工作台' },
+      },
+      {
+        path: 'home/prd',
+        name: 'home-prd-index',
+        component: () => import('@/views/prd/PrdIndexView.vue'),
+        meta: { title: 'IDOMS PRD' },
+      },
+      {
+        path: 'home/prd/v15',
+        name: 'home-prd-v15',
+        component: () => import('@/views/prd/PrdV15View.vue'),
+        meta: { title: '1.5版本迭代' },
+      },
+      {
+        path: 'home/prd/v151',
+        name: 'home-prd-v151',
+        component: () => import('@/views/prd/PrdV151View.vue'),
+        meta: { title: '1.5.1版本迭代' },
+      },
+      {
+        path: 'home/prd/v151/product-bom',
+        redirect: '/home/prd/v151',
+      },
+      {
+        path: 'home/prd/v151/product-material',
+        name: 'home-prd-v151-product-material',
+        component: () => import('@/views/prd/PrdV151ProductMaterialView.vue'),
+        meta: { title: '1.5.1 · 产品物料需求' },
+      },
+      ...moduleRedirectRoutes,
+      ...createPageRoutes,
+      {
+        path: 'product-process/materials',
+        redirect: '/product-process/products',
+      },
+      {
+        path: 'product-process/materials/new',
+        redirect: '/product-process/products/new',
+      },
+      {
+        path: 'product-process/products',
+        name: 'product-process-products',
+        component: () => import('@/views/product-process/MasterItemInfoView.vue'),
+        meta: { title: '产品信息' },
+      },
+      {
+        path: 'product-process/products/:id/edit',
+        name: 'product-process-products-edit',
+        component: () => import('@/views/product-process/MasterItemEditView.vue'),
+        meta: { title: '编辑产品', listPath: '/product-process/products' },
+      },
+      {
+        path: 'product-process/products/:id',
+        name: 'product-process-products-detail',
+        component: () => import('@/views/product-process/MasterItemDetailView.vue'),
+        meta: { title: '产品详情', listPath: '/product-process/products' },
+      },
+      {
+        path: 'product-process/bom',
+        name: 'product-process-bom',
+        component: () => import('@/views/product-process/ProductBomView.vue'),
+        meta: { title: '产品BOM' },
+      },
+      {
+        path: 'product-process/bom/new',
+        name: 'product-process-bom-new',
+        component: () => import('@/views/product-process/ProductBomCreateView.vue'),
+        meta: { title: '新增BOM' },
+      },
+      {
+        path: 'product-process/bom/:id/edit',
+        name: 'product-process-bom-edit',
+        component: () => import('@/views/product-process/ProductBomCreateView.vue'),
+        meta: { title: '编辑BOM' },
+      },
+      {
+        path: 'product-process/bom/:id',
+        name: 'product-process-bom-detail',
+        component: () => import('@/views/product-process/ProductBomDetailView.vue'),
+        meta: { title: 'BOM详情', listPath: '/product-process/bom' },
+      },
+      {
+        path: 'product-process/ship-attachments',
+        name: 'product-process-ship-attachments',
+        component: () => import('@/views/product-process/ProductBomView.vue'),
+        meta: { title: '随货配件' },
+      },
+      {
+        path: 'product-process/ship-attachments/new',
+        name: 'product-process-ship-attachments-new',
+        component: () => import('@/views/product-process/ProductBomCreateView.vue'),
+        meta: { title: '新增随货配件', listPath: '/product-process/ship-attachments' },
+      },
+      {
+        path: 'product-process/ship-attachments/:id/edit',
+        name: 'product-process-ship-attachments-edit',
+        component: () => import('@/views/product-process/ProductBomCreateView.vue'),
+        meta: { title: '编辑随货配件', listPath: '/product-process/ship-attachments' },
+      },
+      {
+        path: 'product-process/ship-attachments/:id',
+        name: 'product-process-ship-attachments-detail',
+        component: () => import('@/views/product-process/ProductBomDetailView.vue'),
+        meta: { title: '随货配件详情', listPath: '/product-process/ship-attachments' },
+      },
+      {
+        path: 'product-process/routing',
+        name: 'product-process-routing',
+        component: () => import('@/views/product-process/ProcessRouteView.vue'),
+        meta: { title: '工艺路线' },
+      },
+      {
+        path: 'product-process/routing/:id/edit',
+        name: 'product-process-routing-edit',
+        component: () => import('@/views/product-process/ProcessRouteEditView.vue'),
+        meta: { title: '编辑工艺路线', listPath: '/product-process/routing' },
+      },
+      {
+        path: 'product-process/routing/:id',
+        name: 'product-process-routing-detail',
+        component: () => import('@/views/product-process/ProcessRouteDetailView.vue'),
+        meta: { title: '工艺路线详情' },
+      },
+      {
+        path: 'product-process/process-config',
+        name: 'product-process-config',
+        component: () => import('@/views/product-process/ProcessConfigView.vue'),
+        meta: { title: '工序配置' },
+      },
+      {
+        path: 'product-process/process-config/:id/edit',
+        name: 'product-process-config-edit',
+        component: () => import('@/views/product-process/ProcessConfigEditView.vue'),
+        meta: { title: '编辑工序', listPath: '/product-process/process-config' },
+      },
+      {
+        path: 'product-process/process-config/:id',
+        name: 'product-process-config-detail',
+        component: () => import('@/views/product-process/ProcessConfigDetailView.vue'),
+        meta: { title: '工序详情' },
+      },
+      {
+        path: 'product-process/process-doc',
+        name: 'product-process-process-doc',
+        component: () => import('@/views/product-process/ProcessDocView.vue'),
+        meta: { title: '工艺文件' },
+      },
+      {
+        path: 'product-process/process-category',
+        name: 'product-process-category',
+        component: () => import('@/views/product-process/ProcessCategoryView.vue'),
+        meta: { title: '工序分类' },
+      },
+      {
+        path: 'product-process/process-form',
+        ...emptyChild('product-process-form', '工序表单模板'),
+      },
+      {
+        path: 'sales/orders',
+        name: 'sales-orders',
+        component: () => import('@/views/sales/SalesOrderView.vue'),
+        meta: { title: '销售订单' },
+      },
+      {
+        path: 'sales/orders/:id/edit',
+        name: 'sales-orders-edit',
+        component: () => import('@/views/sales/SalesOrderEditView.vue'),
+        meta: { title: '编辑销售订单', listPath: '/sales/orders' },
+      },
+      {
+        path: 'sales/orders/:id/approve',
+        name: 'sales-orders-approve',
+        component: () => import('@/views/sales/SalesOrderApproveView.vue'),
+        meta: { title: '审核销售订单', listPath: '/sales/orders' },
+      },
+      {
+        path: 'sales/orders/:id',
+        name: 'sales-orders-detail',
+        component: () => import('@/views/sales/SalesOrderDetailView.vue'),
+        meta: { title: '销售订单详情' },
+      },
+      {
+        path: 'sales/order-changes',
+        name: 'sales-order-changes',
+        component: () => import('@/views/sales/SalesOrderChangeView.vue'),
+        meta: { title: '订单变更管理' },
+      },
+      {
+        path: 'sales/order-changes/new',
+        name: 'sales-order-changes-new',
+        component: () => import('@/views/sales/SalesOrderChangeCreateView.vue'),
+        meta: { title: '发起订单变更', listPath: '/sales/order-changes' },
+      },
+      {
+        path: 'sales/order-changes/:id/approve',
+        name: 'sales-order-change-approve',
+        component: () => import('@/views/sales/SalesOrderChangeApproveView.vue'),
+        meta: { title: '审核订单变更', listPath: '/sales/order-changes' },
+      },
+      {
+        path: 'sales/sales-lines',
+        name: 'sales-sales-lines',
+        component: () => import('@/views/sales/SalesOrderLineListView.vue'),
+        meta: { title: '销售明细' },
+      },
+      {
+        path: 'sales/delivery',
+        name: 'sales-delivery',
+        component: () => import('@/views/sales/DeliveryManagementView.vue'),
+        meta: { title: '发货管理' },
+      },
+      {
+        path: 'sales/delivery/new',
+        name: 'sales-delivery-new',
+        component: () => import('@/views/sales/DeliveryCreateView.vue'),
+        meta: { title: '新增发货单', listPath: '/sales/delivery' },
+      },
+      {
+        path: 'sales/delivery/:id/edit',
+        name: 'sales-delivery-edit',
+        component: () => import('@/views/sales/DeliveryEditView.vue'),
+        meta: { title: '编辑发货单', listPath: '/sales/delivery' },
+      },
+      {
+        path: 'sales/delivery/:id',
+        name: 'sales-delivery-detail',
+        component: () => import('@/views/sales/DeliveryOrderDetailView.vue'),
+        meta: { title: '发货单详情' },
+      },
+      {
+        path: 'sales/customers',
+        redirect: '/basic-config/customers',
+      },
+      {
+        path: 'contracts',
+        name: 'sales-contracts',
+        component: () => import('@/views/sales/SalesContractView.vue'),
+        meta: { title: '合同台账' },
+      },
+      {
+        path: 'contracts/changes',
+        name: 'sales-contract-changes',
+        component: () => import('@/views/sales/SalesContractChangeView.vue'),
+        meta: { title: '合同变更' },
+      },
+      {
+        path: 'contracts/changes/:id/edit',
+        name: 'sales-contract-change-edit',
+        component: () => import('@/views/sales/SalesContractChangeEditView.vue'),
+        meta: { title: '编辑合同变更', listPath: '/contracts/changes' },
+      },
+      {
+        path: 'contracts/changes/:id/approve',
+        name: 'sales-contract-change-approve',
+        component: () => import('@/views/sales/SalesContractChangeApproveView.vue'),
+        meta: { title: '审核合同变更', listPath: '/contracts/changes' },
+      },
+      {
+        path: 'contracts/changes/:id',
+        name: 'sales-contract-change-detail',
+        component: () => import('@/views/sales/SalesContractChangeDetailView.vue'),
+        meta: { title: '变更单详情', listPath: '/contracts/changes' },
+      },
+      {
+        path: 'contracts/:id/approve',
+        name: 'sales-contracts-approve',
+        component: () => import('@/views/sales/SalesContractApproveView.vue'),
+        meta: { title: '审核合同', listPath: '/contracts' },
+      },
+      {
+        path: 'contracts/:id',
+        name: 'sales-contract-detail',
+        component: () => import('@/views/sales/SalesContractDetailView.vue'),
+        meta: { title: '合同详情', listPath: '/contracts' },
+      },
+      { path: 'sales/contracts', redirect: '/contracts' },
+      {
+        path: 'sales/contracts/:id/approve',
+        redirect: (to) => `/contracts/${to.params.id}/approve`,
+      },
+      { path: 'sales/contracts/:id', redirect: (to) => `/contracts/${to.params.id}` },
+      { path: 'sales/contract-changes', redirect: '/contracts/changes' },
+      { path: 'sales/contract-changes/new', redirect: '/contracts/changes/new' },
+      {
+        path: 'sales/contract-changes/:id/edit',
+        redirect: (to) => `/contracts/changes/${to.params.id}/edit`,
+      },
+      {
+        path: 'sales/contract-changes/:id/approve',
+        redirect: (to) => `/contracts/changes/${to.params.id}/approve`,
+      },
+      {
+        path: 'sales/contract-changes/:id',
+        redirect: (to) => `/contracts/changes/${to.params.id}`,
+      },
+      {
+        path: 'sales/payments',
+        redirect: '/settlement/payments',
+      },
+      {
+        path: 'sales/customer-ledger',
+        redirect: '/settlement/customer-ledger',
+      },
+      {
+        path: 'sales/framework-contracts',
+        redirect: '/contracts',
+      },
+      {
+        path: 'planning/production-plan',
+        name: 'planning-production-plan',
+        component: () => import('@/views/planning/ProductionPlanView.vue'),
+        meta: { title: '生产计划' },
+      },
+      {
+        path: 'planning/kit-supply',
+        redirect: '/production/kit-supply',
+      },
+      {
+        path: 'planning/design-task',
+        name: 'planning-design-task',
+        component: () => import('@/views/planning/DesignTaskView.vue'),
+        meta: { title: '设计任务' },
+      },
+      {
+        path: 'planning/replenish-center',
+        name: 'planning-replenish-center',
+        component: () => import('@/views/planning/ReplenishCenterView.vue'),
+        meta: { title: '库存预警' },
+      },
+      {
+        path: 'planning/replenish-ledger',
+        name: 'planning-replenish-ledger',
+        component: () => import('@/views/planning/ReplenishLedgerView.vue'),
+        meta: { title: '补货台账' },
+      },
+      {
+        path: 'planning/design-task/:id/detail',
+        name: 'planning-design-task-detail',
+        component: () => import('@/views/planning/DesignTaskDetailView.vue'),
+        meta: { title: '设计任务详情' },
+      },
+      {
+        path: 'planning/design-task/:taskId/ebom',
+        name: 'planning-ebom-design',
+        component: () => import('@/views/planning/EbomDesignView.vue'),
+        meta: { title: 'EBOM设计' },
+      },
+      {
+        path: 'production/work-orders',
+        name: 'production-work-orders',
+        component: () => import('@/views/production/WorkOrderManagementView.vue'),
+        meta: { title: '生产工单' },
+      },
+      {
+        path: 'production/assembly-work-orders',
+        name: 'production-assembly-work-orders',
+        component: () => import('@/views/production/AssemblyWorkOrderManagementView.vue'),
+        meta: { title: '总装工单' },
+      },
+      {
+        path: 'production/disassembly-work-orders',
+        name: 'production-disassembly-work-orders',
+        component: () => import('@/views/production/DisassemblyWorkOrderManagementView.vue'),
+        meta: { title: '拆解工单' },
+      },
+      {
+        path: 'production/disassembly-work-orders/:id',
+        name: 'production-disassembly-work-order-detail',
+        component: () => import('@/views/production/DisassemblyWorkOrderDetailView.vue'),
+        meta: { title: '拆解工单详情' },
+      },
+      {
+        path: 'production/qc-work-orders',
+        name: 'production-qc-work-orders',
+        component: () => import('@/views/production/QcWorkOrderManagementView.vue'),
+        meta: { title: '质检工单' },
+      },
+      {
+        path: 'production/rework-orders',
+        name: 'production-rework-orders',
+        component: () => import('@/views/production/ReworkOrderView.vue'),
+        meta: { title: '返工管理' },
+      },
+      {
+        path: 'production/rework-orders/:id',
+        name: 'production-rework-orders-detail',
+        component: () => import('@/views/production/ReworkOrderDetailView.vue'),
+        meta: { title: '返工单详情', listPath: '/production/rework-orders' },
+      },
+      {
+        path: 'production/material-requisition',
+        name: 'production-material-requisition',
+        component: () => import('@/views/production/MaterialRequisitionManagementView.vue'),
+        meta: { title: '领料管理' },
+      },
+      {
+        path: 'production/material-requisition/create',
+        name: 'production-material-requisition-create',
+        component: () => import('@/views/production/MaterialRequisitionCreateView.vue'),
+        meta: { title: '申请领料', listPath: '/production/material-requisition' },
+      },
+      {
+        path: 'production/material-requisition/:id',
+        name: 'production-material-requisition-detail',
+        component: () => import('@/views/production/MaterialRequisitionDetailView.vue'),
+        meta: { title: '领料申请详情', listPath: '/production/material-requisition' },
+      },
+      {
+        path: 'production/finished-inbound',
+        name: 'production-finished-inbound',
+        component: () => import('@/views/production/FinishedInboundManagementView.vue'),
+        meta: { title: '成品入库' },
+      },
+      {
+        path: 'production/finished-inbound/create',
+        name: 'production-finished-inbound-create',
+        component: () => import('@/views/production/FinishedInboundCreateView.vue'),
+        meta: { title: '申请成品入库', listPath: '/production/finished-inbound' },
+      },
+      {
+        path: 'production/finished-inbound/:id',
+        name: 'production-finished-inbound-detail',
+        component: () => import('@/views/production/FinishedInboundDetailView.vue'),
+        meta: { title: '成品入库申请详情', listPath: '/production/finished-inbound' },
+      },
+      {
+        path: 'production/arrival-tracking',
+        name: 'production-arrival-tracking',
+        component: () => import('@/views/production/ArrivalTrackingView.vue'),
+        meta: { title: '到货跟踪' },
+      },
+      {
+        path: 'production/kit-supply',
+        name: 'production-kit-supply',
+        component: () => import('@/views/planning/KitSupplyProgressView.vue'),
+        meta: { title: '齐套与供应进度' },
+      },
+      {
+        path: 'production/kit-supply/shortage/:rowId',
+        name: 'production-kit-supply-shortage',
+        component: () => import('@/views/planning/KitSupplyShortageDetailView.vue'),
+        meta: { title: '齐套缺件明细', listPath: '/production/kit-supply' },
+      },
+      {
+        path: 'production/demand-calculation',
+        name: 'production-demand-calculation',
+        component: () => import('@/views/production/DemandCalculationView.vue'),
+        meta: { title: '需求计算' },
+      },
+      {
+        path: 'report-management/report-work',
+        name: 'report-management-report-work',
+        component: () => import('@/views/production/ReportWorkManagementView.vue'),
+        meta: { title: '报工确认' },
+      },
+      {
+        path: 'report-management/report-work/:id',
+        name: 'report-management-report-work-detail',
+        component: () => import('@/views/production/ReportWorkDetailView.vue'),
+        meta: { title: '登记详情' },
+      },
+      {
+        path: 'report-management/process-report',
+        name: 'report-management-process-report',
+        component: () => import('@/views/production/ProcessReportManagementView.vue'),
+        meta: { title: '工序报工' },
+      },
+      {
+        path: 'report-management/process-report/wo/:workOrderId',
+        name: 'report-management-process-report-wo-detail',
+        component: () => import('@/views/production/ProcessReportWorkOrderDetailView.vue'),
+        meta: { title: '任务报工详情' },
+      },
+      {
+        path: 'report-management/process-report/:id',
+        name: 'report-management-process-report-detail',
+        component: () => import('@/views/production/ProcessReportDetailView.vue'),
+        meta: { title: '工序报工详情' },
+      },
+      {
+        path: 'report-management/salary-summary',
+        name: 'report-management-salary-summary',
+        component: () => import('@/views/labor-salary/SalarySummaryView.vue'),
+        meta: { title: '工资核算' },
+      },
+      {
+        path: 'report-management/salary-detail',
+        name: 'report-management-salary-detail',
+        component: () => import('@/views/labor-salary/SalaryDetailView.vue'),
+        meta: { title: '核算详情' },
+      },
+      { path: 'report-management', redirect: '/report-management/report-work' },
+      { path: 'production/report-work', redirect: '/report-management/report-work' },
+      {
+        path: 'production/report-work/:id',
+        redirect: (to) => `/report-management/report-work/${to.params.id}`,
+      },
+      { path: 'production/process-report', redirect: '/report-management/process-report' },
+      {
+        path: 'production/process-report/wo/:workOrderId',
+        redirect: (to) => `/report-management/process-report/wo/${to.params.workOrderId}`,
+      },
+      {
+        path: 'production/process-report/:id',
+        redirect: (to) => `/report-management/process-report/${to.params.id}`,
+      },
+      {
+        path: 'labor-salary/labor-hour',
+        name: 'labor-salary-labor-hour',
+        component: () => import('@/views/labor-salary/LaborHourManagementView.vue'),
+        meta: { title: '工时管理' },
+      },
+      {
+        path: 'labor-salary/labor-hour/:id',
+        name: 'labor-salary-labor-hour-detail',
+        component: () => import('@/views/labor-salary/LaborHourDetailView.vue'),
+        meta: { title: '工时详情' },
+      },
+      { path: 'labor-salary/salary-summary', redirect: '/report-management/salary-summary' },
+      { path: 'labor-salary/salary-detail', redirect: '/report-management/salary-detail' },
+      { path: 'labor-salary/salary-stats', redirect: '/report-management/salary-summary' },
+      { path: 'production/shop-floor', redirect: '/production/qc-work-orders' },
+      {
+        path: 'inventory/stock-detail',
+        name: 'inventory-stock-detail',
+        component: () => import('@/views/inventory/InventoryDetailView.vue'),
+        meta: { title: '库存明细' },
+      },
+      {
+        path: 'inventory/stock',
+        redirect: '/inventory/stock-detail',
+      },
+      {
+        path: 'inventory/outbound',
+        name: 'inventory-outbound',
+        component: () => import('@/views/inventory/OutboundManagementView.vue'),
+        meta: { title: '出库管理' },
+      },
+      {
+        path: 'inventory/pending-outbound',
+        name: 'inventory-pending-outbound',
+        component: () => import('@/views/inventory/PendingOutboundListView.vue'),
+        meta: { title: '待出库列表' },
+      },
+      {
+        path: 'inventory/outbound/:id/edit',
+        name: 'inventory-outbound-edit',
+        component: () => import('@/views/inventory/OutboundOrderEditView.vue'),
+        meta: { title: '编辑出库单', listPath: '/inventory/outbound' },
+      },
+      {
+        path: 'inventory/outbound/:id',
+        name: 'inventory-outbound-detail',
+        component: () => import('@/views/inventory/OutboundOrderDetailView.vue'),
+        meta: { title: '出库单详情' },
+      },
+      { path: 'inventory/sales-outbound', redirect: '/inventory/outbound' },
+      {
+        path: 'inventory/inbound',
+        name: 'inventory-inbound',
+        component: () => import('@/views/inventory/InboundManagementView.vue'),
+        meta: { title: '入库管理' },
+      },
+      {
+        path: 'inventory/pending-inbound',
+        name: 'inventory-pending-inbound',
+        component: () => import('@/views/inventory/PendingInboundListView.vue'),
+        meta: { title: '待入库列表' },
+      },
+      {
+        path: 'inventory/inbound/:id/edit',
+        name: 'inventory-inbound-edit',
+        component: () => import('@/views/inventory/InboundOrderEditView.vue'),
+        meta: { title: '编辑入库单', listPath: '/inventory/inbound' },
+      },
+      {
+        path: 'inventory/inbound/:id',
+        name: 'inventory-inbound-detail',
+        component: () => import('@/views/inventory/InboundOrderDetailView.vue'),
+        meta: { title: '入库单详情' },
+      },
+      {
+        path: 'inventory/transfer',
+        name: 'inventory-transfer',
+        component: () => import('@/views/inventory/TransferManagementView.vue'),
+        meta: { title: '调拨管理' },
+      },
+      {
+        path: 'inventory/transfer/new',
+        name: 'inventory-transfer-new',
+        component: () => import('@/views/inventory/TransferOrderCreateView.vue'),
+        meta: { title: '新增调拨单', listPath: '/inventory/transfer' },
+      },
+      {
+        path: 'inventory/transfer/:id/edit',
+        name: 'inventory-transfer-edit',
+        component: () => import('@/views/inventory/TransferOrderEditView.vue'),
+        meta: { title: '编辑调拨单', listPath: '/inventory/transfer' },
+      },
+      {
+        path: 'inventory/transfer/:id',
+        name: 'inventory-transfer-detail',
+        component: () => import('@/views/inventory/TransferOrderDetailView.vue'),
+        meta: { title: '调拨单详情' },
+      },
+      {
+        path: 'inventory/stocktake',
+        name: 'inventory-stocktake',
+        component: () => import('@/views/inventory/StocktakeManagementView.vue'),
+        meta: { title: '盘点管理' },
+      },
+      {
+        path: 'inventory/stocktake/new',
+        name: 'inventory-stocktake-new',
+        component: () => import('@/views/inventory/StocktakeOrderCreateView.vue'),
+        meta: { title: '新增盘点单', listPath: '/inventory/stocktake' },
+      },
+      {
+        path: 'inventory/stocktake/:id/edit',
+        name: 'inventory-stocktake-edit',
+        component: () => import('@/views/inventory/StocktakeOrderEditView.vue'),
+        meta: { title: '编辑盘点单', listPath: '/inventory/stocktake' },
+      },
+      {
+        path: 'inventory/stocktake/:id',
+        name: 'inventory-stocktake-detail',
+        component: () => import('@/views/inventory/StocktakeOrderDetailView.vue'),
+        meta: { title: '盘点单详情' },
+      },
+      {
+        path: 'inventory/outbound-details',
+        name: 'inventory-outbound-details',
+        component: () => import('@/views/inventory/IoCompletedDetailListView.vue'),
+        meta: { title: '出库详情', ioKind: 'outbound' },
+      },
+      {
+        path: 'inventory/inbound-details',
+        name: 'inventory-inbound-details',
+        component: () => import('@/views/inventory/IoCompletedDetailListView.vue'),
+        meta: { title: '入库详情', ioKind: 'inbound' },
+      },
+      {
+        path: 'inventory/in-out-detail',
+        redirect: '/inventory/outbound-details',
+      },
+      { path: 'inventory/in-out', redirect: '/inventory/outbound-details' },
+      {
+        path: 'inventory/ship-attachment-query',
+        name: 'inventory-ship-attachment-query',
+        component: () => import('@/views/inventory/ShipAttachmentQueryView.vue'),
+        meta: { title: '随货配件查询' },
+      },
+      {
+        path: 'inventory/deduct-records',
+        name: 'inventory-deduct-records',
+        component: () => import('@/views/inventory/InventoryDeductRecordView.vue'),
+        meta: { title: '库存扣减记录' },
+      },
+      {
+        path: 'inventory/deduct-records/:id/edit',
+        name: 'inventory-deduct-record-edit',
+        component: () => import('@/views/inventory/InventoryDeductEditView.vue'),
+        meta: { title: '编辑扣减记录', listPath: '/inventory/deduct-records' },
+      },
+      {
+        path: 'inventory/deduct-records/:id',
+        name: 'inventory-deduct-record-detail',
+        component: () => import('@/views/inventory/InventoryDeductDetailView.vue'),
+        meta: { title: '扣减记录详情', listPath: '/inventory/deduct-records' },
+      },
+      {
+        path: 'inventory/cut-settle',
+        name: 'inventory-cut-settle',
+        component: () => import('@/views/inventory/CutSettleRecordView.vue'),
+        meta: { title: '下料结算' },
+      },
+      {
+        path: 'inventory/cut-settle/:id',
+        name: 'inventory-cut-settle-detail',
+        component: () => import('@/views/inventory/CutSettleDetailView.vue'),
+        meta: { title: '下料结算详情', listPath: '/inventory/cut-settle' },
+      },
+      {
+        path: 'quality/incoming-qc',
+        name: 'quality-incoming-qc',
+        component: () => import('@/views/quality/QcTaskListView.vue'),
+        meta: { title: '来料质检', bizScope: '来料质检' },
+      },
+      {
+        path: 'quality/incoming-qc/:id/inspect',
+        name: 'quality-incoming-qc-inspect',
+        component: () => import('@/views/quality/QcTaskInspectView.vue'),
+        meta: {
+          title: '录入质检结果',
+          listPath: '/quality/incoming-qc',
+          bizScope: '来料质检',
+        },
+      },
+      {
+        path: 'quality/incoming-qc/:id',
+        name: 'quality-incoming-qc-detail',
+        component: () => import('@/views/quality/QcTaskDetailView.vue'),
+        meta: {
+          title: '来料质检详情',
+          listPath: '/quality/incoming-qc',
+          bizScope: '来料质检',
+        },
+      },
+      {
+        path: 'quality/outsourcing-qc',
+        name: 'quality-outsourcing-qc',
+        component: () => import('@/views/quality/QcTaskListView.vue'),
+        meta: { title: '外协回货检', bizScope: '外协回货检' },
+      },
+      {
+        path: 'quality/outsourcing-qc/:id/inspect',
+        name: 'quality-outsourcing-qc-inspect',
+        component: () => import('@/views/quality/QcTaskInspectView.vue'),
+        meta: {
+          title: '录入质检结果',
+          listPath: '/quality/outsourcing-qc',
+          bizScope: '外协回货检',
+        },
+      },
+      {
+        path: 'quality/outsourcing-qc/:id',
+        name: 'quality-outsourcing-qc-detail',
+        component: () => import('@/views/quality/QcTaskDetailView.vue'),
+        meta: {
+          title: '外协回货检详情',
+          listPath: '/quality/outsourcing-qc',
+          bizScope: '外协回货检',
+        },
+      },
+      {
+        path: 'quality/process-qc',
+        name: 'quality-process-qc',
+        component: () => import('@/views/quality/QcTaskListView.vue'),
+        meta: { title: '生产过程检', bizScope: '生产过程检' },
+      },
+      {
+        path: 'quality/process-qc/:id/inspect',
+        name: 'quality-process-qc-inspect',
+        component: () => import('@/views/quality/QcTaskInspectView.vue'),
+        meta: {
+          title: '录入质检结果',
+          listPath: '/quality/process-qc',
+          bizScope: '生产过程检',
+        },
+      },
+      {
+        path: 'quality/process-qc/:id',
+        name: 'quality-process-qc-detail',
+        component: () => import('@/views/quality/QcTaskDetailView.vue'),
+        meta: {
+          title: '生产过程检详情',
+          listPath: '/quality/process-qc',
+          bizScope: '生产过程检',
+        },
+      },
+      {
+        path: 'quality/finished-qc',
+        name: 'quality-finished-qc',
+        component: () => import('@/views/quality/QcTaskListView.vue'),
+        meta: { title: '成品检', bizScope: '成品检' },
+      },
+      {
+        path: 'quality/finished-qc/:id/inspect',
+        name: 'quality-finished-qc-inspect',
+        component: () => import('@/views/quality/QcTaskInspectView.vue'),
+        meta: {
+          title: '录入质检结果',
+          listPath: '/quality/finished-qc',
+          bizScope: '成品检',
+        },
+      },
+      {
+        path: 'quality/finished-qc/:id',
+        name: 'quality-finished-qc-detail',
+        component: () => import('@/views/quality/QcTaskDetailView.vue'),
+        meta: {
+          title: '成品检详情',
+          listPath: '/quality/finished-qc',
+          bizScope: '成品检',
+        },
+      },
+      {
+        path: 'quality/factory-qc',
+        name: 'quality-factory-qc',
+        component: () => import('@/views/quality/FactoryQcView.vue'),
+        meta: { title: '出厂质检', bizScope: '出厂质检' },
+      },
+      {
+        path: 'quality/factory-qc/:id/inspect',
+        name: 'quality-factory-qc-inspect',
+        component: () => import('@/views/quality/QcTaskInspectView.vue'),
+        meta: {
+          title: '录入质检结果',
+          listPath: '/quality/factory-qc',
+          bizScope: '出厂质检',
+        },
+      },
+      {
+        path: 'quality/factory-qc/:id',
+        name: 'quality-factory-qc-detail',
+        component: () => import('@/views/quality/FactoryQcDetailView.vue'),
+        meta: { title: '出厂质检详情', listPath: '/quality/factory-qc', bizScope: '出厂质检' },
+      },
+      { path: 'quality/inspection', redirect: '/quality/factory-qc' },
+      { path: 'quality/defect', redirect: '/quality/scrap-orders' },
+      {
+        path: 'quality/scrap-orders',
+        name: 'quality-scrap-orders',
+        component: () => import('@/views/quality/ScrapManagementView.vue'),
+        meta: { title: '报废品管理' },
+      },
+      {
+        path: 'quality/scrap-orders/:id',
+        name: 'quality-scrap-order-detail',
+        component: () => import('@/views/quality/ScrapOrderDetailView.vue'),
+        meta: { title: '报废品详情' },
+      },
+      {
+        path: 'quality/qc-field-library',
+        name: 'quality-qc-field-library',
+        component: () => import('@/views/quality/QcFieldLibraryView.vue'),
+        meta: { title: '检验项库' },
+      },
+      {
+        path: 'quality/qc-template',
+        name: 'quality-qc-template',
+        component: () => import('@/views/quality/QcTemplateView.vue'),
+        meta: { title: '质检模板' },
+      },
+      {
+        path: 'quality/qc-template/:id',
+        name: 'quality-qc-template-detail',
+        component: () => import('@/views/quality/QcTemplateDetailView.vue'),
+        meta: { title: '质检模板详情', listPath: '/quality/qc-template' },
+      },
+      {
+        path: 'procurement/purchase-req',
+        name: 'procurement-purchase-req',
+        component: () => import('@/views/procurement/PurchaseRequisitionView.vue'),
+        meta: { title: '采购申请' },
+      },
+      {
+        path: 'procurement/purchase-req/generate-po',
+        name: 'procurement-purchase-req-generate-po',
+        component: () => import('@/views/procurement/GeneratePurchaseOrderView.vue'),
+        meta: { title: '生成采购订单', listPath: '/procurement/purchase-req' },
+      },
+      {
+        path: 'procurement/purchase-req/:id/edit',
+        name: 'procurement-purchase-req-edit',
+        component: () => import('@/views/procurement/PurchaseRequisitionEditView.vue'),
+        meta: { title: '编辑采购申请', listPath: '/procurement/purchase-req' },
+      },
+      {
+        path: 'procurement/purchase-req/:id',
+        name: 'procurement-purchase-req-detail',
+        component: () => import('@/views/procurement/PurchaseRequisitionDetailView.vue'),
+        meta: { title: '采购申请详情' },
+      },
+      {
+        path: 'procurement/purchase-orders',
+        name: 'procurement-purchase-orders',
+        component: () => import('@/views/procurement/PurchaseOrderView.vue'),
+        meta: { title: '采购订单' },
+      },
+      {
+        path: 'procurement/purchase-orders/:id/edit',
+        name: 'procurement-purchase-orders-edit',
+        component: () => import('@/views/procurement/PurchaseOrderEditView.vue'),
+        meta: { title: '编辑采购单', listPath: '/procurement/purchase-orders' },
+      },
+      {
+        path: 'procurement/purchase-orders/:id/approve',
+        name: 'procurement-purchase-orders-approve',
+        component: () => import('@/views/procurement/PurchaseOrderApproveView.vue'),
+        meta: { title: '审核采购单', listPath: '/procurement/purchase-orders' },
+      },
+      {
+        path: 'procurement/purchase-orders/:id',
+        name: 'procurement-purchase-orders-detail',
+        component: () => import('@/views/procurement/PurchaseOrderDetailView.vue'),
+        meta: { title: '采购订单详情' },
+      },
+      {
+        path: 'procurement/purchase-receipts',
+        name: 'procurement-purchase-receipts',
+        component: () => import('@/views/procurement/PurchaseReceiptView.vue'),
+        meta: { title: '采购收货' },
+      },
+      {
+        path: 'procurement/purchase-receipts/:id',
+        name: 'procurement-purchase-receipts-detail',
+        component: () => import('@/views/procurement/PurchaseReceiptDetailView.vue'),
+        meta: { title: '采购收货详情' },
+      },
+      {
+        path: 'settlement/payments',
+        name: 'settlement-payments',
+        component: () => import('@/views/sales/SalesPaymentView.vue'),
+        meta: { title: '回款管理' },
+      },
+      {
+        path: 'settlement/customer-ledger',
+        name: 'settlement-customer-ledger',
+        component: () => import('@/views/sales/CustomerLedgerView.vue'),
+        meta: { title: '客户往来' },
+      },
+      {
+        path: 'settlement/purchase-settles',
+        name: 'settlement-purchase-settles',
+        component: () => import('@/views/procurement/PurchaseSettleView.vue'),
+        meta: { title: '采购对账' },
+      },
+      {
+        path: 'settlement/purchase-settles/:id',
+        name: 'settlement-purchase-settles-detail',
+        component: () => import('@/views/procurement/PurchaseSettleDetailView.vue'),
+        meta: { title: '采购对账详情', listPath: '/settlement/purchase-settles' },
+      },
+      {
+        path: 'settlement/dispute-accruals',
+        name: 'settlement-dispute-accruals',
+        component: () => import('@/views/settlement/DisputeAccrualView.vue'),
+        meta: { title: '争议挂账' },
+      },
+      {
+        path: 'settlement/supplier-ledger',
+        name: 'settlement-supplier-ledger',
+        component: () => import('@/views/settlement/SupplierLedgerView.vue'),
+        meta: { title: '供应商往来' },
+      },
+      {
+        path: 'settlement/ticket-fund-flow',
+        name: 'settlement-ticket-fund-flow',
+        component: () => import('@/views/settlement/TicketFundFlowView.vue'),
+        meta: { title: '票款流水' },
+      },
+      {
+        path: 'settlement/settle-rules',
+        name: 'settlement-settle-rules',
+        component: () => import('@/views/procurement/PurchaseSettleRuleView.vue'),
+        meta: { title: '结算规则' },
+      },
+      {
+        path: 'procurement/purchase-settles',
+        redirect: '/settlement/purchase-settles',
+      },
+      {
+        path: 'procurement/purchase-settles/:id',
+        redirect: (to) => `/settlement/purchase-settles/${to.params.id}`,
+      },
+      {
+        path: 'basic-config/settle-rules',
+        redirect: '/settlement/settle-rules',
+      },
+      {
+        path: 'procurement/purchase-settle-rules',
+        redirect: '/settlement/settle-rules',
+      },
+      {
+        path: 'procurement/purchase-returns',
+        name: 'procurement-purchase-returns',
+        component: () => import('@/views/procurement/PurchaseReturnView.vue'),
+        meta: { title: '采购退货' },
+      },
+      {
+        path: 'procurement/purchase-returns/:id/edit',
+        name: 'procurement-purchase-returns-edit',
+        component: () => import('@/views/procurement/PurchaseReturnEditView.vue'),
+        meta: { title: '编辑采购退货单', listPath: '/procurement/purchase-returns' },
+      },
+      {
+        path: 'procurement/purchase-returns/:id',
+        name: 'procurement-purchase-returns-detail',
+        component: () => import('@/views/procurement/PurchaseReturnDetailView.vue'),
+        meta: { title: '采购退货详情' },
+      },
+      {
+        path: 'procurement/outsourcing-orders',
+        name: 'procurement-outsourcing-orders',
+        component: () => import('@/views/procurement/OutsourcingOrderView.vue'),
+        meta: { title: '外协订单' },
+      },
+      {
+        path: 'procurement/outsourcing-orders/:id/edit',
+        name: 'procurement-outsourcing-orders-edit',
+        component: () => import('@/views/procurement/OutsourcingOrderEditView.vue'),
+        meta: { title: '编辑外协订单', listPath: '/procurement/outsourcing-orders' },
+      },
+      {
+        path: 'procurement/outsourcing-orders/:id/approve',
+        name: 'procurement-outsourcing-orders-approve',
+        component: () => import('@/views/procurement/OutsourcingOrderApproveView.vue'),
+        meta: { title: '审核外协订单', listPath: '/procurement/outsourcing-orders' },
+      },
+      {
+        path: 'procurement/outsourcing-orders/:id',
+        name: 'procurement-outsourcing-orders-detail',
+        component: () => import('@/views/procurement/OutsourcingOrderDetailView.vue'),
+        meta: { title: '外协订单详情' },
+      },
+      {
+        path: 'procurement/outsourcing-issue',
+        name: 'procurement-outsourcing-issue',
+        component: () => import('@/views/procurement/OutsourcingIssueManagementView.vue'),
+        meta: { title: '发料管理' },
+      },
+      {
+        path: 'procurement/outsourcing-issue/:id',
+        name: 'procurement-outsourcing-issue-detail',
+        component: () => import('@/views/procurement/OutsourcingIssueDetailView.vue'),
+        meta: { title: '发料申请详情', listPath: '/procurement/outsourcing-issue' },
+      },
+      {
+        path: 'procurement/outsourcing-receipts',
+        name: 'procurement-outsourcing-receipts',
+        component: () => import('@/views/procurement/OutsourcingReceiptView.vue'),
+        meta: { title: '外协收货' },
+      },
+      {
+        path: 'procurement/outsourcing-receipts/:id',
+        name: 'procurement-outsourcing-receipts-detail',
+        component: () => import('@/views/procurement/OutsourcingReceiptDetailView.vue'),
+        meta: { title: '外协收货详情' },
+      },
+      {
+        path: 'procurement/outsourcing-returns',
+        name: 'procurement-outsourcing-returns',
+        component: () => import('@/views/procurement/OutsourcingReturnView.vue'),
+        meta: { title: '外协异常处理' },
+      },
+      {
+        path: 'procurement/outsourcing-returns/:id/edit',
+        name: 'procurement-outsourcing-returns-edit',
+        component: () => import('@/views/procurement/OutsourcingReturnEditView.vue'),
+        meta: { title: '编辑外协异常处理单', listPath: '/procurement/outsourcing-returns' },
+      },
+      {
+        path: 'procurement/outsourcing-returns/:id',
+        name: 'procurement-outsourcing-returns-detail',
+        component: () => import('@/views/procurement/OutsourcingReturnDetailView.vue'),
+        meta: { title: '外协异常处理详情' },
+      },
+      {
+        path: 'procurement/outsourcing-details',
+        name: 'procurement-outsourcing-details',
+        component: () => import('@/views/procurement/OutsourcingDetailView.vue'),
+        meta: { title: '外协明细' },
+      },
+      {
+        path: 'procurement/purchase-details',
+        name: 'procurement-purchase-details',
+        component: () => import('@/views/procurement/PurchaseDetailView.vue'),
+        meta: { title: '采购明细' },
+      },
+      {
+        path: 'procurement/suppliers',
+        redirect: '/procurement/purchase-details',
+      },
+      {
+        path: 'engineering-change',
+        redirect: '/engineering-change/ecn-list',
+      },
+      {
+        path: 'engineering-change/ecn-list',
+        name: 'engineering-change-ecn-list',
+        component: () => import('@/views/engineering-change/EcnListView.vue'),
+        meta: { title: 'ECN列表', changeModule: 'ecn' },
+      },
+      {
+        path: 'engineering-change/ecn/new',
+        name: 'engineering-change-ecn-new',
+        component: () => import('@/views/engineering-change/EcnCreateView.vue'),
+        meta: { title: '提交工程变更申请', changeModule: 'ecn' },
+      },
+      {
+        path: 'engineering-change/ecn/:id/approve',
+        name: 'engineering-change-ecn-approve',
+        component: () => import('@/views/engineering-change/EcnApproveView.vue'),
+        meta: { title: '审批工程变更', changeModule: 'ecn' },
+      },
+      {
+        path: 'engineering-change/ecn/:id/execute',
+        name: 'engineering-change-ecn-execute',
+        component: () => import('@/views/engineering-change/EcnExecuteView.vue'),
+        meta: { title: '执行工程变更', changeModule: 'ecn' },
+      },
+      {
+        path: 'engineering-change/ecn/:id/detail',
+        name: 'engineering-change-ecn-detail',
+        component: () => import('@/views/engineering-change/EcnDetailView.vue'),
+        meta: { title: 'ECN详情', changeModule: 'ecn' },
+      },
+      {
+        path: 'engineering-change/ecn/:id/plan-impact',
+        name: 'engineering-change-ecn-plan-impact',
+        component: () => import('@/views/engineering-change/EcnPlanImpactView.vue'),
+        meta: { title: '计划影响与重排', changeModule: 'ecn' },
+      },
+      {
+        path: 'engineering-change/ecr-request',
+        name: 'engineering-change-ecr-request',
+        component: () => import('@/views/engineering-change/EcnListView.vue'),
+        meta: { title: 'ECR申请', changeModule: 'ecr' },
+      },
+      {
+        path: 'engineering-change/ecr/new',
+        name: 'engineering-change-ecr-new',
+        component: () => import('@/views/engineering-change/EcnCreateView.vue'),
+        meta: { title: '提交工程变更申请', changeModule: 'ecr' },
+      },
+      {
+        path: 'engineering-change/ecr/:id/approve',
+        name: 'engineering-change-ecr-approve',
+        component: () => import('@/views/engineering-change/EcnApproveView.vue'),
+        meta: { title: '审批工程变更', changeModule: 'ecr' },
+      },
+      {
+        path: 'engineering-change/ecr/:id/execute',
+        name: 'engineering-change-ecr-execute',
+        component: () => import('@/views/engineering-change/EcnExecuteView.vue'),
+        meta: { title: '执行工程变更', changeModule: 'ecr' },
+      },
+      {
+        path: 'engineering-change/ecr/:id/detail',
+        name: 'engineering-change-ecr-detail',
+        component: () => import('@/views/engineering-change/EcnDetailView.vue'),
+        meta: { title: 'ECR详情', changeModule: 'ecr' },
+      },
+      {
+        path: 'engineering-change/ecr/:id/plan-impact',
+        name: 'engineering-change-ecr-plan-impact',
+        component: () => import('@/views/engineering-change/EcnPlanImpactView.vue'),
+        meta: { title: '计划影响与重排', changeModule: 'ecr' },
+      },
+      {
+        path: 'engineering-change/ecr-change',
+        ...emptyChild('engineering-change-ecr-change', 'ECR变更'),
+      },
+      {
+        path: 'after-sales/service-orders',
+        ...emptyChild('after-sales-service-orders', '服务工单'),
+      },
+      { path: 'after-sales/returns', ...emptyChild('after-sales-returns', '退换货') },
+      {
+        path: 'board/catalog',
+        name: 'board-catalog',
+        component: () => import('@/views/board/BoardCatalogView.vue'),
+        meta: { title: '看板列表' },
+      },
+      {
+        path: 'board/carousel',
+        name: 'board-carousel',
+        component: () => import('@/views/board/BoardCarouselListView.vue'),
+        meta: { title: '轮播管理' },
+      },
+      {
+        path: 'board/work-order-monitor',
+        name: 'board-work-order-monitor',
+        component: () => import('@/views/board/WorkOrderMonitorView.vue'),
+        meta: { title: '工单监管看板' },
+      },
+      {
+        path: 'board/kit-supply',
+        name: 'board-kit-supply',
+        component: () => import('@/views/board/KitSupplyBoardView.vue'),
+        meta: { title: '齐套与供应看板' },
+      },
+      { path: 'wms/warehouse', ...emptyChild('wms-warehouse', '仓储管理') },
+      { path: 'qms/trace', ...emptyChild('qms-trace', '质量追溯') },
+      {
+        path: 'equipment/devices',
+        name: 'equipment-devices',
+        component: () => import('@/views/equipment/EquipmentDeviceView.vue'),
+        meta: { title: '设备台账' },
+      },
+      {
+        path: 'equipment/inspection-standards',
+        name: 'equipment-inspection-standards',
+        component: () => import('@/views/equipment/EquipmentInspectionStandardView.vue'),
+        meta: { title: '点检标准' },
+      },
+      {
+        path: 'equipment/inspection-tasks',
+        name: 'equipment-inspection-tasks',
+        component: () => import('@/views/equipment/EquipmentInspectionTaskView.vue'),
+        meta: { title: '点检任务' },
+      },
+      {
+        path: 'equipment/maintain-orders',
+        name: 'equipment-maintain-orders',
+        component: () => import('@/views/equipment/EquipmentMaintainView.vue'),
+        meta: { title: '保养工单' },
+      },
+      {
+        path: 'equipment/repair-orders',
+        name: 'equipment-repair-orders',
+        component: () => import('@/views/equipment/EquipmentRepairView.vue'),
+        meta: { title: '维修工单' },
+      },
+      {
+        path: 'report/overview',
+        name: 'report-overview',
+        component: () => import('@/views/report/ReportCenterView.vue'),
+        meta: { title: '报表目录' },
+      },
+      {
+        path: 'report/sales-order-exec',
+        name: 'report-sales-order-exec',
+        component: () => import('@/views/report/ReportQueryView.vue'),
+        props: { reportKey: 'sales-order-exec' },
+        meta: { title: '销售订单执行表' },
+      },
+      {
+        path: 'report/sales-line-summary',
+        name: 'report-sales-line-summary',
+        component: () => import('@/views/report/ReportQueryView.vue'),
+        props: { reportKey: 'sales-line-summary' },
+        meta: { title: '销售明细汇总表' },
+      },
+      {
+        path: 'report/sales-delivery-achieve',
+        name: 'report-sales-delivery-achieve',
+        component: () => import('@/views/report/ReportQueryView.vue'),
+        props: { reportKey: 'sales-delivery-achieve' },
+        meta: { title: '发货达成表' },
+      },
+      {
+        path: 'report/sales-order-cost',
+        name: 'report-sales-order-cost',
+        component: () => import('@/views/report/ReportQueryView.vue'),
+        props: { reportKey: 'sales-order-cost' },
+        meta: { title: '销售订单成本表' },
+      },
+      {
+        path: 'report/work-order-progress',
+        name: 'report-work-order-progress',
+        component: () => import('@/views/report/ReportQueryView.vue'),
+        props: { reportKey: 'work-order-progress' },
+        meta: { title: '工单进度表' },
+      },
+      {
+        path: 'report/work-order-cost',
+        name: 'report-work-order-cost',
+        component: () => import('@/views/report/ReportQueryView.vue'),
+        props: { reportKey: 'work-order-cost' },
+        meta: { title: '生产工单成本表' },
+      },
+      {
+        path: 'report/purchase-order-exec',
+        name: 'report-purchase-order-exec',
+        component: () => import('@/views/report/ReportQueryView.vue'),
+        props: { reportKey: 'purchase-order-exec' },
+        meta: { title: '采购订单执行表' },
+      },
+      {
+        path: 'report/outsourcing-order-exec',
+        name: 'report-outsourcing-order-exec',
+        component: () => import('@/views/report/ReportQueryView.vue'),
+        props: { reportKey: 'outsourcing-order-exec' },
+        meta: { title: '外协订单执行表' },
+      },
+      {
+        path: 'report/inventory-io-balance',
+        name: 'report-inventory-io-balance',
+        component: () => import('@/views/report/ReportQueryView.vue'),
+        props: { reportKey: 'inventory-io-balance' },
+        meta: { title: '库存收发存表' },
+      },
+      {
+        path: 'report/qc-task-stats',
+        name: 'report-qc-task-stats',
+        component: () => import('@/views/report/ReportQueryView.vue'),
+        props: { reportKey: 'qc-task-stats' },
+        meta: { title: '质检任务统计表' },
+      },
+      {
+        path: 'basic-config/company-profile',
+        name: 'basic-config-company-profile',
+        component: () => import('@/views/basic-config/CompanyProfileView.vue'),
+        meta: { title: '企业信息' },
+      },
+      {
+        path: 'basic-config/employee-groups',
+        name: 'basic-config-employee-groups',
+        component: () => import('@/views/basic-config/EmployeeGroupView.vue'),
+        meta: { title: '员工组别' },
+      },
+      {
+        path: 'basic-config/defect-items',
+        name: 'basic-config-defect-items',
+        component: () => import('@/views/basic-config/DefectItemView.vue'),
+        meta: { title: '不良品项' },
+      },
+      {
+        path: 'basic-config/material-grades',
+        name: 'basic-config-material-grades',
+        component: () => import('@/views/basic-config/MaterialGradeView.vue'),
+        meta: { title: '材质管理' },
+      },
+      {
+        path: 'basic-config/units',
+        name: 'basic-config-units',
+        component: () => import('@/views/basic-config/UnitManagementView.vue'),
+        meta: { title: '单位管理' },
+      },
+      {
+        path: 'basic-config/packaging',
+        name: 'basic-config-packaging',
+        component: () => import('@/views/basic-config/PackagingManagementView.vue'),
+        meta: { title: '包装管理' },
+      },
+      {
+        path: 'basic-config/function-params',
+        redirect: '/system/function-params',
+      },
+      {
+        path: 'basic-config/business-dict',
+        name: 'basic-config-business-dict',
+        component: () => import('@/views/basic-config/BusinessDictView.vue'),
+        meta: { title: '业务字典' },
+      },
+      {
+        path: 'basic-config/warehouse-categories',
+        name: 'basic-config-warehouse-categories',
+        component: () => import('@/views/basic-config/WarehouseCategoryView.vue'),
+        meta: { title: '仓库分类' },
+      },
+      {
+        path: 'basic-config/warehouses',
+        name: 'basic-config-warehouses',
+        component: () => import('@/views/basic-config/WarehouseView.vue'),
+        meta: { title: '仓库列表' },
+      },
+      {
+        path: 'basic-config/warehouse-locations',
+        name: 'basic-config-warehouse-locations',
+        component: () => import('@/views/basic-config/WarehouseLocationView.vue'),
+        meta: { title: '货位管理' },
+      },
+      {
+        path: 'basic-config/warehouses/:id',
+        name: 'basic-config-warehouse-detail',
+        component: () => import('@/views/basic-config/WarehouseDetailView.vue'),
+        meta: { title: '仓库详情' },
+      },
+      {
+        path: 'basic-config/customer-types',
+        name: 'basic-config-customer-types',
+        component: () => import('@/views/basic-config/customers/CustomerTypeView.vue'),
+        meta: { title: '客户类型' },
+      },
+      {
+        path: 'basic-config/customers',
+        name: 'basic-config-customers',
+        component: () => import('@/views/basic-config/customers/CustomerProfileView.vue'),
+        meta: { title: '客户档案' },
+      },
+      {
+        path: 'basic-config/customers/:id/edit',
+        name: 'basic-config-customers-edit',
+        component: () => import('@/views/basic-config/customers/CustomerEditView.vue'),
+        meta: { title: '编辑客户', listPath: '/basic-config/customers' },
+      },
+      {
+        path: 'basic-config/customers/:id',
+        name: 'basic-config-customers-detail',
+        component: () => import('@/views/basic-config/customers/CustomerDetailView.vue'),
+        meta: { title: '客户详情' },
+      },
+      {
+        path: 'basic-config/supplier-categories',
+        name: 'basic-config-supplier-categories',
+        component: () => import('@/views/basic-config/suppliers/SupplierCategoryView.vue'),
+        meta: { title: '供应商分类' },
+      },
+      {
+        path: 'basic-config/suppliers',
+        name: 'basic-config-suppliers',
+        component: () => import('@/views/basic-config/suppliers/SupplierProfileView.vue'),
+        meta: { title: '供应商档案' },
+      },
+      {
+        path: 'basic-config/suppliers/:id/edit',
+        name: 'basic-config-suppliers-edit',
+        component: () => import('@/views/basic-config/suppliers/SupplierEditView.vue'),
+        meta: { title: '编辑供应商', listPath: '/basic-config/suppliers' },
+      },
+      {
+        path: 'basic-config/suppliers/:id',
+        name: 'basic-config-suppliers-detail',
+        component: () => import('@/views/basic-config/suppliers/SupplierDetailView.vue'),
+        meta: { title: '供应商详情' },
+      },
+      {
+        path: 'system/dict',
+        name: 'system-dict',
+        component: () => import('@/views/system/SystemDictView.vue'),
+        meta: { title: '系统字典' },
+      },
+      {
+        path: 'system/business-rules',
+        name: 'system-business-rules',
+        component: () => import('@/views/system/BusinessRuleView.vue'),
+        meta: { title: '业务规则' },
+      },
+      {
+        path: 'system/function-params',
+        name: 'system-function-params',
+        component: () => import('@/views/basic-config/FunctionParamView.vue'),
+        meta: { title: '功能参数' },
+      },
+      {
+        path: 'system/message-notify',
+        name: 'system-message-notify',
+        component: () => import('@/views/system/MessageNotifyConfigView.vue'),
+        meta: { title: '消息通知配置' },
+      },
+      {
+        path: 'home/message-center',
+        name: 'home-message-center',
+        component: () => import('@/views/system/MessageCenterView.vue'),
+        meta: { title: '消息中心' },
+      },
+      {
+        path: 'system/message-center',
+        redirect: '/home/message-center',
+      },
+      {
+        path: 'industrial-id',
+        redirect: '/industrial-id/label-request',
+      },
+      {
+        path: 'industrial-id/base-config/enterprise-info',
+        name: 'industrial-id-enterprise-info',
+        component: () => import('@/views/industrial-id/EnterpriseInfoView.vue'),
+        meta: { title: '企业信息' },
+      },
+      {
+        path: 'industrial-id/base-config/product-template',
+        redirect: '/quality/qc-template',
+      },
+      {
+        path: 'industrial-id/base-config/nameplate-template',
+        name: 'industrial-id-nameplate-template',
+        component: () => import('@/views/industrial-id/NameplateTemplateView.vue'),
+        meta: { title: '产品信息模板' },
+      },
+      {
+        path: 'industrial-id/label-request',
+        name: 'industrial-id-label-request',
+        component: () => import('@/views/industrial-id/LabelRequestView.vue'),
+        meta: { title: '标识申请' },
+      },
+      {
+        path: 'industrial-id/label-management',
+        name: 'industrial-id-label-management',
+        component: () => import('@/views/industrial-id/LabelManagementView.vue'),
+        meta: { title: '标识管理' },
+      },
+    ],
+  },
+  { path: '/:pathMatch(.*)*', redirect: '/home/dashboard' },
+]
+
+const router = createRouter({
+  history: createWebHistory(process.env.BASE_URL),
+  routes,
+})
+
+router.onError((error, to) => {
+  const message = error?.message || String(error)
+  if (!/Loading chunk .* failed|Failed to fetch dynamically imported module/i.test(message)) return
+
+  const reloadKey = `chunk-reload:${to.fullPath}`
+  if (sessionStorage.getItem(reloadKey)) {
+    console.error('[router] lazy chunk load failed after reload:', message)
+    sessionStorage.removeItem(reloadKey)
+    return
+  }
+
+  console.error('[router] lazy chunk load failed, reloading once:', message)
+  sessionStorage.setItem(reloadKey, '1')
+  window.location.reload()
+})
+
+router.beforeEach((to, from, next) => {
+  if (to.meta.public) {
+    if (to.name === 'login' && isLoggedIn()) {
+      next('/home/dashboard')
+      return
+    }
+    next()
+    return
+  }
+
+  if (!isLoggedIn()) {
+    next({ name: 'login', query: { redirect: to.fullPath } })
+    return
+  }
+
+  if (to.meta?.standalone) {
+    next()
+    return
+  }
+
+  const fullPath = to.fullPath
+  const pathOnly = to.path
+  const title = routeTitles[pathOnly] || routeTitles[fullPath] || to.meta?.title || '页面'
+  const exists = tabStore.tabs.find((t) => {
+    if (t.path === fullPath || t.path === pathOnly) return true
+    return t.path.split('?')[0] === pathOnly
+  })
+  if (!exists) {
+    tabStore.tabs.push({
+      path: fullPath.includes('?') ? fullPath : pathOnly,
+      title,
+      closable: pathOnly !== '/home/dashboard',
+    })
+    tabStore.activePath = fullPath.includes('?') ? fullPath : pathOnly
+  } else {
+    // 优先使用已有带 query 的页签 path，避免切回丢参
+    tabStore.activePath = exists.path
+  }
+  next()
+})
+
+export default router
