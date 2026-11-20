@@ -1,30 +1,31 @@
-# I-DOMS Web
+# 流程型 MES（Web）
 
-I-DOMS 制造执行系统（MES）前端框架：Vue 3 + Webpack（Vue CLI）+ Ant Design Vue。
+连续线 / 流程型制造执行系统前端演示：Vue 3 + Webpack（Vue CLI）+ Ant Design Vue。  
+面向配方、产线、投料计划与批次指令等场景；**不含**离散产品 BOM、生产/总装工单、工程变更等模块。
 
-- **在线预览**：[https://lianghaiye.github.io/---MES--CURSOR/](https://lianghaiye.github.io/---MES--CURSOR/)
-- **代码仓库**：[https://github.com/lianghaiye/---MES--CURSOR](https://github.com/lianghaiye/---MES--CURSOR)
+- **在线预览**：[https://lianghaiye.github.io/MES-for-PROCESS/](https://lianghaiye.github.io/MES-for-PROCESS/)
+- **代码仓库**：[https://github.com/lianghaiye/MES-for-PROCESS](https://github.com/lianghaiye/MES-for-PROCESS)
+- **配套小程序**：[MES-FOR-PROCESS-MOBILE](https://github.com/lianghaiye/MES-FOR-PROCESS-MOBILE)（批次执行 / 交班能耗；H5 预览见该仓库 README）
 
 ## 技术栈
 
-| 项 | 选型 |
-| --- | --- |
-| 框架 | Vue 3（JavaScript） |
-| 构建 | Webpack（`@vue/cli-service`） |
-| UI | Ant Design Vue 4 |
-| 路由 | Vue Router 4 |
+| 项   | 选型                                  |
+| ---- | ------------------------------------- |
+| 框架 | Vue 3（JavaScript）                   |
+| 构建 | Webpack（`@vue/cli-service`）         |
+| UI   | Ant Design Vue 4                      |
+| 路由 | Vue Router 4                          |
 | HTTP | Axios（含 Token 注入与 401 刷新占位） |
-| 数据 | 本地 Mock（`src/mock`） |
+| 数据 | 本地 Mock（`src/mock`）               |
 
 ## 功能概览
 
-- 顶栏全部一级模块可点击，跳转对应占位页
-- 「更多」菜单：WMS、QMS、设备管理、报表中心等扩展入口
-- 左侧二级菜单随顶栏模块切换
-- **全局多页签**：可关闭、切换（首页不可关闭）
-- Mock 登录（任意账号密码）
-- **计划排产 → 生产计划**：主从布局 + 本地筛选（对齐截图结构）
-- 其余模块为占位页，便于后续扩展
+- 顶栏一级模块 + 左侧二级菜单；**全局多页签**（首页不可关闭）
+- Mock 登录（任意非空账号密码）
+- **产品工艺**：配方、产线、工序/工艺相关主数据
+- **计划**：投料计划、班组能耗等
+- **生产**：批次指令、投料过账、产出入库、返工批次等
+- 销售 / 采购 / 库存 / 质检等共用能力保留，已去掉离散工单相关入口与字段
 
 ## 环境要求
 
@@ -34,7 +35,7 @@ I-DOMS 制造执行系统（MES）前端框架：Vue 3 + Webpack（Vue CLI）+ A
 ## 快速开始
 
 ```bash
-cd i-doms-web
+cd MES-for-PROCESS
 npm install
 npm run serve
 ```
@@ -42,6 +43,8 @@ npm run serve
 浏览器访问：<http://localhost:8080>
 
 默认账号：`admin` / 任意密码
+
+> 本机只保留一个 `npm run serve`（默认 **8080**）。不要另起 8081/8082，以免占内存。
 
 ## 常用命令
 
@@ -64,10 +67,7 @@ src/
 ├── router/        # 路由与登录守卫
 ├── styles/        # 全局样式
 ├── utils/         # axios 封装、鉴权工具
-└── views/         # 页面
-    ├── login/
-    ├── planning/  # 生产计划（已实现主从页）
-    └── placeholder/
+└── views/         # 页面（product-process / planning / production / …）
 ```
 
 ## 对接后端
@@ -82,28 +82,16 @@ src/
 { "code": 0, "data": {}, "message": "ok" }
 ```
 
-## 发布到 GitHub
+## GitHub Pages 在线预览
 
-```bash
-git init
-git add .
-git commit -m "feat: I-DOMS MES 前端框架初始化"
-git remote add origin <你的仓库地址>
-git push -u origin main
-```
+推送 `main` 后由 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) 自动构建并发布。
 
-## 后续建议扩展
+**首次**在仓库启用 Pages：
 
-1. **生产管理 → 工单管理**、**销售管理 → 销售订单**
-2. 将页签状态迁入 Pinia（多组件共享时）
-3. 按模块拆分 `views/` 与懒加载 chunk
+1. 打开 [Settings → Pages](https://github.com/lianghaiye/MES-for-PROCESS/settings/pages)
+2. **Build and deployment → Source** 选择 **GitHub Actions**（不要点 Jekyll / Static HTML 的 Configure）
+3. 等待 Actions 中 **Deploy to GitHub Pages** 成功后访问上方预览链接
 
 ## 包管理器说明
-
-| 工具 | 特点 |
-| --- | --- |
-| **npm** | Node 自带，生态最广，适合开源仓库 |
-| **pnpm** | 安装快、省磁盘，适合 monorepo |
-| **yarn** | 经典替代方案 |
 
 本项目默认使用 **npm**。
