@@ -64,7 +64,7 @@ Actions 详情页两步均为绿色 ✓：
 ## 演示站启用泵小智问答（必做一次）
 
 GitHub Pages **只能托管前端**，不能跑 `agent-proxy`。要让  
-https://lianghaiye.github.io/---MES--CURSOR/ 也能问答，需要：
+https://lianghaiye.github.io/MES-for-PROCESS/ 也能问答，需要：
 
 ### 1. 把代理部署到公网（推荐 Render 免费档）
 
