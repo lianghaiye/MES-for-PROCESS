@@ -520,7 +520,7 @@ function handleWithdraw() {
 }
 
 .action-approve {
-  color: #1677ff;
+  color: #307068;
   font-weight: 500;
 }
 
@@ -552,7 +552,7 @@ function handleWithdraw() {
 }
 
 .link-code {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 </style>

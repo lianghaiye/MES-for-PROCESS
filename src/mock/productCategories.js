@@ -1,8 +1,8 @@
-/** 系统默认：产品类别「产成品」（可改名、不可删除；新租户入驻即有） */
+/** 系统默认：产品类别「成品涂料」（可改名、不可删除；新租户入驻即有） */
 export const PRODUCT_CATEGORY_FINISHED = {
   key: 'pcat-finished',
   code: '001',
-  title: '产成品',
+  title: '成品涂料',
   system: true,
 }
 
@@ -14,20 +14,13 @@ export const PRODUCT_CATEGORY_UNCLASSIFIED = {
   system: true,
 }
 
-/** 演示业务类别（可删可改） */
+/** 流程型演示类别（可删可改） */
 const DEMO_PRODUCT_CATEGORIES = [
-  { key: 'pcat-008', code: '008', title: '清水泵' },
-  { key: 'pcat-pc', code: 'pc', title: '电脑' },
-  {
-    key: 'pcat-004',
-    code: '004',
-    title: '离心泵',
-    children: [
-      { key: 'pcat-004-001', code: '001', title: '泵体', parentKey: 'pcat-004' },
-      { key: 'pcat-004-002', code: '002', title: '壳体', parentKey: 'pcat-004' },
-      { key: 'pcat-004-003', code: '003', title: '电机泵', parentKey: 'pcat-004' },
-    ],
-  },
+  { key: 'pcat-topcoat', code: '010', title: '面漆' },
+  { key: 'pcat-primer', code: '011', title: '底漆' },
+  { key: 'pcat-custom', code: '012', title: '定制涂料' },
+  { key: 'pcat-intermediate', code: '020', title: '树脂中间体' },
+  { key: 'pcat-recycle', code: '030', title: '回收溶剂' },
 ]
 
 /** 新租户 / 空库种子：业务演示类别在前，系统默认靠后（展示时还会按主数据量再排） */

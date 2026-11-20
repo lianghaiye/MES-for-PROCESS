@@ -195,7 +195,7 @@ export function filterUnifiedListRows(rows, filters = {}, selectedCategoryKey, t
     if (filters.specModel && !String(item.specModel || '').includes(filters.specModel)) return false
     if (filters.material && !String(item.material || '').includes(filters.material)) return false
     if (filters.drawingNo && !String(item.drawingNo || '').includes(filters.drawingNo)) return false
-    if (filters.itemKind && item.itemKind !== filters.itemKind) return false
+    if (filters.materialType && item.materialType !== filters.materialType) return false
     if (
       filters.businessType &&
       !matchesBusinessTypeFilter(item, filters.businessType, MASTER_BUSINESS_TYPE_OPTIONS)

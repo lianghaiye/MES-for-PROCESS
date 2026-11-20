@@ -307,10 +307,10 @@ watch(
   font-weight: 600;
   margin-bottom: 8px;
   padding-left: 8px;
-  border-left: 3px solid #1677ff;
+  border-left: 3px solid #307068;
 }
 .link-code {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 .table-empty-text {

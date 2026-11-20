@@ -817,7 +817,7 @@ function onDetailAction({ key, workOrder: wo }) {
 
     .selected-count {
       font-size: 12px;
-      color: #1677ff;
+      color: #307068;
     }
 
     .layout-toggle-btn {
@@ -826,7 +826,7 @@ function onDetailAction({ key, workOrder: wo }) {
       flex-shrink: 0;
 
       &:hover {
-        color: #1677ff;
+        color: #307068;
       }
     }
   }
@@ -860,19 +860,19 @@ function onDetailAction({ key, workOrder: wo }) {
   box-sizing: border-box;
 
   &:hover {
-    border-color: #91caff;
-    box-shadow: 0 1px 6px rgba(22, 119, 255, 0.12);
+    border-color: #a9c6c2;
+    box-shadow: 0 1px 6px rgba(48, 112, 104, 0.12);
   }
 
   &.active {
-    border-color: #1677ff;
-    border-left-color: #1677ff;
-    background: linear-gradient(180deg, #e6f4ff 0%, #f5faff 55%, #ffffff 100%);
-    box-shadow: 0 1px 6px rgba(22, 119, 255, 0.16);
+    border-color: #307068;
+    border-left-color: #307068;
+    background: linear-gradient(180deg, #e7f2f0 0%, #f5faff 55%, #ffffff 100%);
+    box-shadow: 0 1px 6px rgba(48, 112, 104, 0.16);
   }
 
   &.checked {
-    border-color: #91caff;
+    border-color: #a9c6c2;
   }
 
   .card-checkbox {

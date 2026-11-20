@@ -51,12 +51,6 @@ const routes = [
     meta: { title: '产品标签打印', standalone: true },
   },
   {
-    path: '/production/work-orders/preview',
-    name: 'production-work-order-preview',
-    component: () => import('@/views/production/WorkOrderPrintPreviewView.vue'),
-    meta: { title: '工单预览', standalone: true },
-  },
-  {
     path: '/procurement/purchase-orders/preview',
     name: 'procurement-purchase-order-preview',
     component: () => import('@/views/procurement/PurchaseOrderPrintPreviewView.vue'),
@@ -72,7 +66,7 @@ const routes = [
     path: '/quality/qc-tasks/preview',
     name: 'quality-qc-task-preview',
     component: () => import('@/views/quality/QcTaskPrintPreviewView.vue'),
-    meta: { title: '质检单打印预览', standalone: true },
+    meta: { title: '化验单打印预览', standalone: true },
   },
   {
     path: '/procurement/purchase-returns/preview',
@@ -139,12 +133,6 @@ const routes = [
     name: 'inventory-inbound-preview',
     component: () => import('@/views/inventory/InboundOrderPrintPreviewView.vue'),
     meta: { title: '入库单预览', standalone: true },
-  },
-  {
-    path: '/engineering-change/ecn/print',
-    name: 'engineering-change-ecn-print',
-    component: () => import('@/views/engineering-change/EcnPrintPreviewView.vue'),
-    meta: { title: 'ECN打印', standalone: true },
   },
   {
     path: '/board/work-order-monitor/screen',
@@ -270,50 +258,26 @@ const routes = [
       {
         path: 'product-process/bom',
         name: 'product-process-bom',
-        component: () => import('@/views/product-process/ProductBomView.vue'),
-        meta: { title: '产品BOM' },
+        component: () => import('@/views/product-process/FormulaListView.vue'),
+        meta: { title: '配方管理' },
       },
       {
         path: 'product-process/bom/new',
         name: 'product-process-bom-new',
-        component: () => import('@/views/product-process/ProductBomCreateView.vue'),
-        meta: { title: '新增BOM' },
+        component: () => import('@/views/product-process/FormulaEditView.vue'),
+        meta: { title: '新增配方', listPath: '/product-process/bom' },
       },
       {
         path: 'product-process/bom/:id/edit',
         name: 'product-process-bom-edit',
-        component: () => import('@/views/product-process/ProductBomCreateView.vue'),
-        meta: { title: '编辑BOM' },
+        component: () => import('@/views/product-process/FormulaEditView.vue'),
+        meta: { title: '编辑配方', listPath: '/product-process/bom' },
       },
       {
         path: 'product-process/bom/:id',
         name: 'product-process-bom-detail',
-        component: () => import('@/views/product-process/ProductBomDetailView.vue'),
-        meta: { title: 'BOM详情', listPath: '/product-process/bom' },
-      },
-      {
-        path: 'product-process/ship-attachments',
-        name: 'product-process-ship-attachments',
-        component: () => import('@/views/product-process/ProductBomView.vue'),
-        meta: { title: '随货配件' },
-      },
-      {
-        path: 'product-process/ship-attachments/new',
-        name: 'product-process-ship-attachments-new',
-        component: () => import('@/views/product-process/ProductBomCreateView.vue'),
-        meta: { title: '新增随货配件', listPath: '/product-process/ship-attachments' },
-      },
-      {
-        path: 'product-process/ship-attachments/:id/edit',
-        name: 'product-process-ship-attachments-edit',
-        component: () => import('@/views/product-process/ProductBomCreateView.vue'),
-        meta: { title: '编辑随货配件', listPath: '/product-process/ship-attachments' },
-      },
-      {
-        path: 'product-process/ship-attachments/:id',
-        name: 'product-process-ship-attachments-detail',
-        component: () => import('@/views/product-process/ProductBomDetailView.vue'),
-        meta: { title: '随货配件详情', listPath: '/product-process/ship-attachments' },
+        component: () => import('@/views/product-process/FormulaDetailView.vue'),
+        meta: { title: '配方详情', listPath: '/product-process/bom' },
       },
       {
         path: 'product-process/routing',
@@ -352,6 +316,18 @@ const routes = [
         meta: { title: '工序详情' },
       },
       {
+        path: 'product-process/production-line',
+        name: 'product-process-production-line',
+        component: () => import('@/views/product-process/ProductionLineView.vue'),
+        meta: { title: '产线管理' },
+      },
+      {
+        path: 'product-process/production-line/:id',
+        name: 'product-process-production-line-detail',
+        component: () => import('@/views/product-process/ProductionLineDetailView.vue'),
+        meta: { title: '产线详情' },
+      },
+      {
         path: 'product-process/process-doc',
         name: 'product-process-process-doc',
         component: () => import('@/views/product-process/ProcessDocView.vue'),
@@ -364,8 +340,16 @@ const routes = [
         meta: { title: '工序分类' },
       },
       {
+        path: 'product-process/process-field-library',
+        name: 'product-process-field-library',
+        component: () => import('@/views/product-process/ProcessFieldLibraryView.vue'),
+        meta: { title: '采集指标库' },
+      },
+      {
         path: 'product-process/process-form',
-        ...emptyChild('product-process-form', '工序表单模板'),
+        name: 'product-process-form',
+        component: () => import('@/views/product-process/ProcessFormTemplateView.vue'),
+        meta: { title: '过程记录模板' },
       },
       {
         path: 'sales/orders',
@@ -518,10 +502,26 @@ const routes = [
         redirect: '/contracts',
       },
       {
+        path: 'planning/feed-plan',
+        redirect: '/planning/production-plan',
+      },
+      {
         path: 'planning/production-plan',
         name: 'planning-production-plan',
-        component: () => import('@/views/planning/ProductionPlanView.vue'),
+        component: () => import('@/views/planning/FeedPlanView.vue'),
         meta: { title: '生产计划' },
+      },
+      {
+        path: 'planning/production-plan/:id',
+        name: 'planning-production-plan-detail',
+        component: () => import('@/views/planning/FeedPlanDetailView.vue'),
+        meta: { title: '生产计划详情', listPath: '/planning/production-plan' },
+      },
+      {
+        path: 'planning/shift-energy-report',
+        name: 'planning-shift-energy-report',
+        component: () => import('@/views/planning/ShiftEnergyReportView.vue'),
+        meta: { title: '交班能耗填报' },
       },
       {
         path: 'planning/kit-supply',
@@ -560,14 +560,14 @@ const routes = [
       {
         path: 'production/work-orders',
         name: 'production-work-orders',
-        component: () => import('@/views/production/WorkOrderManagementView.vue'),
-        meta: { title: '生产工单' },
+        component: () => import('@/views/production/BatchInstructionListView.vue'),
+        meta: { title: '批次指令' },
       },
       {
-        path: 'production/assembly-work-orders',
-        name: 'production-assembly-work-orders',
-        component: () => import('@/views/production/AssemblyWorkOrderManagementView.vue'),
-        meta: { title: '总装工单' },
+        path: 'production/work-orders/:id',
+        name: 'production-batch-instruction-detail',
+        component: () => import('@/views/production/BatchInstructionDetailView.vue'),
+        meta: { title: '批次指令详情', listPath: '/production/work-orders' },
       },
       {
         path: 'production/disassembly-work-orders',
@@ -590,7 +590,7 @@ const routes = [
       {
         path: 'production/rework-orders',
         name: 'production-rework-orders',
-        component: () => import('@/views/production/ReworkOrderView.vue'),
+        component: () => import('@/views/production/ReworkBatchView.vue'),
         meta: { title: '返工管理' },
       },
       {
@@ -602,8 +602,8 @@ const routes = [
       {
         path: 'production/material-requisition',
         name: 'production-material-requisition',
-        component: () => import('@/views/production/MaterialRequisitionManagementView.vue'),
-        meta: { title: '领料管理' },
+        component: () => import('@/views/production/FeedPostingView.vue'),
+        meta: { title: '投料明细' },
       },
       {
         path: 'production/material-requisition/create',
@@ -620,8 +620,8 @@ const routes = [
       {
         path: 'production/finished-inbound',
         name: 'production-finished-inbound',
-        component: () => import('@/views/production/FinishedInboundManagementView.vue'),
-        meta: { title: '成品入库' },
+        component: () => import('@/views/production/OutputInboundView.vue'),
+        meta: { title: '产出入库' },
       },
       {
         path: 'production/finished-inbound/create',
@@ -822,6 +822,24 @@ const routes = [
         meta: { title: '盘点管理' },
       },
       {
+        path: 'inventory/material-batches',
+        name: 'inventory-material-batches',
+        component: () => import('@/views/inventory/MaterialBatchView.vue'),
+        meta: { title: '原料批次' },
+      },
+      {
+        path: 'inventory/expiry-alerts',
+        name: 'inventory-expiry-alerts',
+        component: () => import('@/views/inventory/ExpiryAlertView.vue'),
+        meta: { title: '效期预警' },
+      },
+      {
+        path: 'inventory/tanks',
+        name: 'inventory-tanks',
+        component: () => import('@/views/inventory/TankLevelView.vue'),
+        meta: { title: '储罐液位' },
+      },
+      {
         path: 'inventory/stocktake/new',
         name: 'inventory-stocktake-new',
         component: () => import('@/views/inventory/StocktakeOrderCreateView.vue'),
@@ -896,14 +914,14 @@ const routes = [
         path: 'quality/incoming-qc',
         name: 'quality-incoming-qc',
         component: () => import('@/views/quality/QcTaskListView.vue'),
-        meta: { title: '来料质检', bizScope: '来料质检' },
+        meta: { title: '来料化验', bizScope: '来料质检' },
       },
       {
         path: 'quality/incoming-qc/:id/inspect',
         name: 'quality-incoming-qc-inspect',
         component: () => import('@/views/quality/QcTaskInspectView.vue'),
         meta: {
-          title: '录入质检结果',
+          title: '录入化验结果',
           listPath: '/quality/incoming-qc',
           bizScope: '来料质检',
         },
@@ -913,7 +931,7 @@ const routes = [
         name: 'quality-incoming-qc-detail',
         component: () => import('@/views/quality/QcTaskDetailView.vue'),
         meta: {
-          title: '来料质检详情',
+          title: '来料化验详情',
           listPath: '/quality/incoming-qc',
           bizScope: '来料质检',
         },
@@ -922,14 +940,14 @@ const routes = [
         path: 'quality/outsourcing-qc',
         name: 'quality-outsourcing-qc',
         component: () => import('@/views/quality/QcTaskListView.vue'),
-        meta: { title: '外协回货检', bizScope: '外协回货检' },
+        meta: { title: '外协回货化验', bizScope: '外协回货检' },
       },
       {
         path: 'quality/outsourcing-qc/:id/inspect',
         name: 'quality-outsourcing-qc-inspect',
         component: () => import('@/views/quality/QcTaskInspectView.vue'),
         meta: {
-          title: '录入质检结果',
+          title: '录入化验结果',
           listPath: '/quality/outsourcing-qc',
           bizScope: '外协回货检',
         },
@@ -939,7 +957,7 @@ const routes = [
         name: 'quality-outsourcing-qc-detail',
         component: () => import('@/views/quality/QcTaskDetailView.vue'),
         meta: {
-          title: '外协回货检详情',
+          title: '外协回货化验详情',
           listPath: '/quality/outsourcing-qc',
           bizScope: '外协回货检',
         },
@@ -948,14 +966,14 @@ const routes = [
         path: 'quality/process-qc',
         name: 'quality-process-qc',
         component: () => import('@/views/quality/QcTaskListView.vue'),
-        meta: { title: '生产过程检', bizScope: '生产过程检' },
+        meta: { title: '过程化验', bizScope: '生产过程检' },
       },
       {
         path: 'quality/process-qc/:id/inspect',
         name: 'quality-process-qc-inspect',
         component: () => import('@/views/quality/QcTaskInspectView.vue'),
         meta: {
-          title: '录入质检结果',
+          title: '录入化验结果',
           listPath: '/quality/process-qc',
           bizScope: '生产过程检',
         },
@@ -965,7 +983,7 @@ const routes = [
         name: 'quality-process-qc-detail',
         component: () => import('@/views/quality/QcTaskDetailView.vue'),
         meta: {
-          title: '生产过程检详情',
+          title: '过程化验详情',
           listPath: '/quality/process-qc',
           bizScope: '生产过程检',
         },
@@ -974,14 +992,14 @@ const routes = [
         path: 'quality/finished-qc',
         name: 'quality-finished-qc',
         component: () => import('@/views/quality/QcTaskListView.vue'),
-        meta: { title: '成品检', bizScope: '成品检' },
+        meta: { title: '产出化验', bizScope: '成品检' },
       },
       {
         path: 'quality/finished-qc/:id/inspect',
         name: 'quality-finished-qc-inspect',
         component: () => import('@/views/quality/QcTaskInspectView.vue'),
         meta: {
-          title: '录入质检结果',
+          title: '录入化验结果',
           listPath: '/quality/finished-qc',
           bizScope: '成品检',
         },
@@ -991,7 +1009,7 @@ const routes = [
         name: 'quality-finished-qc-detail',
         component: () => import('@/views/quality/QcTaskDetailView.vue'),
         meta: {
-          title: '成品检详情',
+          title: '产出化验详情',
           listPath: '/quality/finished-qc',
           bizScope: '成品检',
         },
@@ -1000,14 +1018,14 @@ const routes = [
         path: 'quality/factory-qc',
         name: 'quality-factory-qc',
         component: () => import('@/views/quality/FactoryQcView.vue'),
-        meta: { title: '出厂质检', bizScope: '出厂质检' },
+        meta: { title: '出厂化验', bizScope: '出厂质检' },
       },
       {
         path: 'quality/factory-qc/:id/inspect',
         name: 'quality-factory-qc-inspect',
         component: () => import('@/views/quality/QcTaskInspectView.vue'),
         meta: {
-          title: '录入质检结果',
+          title: '录入化验结果',
           listPath: '/quality/factory-qc',
           bizScope: '出厂质检',
         },
@@ -1016,7 +1034,7 @@ const routes = [
         path: 'quality/factory-qc/:id',
         name: 'quality-factory-qc-detail',
         component: () => import('@/views/quality/FactoryQcDetailView.vue'),
-        meta: { title: '出厂质检详情', listPath: '/quality/factory-qc', bizScope: '出厂质检' },
+        meta: { title: '出厂化验详情', listPath: '/quality/factory-qc', bizScope: '出厂质检' },
       },
       { path: 'quality/inspection', redirect: '/quality/factory-qc' },
       { path: 'quality/defect', redirect: '/quality/scrap-orders' },
@@ -1036,19 +1054,19 @@ const routes = [
         path: 'quality/qc-field-library',
         name: 'quality-qc-field-library',
         component: () => import('@/views/quality/QcFieldLibraryView.vue'),
-        meta: { title: '检验项库' },
+        meta: { title: '化验指标库' },
       },
       {
         path: 'quality/qc-template',
         name: 'quality-qc-template',
         component: () => import('@/views/quality/QcTemplateView.vue'),
-        meta: { title: '质检模板' },
+        meta: { title: '化验模板' },
       },
       {
         path: 'quality/qc-template/:id',
         name: 'quality-qc-template-detail',
         component: () => import('@/views/quality/QcTemplateDetailView.vue'),
-        meta: { title: '质检模板详情', listPath: '/quality/qc-template' },
+        meta: { title: '化验模板详情', listPath: '/quality/qc-template' },
       },
       {
         path: 'procurement/purchase-req',
@@ -1275,86 +1293,6 @@ const routes = [
         redirect: '/procurement/purchase-details',
       },
       {
-        path: 'engineering-change',
-        redirect: '/engineering-change/ecn-list',
-      },
-      {
-        path: 'engineering-change/ecn-list',
-        name: 'engineering-change-ecn-list',
-        component: () => import('@/views/engineering-change/EcnListView.vue'),
-        meta: { title: 'ECN列表', changeModule: 'ecn' },
-      },
-      {
-        path: 'engineering-change/ecn/new',
-        name: 'engineering-change-ecn-new',
-        component: () => import('@/views/engineering-change/EcnCreateView.vue'),
-        meta: { title: '提交工程变更申请', changeModule: 'ecn' },
-      },
-      {
-        path: 'engineering-change/ecn/:id/approve',
-        name: 'engineering-change-ecn-approve',
-        component: () => import('@/views/engineering-change/EcnApproveView.vue'),
-        meta: { title: '审批工程变更', changeModule: 'ecn' },
-      },
-      {
-        path: 'engineering-change/ecn/:id/execute',
-        name: 'engineering-change-ecn-execute',
-        component: () => import('@/views/engineering-change/EcnExecuteView.vue'),
-        meta: { title: '执行工程变更', changeModule: 'ecn' },
-      },
-      {
-        path: 'engineering-change/ecn/:id/detail',
-        name: 'engineering-change-ecn-detail',
-        component: () => import('@/views/engineering-change/EcnDetailView.vue'),
-        meta: { title: 'ECN详情', changeModule: 'ecn' },
-      },
-      {
-        path: 'engineering-change/ecn/:id/plan-impact',
-        name: 'engineering-change-ecn-plan-impact',
-        component: () => import('@/views/engineering-change/EcnPlanImpactView.vue'),
-        meta: { title: '计划影响与重排', changeModule: 'ecn' },
-      },
-      {
-        path: 'engineering-change/ecr-request',
-        name: 'engineering-change-ecr-request',
-        component: () => import('@/views/engineering-change/EcnListView.vue'),
-        meta: { title: 'ECR申请', changeModule: 'ecr' },
-      },
-      {
-        path: 'engineering-change/ecr/new',
-        name: 'engineering-change-ecr-new',
-        component: () => import('@/views/engineering-change/EcnCreateView.vue'),
-        meta: { title: '提交工程变更申请', changeModule: 'ecr' },
-      },
-      {
-        path: 'engineering-change/ecr/:id/approve',
-        name: 'engineering-change-ecr-approve',
-        component: () => import('@/views/engineering-change/EcnApproveView.vue'),
-        meta: { title: '审批工程变更', changeModule: 'ecr' },
-      },
-      {
-        path: 'engineering-change/ecr/:id/execute',
-        name: 'engineering-change-ecr-execute',
-        component: () => import('@/views/engineering-change/EcnExecuteView.vue'),
-        meta: { title: '执行工程变更', changeModule: 'ecr' },
-      },
-      {
-        path: 'engineering-change/ecr/:id/detail',
-        name: 'engineering-change-ecr-detail',
-        component: () => import('@/views/engineering-change/EcnDetailView.vue'),
-        meta: { title: 'ECR详情', changeModule: 'ecr' },
-      },
-      {
-        path: 'engineering-change/ecr/:id/plan-impact',
-        name: 'engineering-change-ecr-plan-impact',
-        component: () => import('@/views/engineering-change/EcnPlanImpactView.vue'),
-        meta: { title: '计划影响与重排', changeModule: 'ecr' },
-      },
-      {
-        path: 'engineering-change/ecr-change',
-        ...emptyChild('engineering-change-ecr-change', 'ECR变更'),
-      },
-      {
         path: 'after-sales/service-orders',
         ...emptyChild('after-sales-service-orders', '服务工单'),
       },
@@ -1450,20 +1388,6 @@ const routes = [
         meta: { title: '销售订单成本表' },
       },
       {
-        path: 'report/work-order-progress',
-        name: 'report-work-order-progress',
-        component: () => import('@/views/report/ReportQueryView.vue'),
-        props: { reportKey: 'work-order-progress' },
-        meta: { title: '工单进度表' },
-      },
-      {
-        path: 'report/work-order-cost',
-        name: 'report-work-order-cost',
-        component: () => import('@/views/report/ReportQueryView.vue'),
-        props: { reportKey: 'work-order-cost' },
-        meta: { title: '生产工单成本表' },
-      },
-      {
         path: 'report/purchase-order-exec',
         name: 'report-purchase-order-exec',
         component: () => import('@/views/report/ReportQueryView.vue'),
@@ -1489,7 +1413,7 @@ const routes = [
         name: 'report-qc-task-stats',
         component: () => import('@/views/report/ReportQueryView.vue'),
         props: { reportKey: 'qc-task-stats' },
-        meta: { title: '质检任务统计表' },
+        meta: { title: '化验任务统计表' },
       },
       {
         path: 'basic-config/company-profile',
@@ -1520,6 +1444,12 @@ const routes = [
         name: 'basic-config-units',
         component: () => import('@/views/basic-config/UnitManagementView.vue'),
         meta: { title: '单位管理' },
+      },
+      {
+        path: 'basic-config/process-param-units',
+        name: 'basic-config-process-param-units',
+        component: () => import('@/views/basic-config/ProcessParamUnitView.vue'),
+        meta: { title: '工艺参数单位' },
       },
       {
         path: 'basic-config/packaging',

@@ -128,7 +128,7 @@ function statusColor(status) {
     transform 0.2s;
 
   &:hover {
-    box-shadow: 0 4px 12px rgba(22, 119, 255, 0.12);
+    box-shadow: 0 4px 12px rgba(48, 112, 104, 0.12);
     transform: translateY(-2px);
   }
 }
@@ -176,7 +176,7 @@ function statusColor(status) {
 
 .card-link {
   font-size: 13px;
-  color: #1677ff;
+  color: #307068;
   font-weight: 500;
 }
 

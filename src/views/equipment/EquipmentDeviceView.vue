@@ -133,7 +133,7 @@ const columns = [
   { title: '设备编码', dataIndex: 'code', width: 130, fixed: 'left' },
   { title: '设备名称', dataIndex: 'name', width: 140, ellipsis: true },
   { title: '设备类别', key: 'category', width: 110 },
-  { title: '规格型号', dataIndex: 'model', width: 110 },
+  { title: '型号', dataIndex: 'model', width: 110 },
   { title: '车间', dataIndex: 'workshop', width: 100 },
   { title: '位置', dataIndex: 'location', width: 100 },
   { title: '状态', key: 'status', width: 90 },

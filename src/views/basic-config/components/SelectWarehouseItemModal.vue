@@ -507,6 +507,6 @@ function handleConfirm() {
 }
 
 .link-name {
-  color: #1677ff;
+  color: #307068;
 }
 </style>

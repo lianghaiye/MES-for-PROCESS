@@ -1985,12 +1985,12 @@ defineExpose({
 }
 
 .variant-field-link {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
   word-break: break-word;
 
   &:hover {
-    color: #4096ff;
+    color: #4e8a82;
   }
 }
 
@@ -2025,7 +2025,7 @@ defineExpose({
   color: rgba(0, 0, 0, 0.65);
 
   &:hover {
-    color: #1677ff;
+    color: #307068;
   }
 }
 

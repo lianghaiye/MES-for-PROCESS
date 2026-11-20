@@ -60,7 +60,7 @@
               />
             </a-form-item>
           </a-col>
-          <a-col v-if="isProductionScope" :xs="24" :sm="12" :md="6">
+          <a-col v-if="false" :xs="24" :sm="12" :md="6">
             <a-form-item label="工单号">
               <a-input
                 v-model:value="filters.workOrderNo"
@@ -441,7 +441,6 @@ const productionColumns = [
   { title: '质检单号', key: 'qcNo', width: 150, fixed: 'left' },
   { title: '质检状态', key: 'qcStatus', width: 90 },
   { title: '质检结果', key: 'qcResult', width: 100 },
-  { title: '工单号', dataIndex: 'workOrderNo', width: 130 },
   { title: '工序', dataIndex: 'processName', width: 100 },
   { title: '物料编码', dataIndex: 'itemCode', width: 120 },
   { title: '物料名称', dataIndex: 'itemName', width: 140, ellipsis: true },
@@ -1113,7 +1112,7 @@ function handleTerminate() {
 }
 
 .link-code {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 

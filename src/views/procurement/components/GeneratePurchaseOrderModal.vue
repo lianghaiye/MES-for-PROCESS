@@ -575,12 +575,12 @@ function handleConfirm() {
 .header-edit-icon {
   margin-left: 4px;
   font-size: 12px;
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 
 .order-size-link {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 

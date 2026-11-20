@@ -16,7 +16,7 @@ import {
 } from '@/utils/qcTemplateConflictService'
 
 const TEMPLATE_SEED_KEY = 'i_doms_qc_templates_seed_v'
-const TEMPLATE_SEED_VERSION = '15'
+const TEMPLATE_SEED_VERSION = '18'
 /** 与小程序共用：模板快照落盘，供移动端回填 templateFields */
 const TEMPLATE_STORAGE_KEY = 'i_doms_qc_templates'
 const TEMPLATE_STORAGE_VERSION = 1
@@ -90,7 +90,7 @@ watch(
   { deep: true },
 )
 
-/** 按种子版本重载演示模板；热更新时同步密封件复合结构 */
+/** 按种子版本重载演示模板；并清理历史离散残留 */
 export function ensureQcTemplateDemoSeed() {
   let changed = false
   try {
@@ -104,50 +104,20 @@ export function ensureQcTemplateDemoSeed() {
     /* ignore */
   }
 
-  const row = qcTemplateState.templates.find((t) => t.code === 'QCT-USR-LL-001')
-  if (!row) return false
-  const fresh = cloneQcTemplates().find((t) => t.code === 'QCT-USR-LL-001')
-  if (!fresh) return false
-
-  if (row.sheetPassRule !== fresh.sheetPassRule) {
-    row.sheetPassRule = fresh.sheetPassRule
-    changed = true
-  }
-  if (
-    JSON.stringify(row.sheetConclusionOptionItems || []) !==
-    JSON.stringify(fresh.sheetConclusionOptionItems || [])
-  ) {
-    row.sheetConclusionOptionItems = (fresh.sheetConclusionOptionItems || []).map((o) => ({
-      ...o,
-    }))
-    changed = true
-  }
-  if (row.name !== fresh.name) {
-    row.name = fresh.name
-    changed = true
-  }
-
-  const fields = (row.fields || []).filter((f) => f.type !== 'matrix' && f.code !== 'QC_PERF_CURVE')
-  if (fields.length !== (row.fields || []).length) changed = true
-
-  const freshComplex = (fresh.fields || []).filter((f) => f.code === 'QC_RUN_TEST')
-  freshComplex.forEach((demo) => {
-    const idx = fields.findIndex((f) => f.code === demo.code)
-    if (idx < 0) {
-      fields.push({ ...demo })
-      changed = true
-      return
+  // 清理历史离散模板残留
+  const before = qcTemplateState.templates.length
+  qcTemplateState.templates = qcTemplateState.templates.filter((t) => {
+    const name = String(t.name || '')
+    const code = String(t.code || '')
+    if (name.includes('机加') || name.includes('轴承') || name.includes('密封件')) return false
+    if (name.includes('热处理') || name.includes('垫片') || name.includes('O型圈')) return false
+    if (code.startsWith('QCT-USR-LL-') || code === 'QCT-USR-002' || code === 'QCT-USR-HT-001') {
+      return false
     }
-    const prev = fields[idx]
-    const sameChildren = JSON.stringify(prev.children || []) === JSON.stringify(demo.children || [])
-    if (!sameChildren || prev.type !== demo.type) {
-      fields[idx] = { ...prev, ...demo, sortOrder: prev.sortOrder ?? demo.sortOrder }
-      changed = true
-    }
+    return true
   })
-  if (changed) {
-    row.fields = fields
-    row.fieldCount = fields.length
+  if (qcTemplateState.templates.length !== before) {
+    changed = true
     persistTemplates()
   }
   return changed

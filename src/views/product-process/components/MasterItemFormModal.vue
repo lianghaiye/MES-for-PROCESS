@@ -12,7 +12,6 @@
   >
     <template v-if="isDetailPage" #header-extra>
       <span v-if="form.name" class="detail-product-name">{{ form.name }}</span>
-      <a-tag v-if="derivedItemKindLabel">{{ derivedItemKindLabel }}</a-tag>
       <a-tag v-if="form.supplyForm">{{ form.supplyForm }}</a-tag>
       <a-tag v-if="form.materialType">{{ form.materialType }}</a-tag>
     </template>
@@ -53,20 +52,7 @@
           <div class="entity-capability-row">
             <a-checkbox v-model:checked="form.canSell" :disabled="viewOnly">可销售</a-checkbox>
             <a-checkbox v-model:checked="form.canProduce" :disabled="viewOnly">可生产</a-checkbox>
-            <template v-if="form.canSell">
-              <a-checkbox v-model:checked="form.isWholeMachine" :disabled="viewOnly"
-                >整机</a-checkbox
-              >
-              <a-checkbox v-model:checked="form.isPart" :disabled="viewOnly">零部件</a-checkbox>
-            </template>
             <a-checkbox v-model:checked="form.canPurchase" :disabled="viewOnly">可采购</a-checkbox>
-            <a-checkbox v-model:checked="form.canOutsource" :disabled="viewOnly">可外协</a-checkbox>
-            <a-checkbox v-model:checked="form.production.needIndustrialLabel" :disabled="viewOnly">
-              工业标识
-            </a-checkbox>
-            <span v-if="derivedItemKindLabel" class="derived-type-tag">
-              产品类型：{{ derivedItemKindLabel }}
-            </span>
           </div>
           <div v-if="!viewOnly && !isEdit" class="master-data-mode-row">
             <span class="mode-label">创建模式：</span>
@@ -79,7 +65,7 @@
       </div>
       <div v-if="form.spuId" class="spu-inherit-banner">
         <a-tag color="blue">产品族：{{ form.spuName || form.spuId }}</a-tag>
-        <span class="spu-inherit-hint">变体 SKU — 规格/材质为族内区分维度</span>
+        <span class="spu-inherit-hint">变体 SKU — 规格为族内区分维度</span>
       </div>
     </div>
 
@@ -132,7 +118,7 @@
                       />
                     </a-form-item>
                   </a-col>
-                  <a-col v-if="!isMultiVariantMode" :span="6">
+                  <a-col v-if="false" :span="6">
                     <a-form-item label="材质">
                       <a-select
                         v-model:value="form.materialGradeId"
@@ -146,7 +132,7 @@
                       />
                     </a-form-item>
                   </a-col>
-                  <a-col :span="6">
+                  <a-col v-if="false" :span="6">
                     <a-form-item label="图号">
                       <a-input
                         v-model:value="form.drawingNo"
@@ -164,6 +150,44 @@
                         :options="unitOpts"
                         placeholder="请选择 库存单位"
                         :disabled="viewOnly"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-form-item label="保质期(天)">
+                      <a-input-number
+                        v-model:value="form.shelfLifeDays"
+                        size="small"
+                        :min="0"
+                        :precision="0"
+                        :disabled="viewOnly"
+                        style="width: 100%"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-form-item label="复验期(天)">
+                      <a-input-number
+                        v-model:value="form.recheckDays"
+                        size="small"
+                        :min="0"
+                        :precision="0"
+                        :disabled="viewOnly"
+                        style="width: 100%"
+                      />
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-form-item label="储存条件">
+                      <a-select
+                        v-model:value="form.storageCondition"
+                        size="small"
+                        mode="multiple"
+                        allow-clear
+                        :max-tag-count="1"
+                        :options="storageConditionOpts"
+                        :disabled="viewOnly"
+                        placeholder="请选择储存条件"
                       />
                     </a-form-item>
                   </a-col>
@@ -216,7 +240,7 @@
                       />
                     </a-form-item>
                   </a-col>
-                  <a-col v-if="showProductFields && showAssemblyPartSwitch" :span="6">
+                  <a-col v-if="false" :span="6">
                     <a-form-item label="是否需要组装">
                       <a-switch v-model:checked="form.isAssemblyPart" :disabled="viewOnly" />
                     </a-form-item>
@@ -311,16 +335,17 @@
                     allow-clear
                   />
                 </a-form-item>
-                <a-form-item label="配置要求" class="remark-item stacked-remark-item">
+                <a-form-item label="备注" class="remark-item stacked-remark-item">
                   <a-textarea
-                    v-model:value="form.matchingRequirements"
+                    v-model:value="form.remark"
                     :rows="2"
                     :auto-size="false"
                     size="small"
                     class="stacked-remark-textarea"
-                    placeholder="请输入配置要求"
+                    placeholder="请输入备注"
                     :maxlength="200"
                     show-count
+                    :disabled="viewOnly"
                   />
                 </a-form-item>
               </div>
@@ -328,11 +353,7 @@
           </div>
         </a-tab-pane>
 
-        <a-tab-pane
-          v-if="isProductEntry && !isMultiVariantMode && !isEdit"
-          key="bomMaintain"
-          tab="BOM维护"
-        >
+        <a-tab-pane v-if="false" key="bomMaintain" tab="BOM维护">
           <div class="tab-pane-body">
             <div class="form-product-material-section basic-info-box modal-basic-card">
               <ProductFormBomDraftPanel
@@ -356,6 +377,20 @@
                 :unit-options="unitOpts"
                 :disabled="viewOnly"
                 @flat-change="onUnitManageFlatChange"
+              />
+            </div>
+          </div>
+        </a-tab-pane>
+
+        <a-tab-pane key="packs" tab="包装规格">
+          <div class="tab-pane-body">
+            <div class="form-product-material-section basic-info-box modal-basic-card">
+              <PackSpecTab
+                v-model:pack-specs="form.packSpecs"
+                :inventory-unit="form.inventoryUnit"
+                v-model:output-tax-rate="form.outputTaxRate"
+                v-model:input-tax-rate="form.inputTaxRate"
+                :disabled="viewOnly"
               />
             </div>
           </div>
@@ -644,7 +679,7 @@
                       />
                     </a-form-item>
                   </a-col>
-                  <a-col :span="6">
+                  <a-col v-if="false" :span="6">
                     <a-form-item label="领料属性">
                       <a-switch
                         v-model:checked="form.production.requisitionEnabled"
@@ -652,13 +687,13 @@
                       />
                     </a-form-item>
                   </a-col>
-                  <a-col :span="6">
+                  <a-col v-if="false" :span="6">
                     <a-form-item label="需要下料结算">
                       <a-switch v-model:checked="form.needsBlankingSettle" :disabled="viewOnly" />
                     </a-form-item>
                   </a-col>
                   <a-col :span="6">
-                    <a-form-item label="关键件标识">
+                    <a-form-item label="关键物料">
                       <a-switch v-model:checked="form.production.isKeyPart" :disabled="viewOnly" />
                     </a-form-item>
                   </a-col>
@@ -684,7 +719,7 @@
           </div>
         </a-tab-pane>
 
-        <a-tab-pane key="labor" tab="工时配置">
+        <a-tab-pane v-if="false" key="labor" tab="工时配置">
           <div class="tab-pane-body">
             <div class="form-product-material-section basic-info-box modal-basic-card">
               <div class="labor-enable-row" :class="{ 'is-only': !form.laborEnabled }">
@@ -918,6 +953,20 @@
                       />
                     </a-form-item>
                   </a-col>
+                  <a-col v-if="form.alert.expiryAlertEnabled" :span="8">
+                    <a-form-item label="提前天数" required>
+                      <a-input-number
+                        v-model:value="form.alert.expiryAlertDays"
+                        size="small"
+                        :min="1"
+                        :precision="0"
+                        :disabled="viewOnly"
+                        placeholder="到期前几天预警"
+                        style="width: 100%"
+                        addon-after="天"
+                      />
+                    </a-form-item>
+                  </a-col>
                   <a-col :span="8">
                     <a-form-item label="不良率预警阈值">
                       <a-input-number
@@ -976,7 +1025,7 @@
           </div>
         </a-tab-pane>
 
-        <a-tab-pane v-if="isEdit" key="bom" tab="BOM信息">
+        <a-tab-pane v-if="false" key="bom" tab="BOM信息">
           <div class="tab-pane-body">
             <div class="form-product-material-section basic-info-box modal-basic-card">
               <ItemBomInfoTab :item-type="bomItemType" :item-id="editRecord?.id || ''" />
@@ -1002,9 +1051,9 @@
           <a-button
             v-if="showProductFields && !isMultiVariantMode"
             size="small"
-            @click="handleMaintainBomFromDetail"
+            @click="handleMaintainFormula"
           >
-            BOM维护
+            配方维护
           </a-button>
           <a-button size="small" @click="goBack">返回列表</a-button>
         </template>
@@ -1016,10 +1065,10 @@
           取消
         </a-button>
         <a-button
-          v-if="showProductFields && !isMultiVariantMode && isEdit"
-          @click="handleSaveAndMaintainBom"
+          v-if="showProductFields && !isMultiVariantMode"
+          @click="handleSaveAndMaintainFormula"
         >
-          保存并维护BOM
+          保存并维护配方
         </a-button>
         <a-button type="primary" @click="handleOk">
           <PlusOutlined />
@@ -1057,6 +1106,8 @@ import {
   wholeMachineProductAttributeOptions,
   PLAN_STRATEGY_OPTIONS,
   isPlanStrategyMts,
+  STORAGE_CONDITION_OPTIONS,
+  normalizeStorageConditions,
 } from '@/mock/productInfoOptions'
 import {
   barcodeTypeOptions,
@@ -1083,7 +1134,6 @@ import { openCreateTab } from '@/utils/openCreateTab'
 import { persistProductBomDraft, validateProductBomDraft } from '@/utils/productBomFromDraft'
 import {
   ITEM_KIND,
-  itemKindLabel,
   normalizeCapabilityFlags,
   resolveBomItemTypeForKind,
   resolveItemKind,
@@ -1130,10 +1180,13 @@ import {
   hydrateUnitManageFromSource,
   validateUnitManage,
 } from '@/utils/unitManageTab'
+import { normalizePackSpecs, validatePackSpecs } from '@/utils/packSpec'
+import { validateExpiryAlert } from '@/utils/expiryAlert'
 import UnitManageTab from '@/views/product-process/components/UnitManageTab.vue'
+import PackSpecTab from '@/views/product-process/components/PackSpecTab.vue'
 import { useRouter } from 'vue-router'
 import { useTabs } from '@/composables/useTabs'
-import { resolveItemBomNavigation } from '@/utils/itemBomNavigation'
+import { findMaintainFormula } from '@/store/processFormulaStore'
 import {
   normalizeSalaryMethodForReportType,
   resolveSalaryMethodOptions,
@@ -1193,9 +1246,6 @@ const detailPageTitle = computed(
 
 const derivedItemKind = computed(() =>
   resolveItemKind({ canSell: form.canSell, canProduce: form.canProduce }),
-)
-const derivedItemKindLabel = computed(() =>
-  derivedItemKind.value ? itemKindLabel(derivedItemKind.value) : '',
 )
 /** 产品入口（新增/编辑产品）始终展示产品侧字段，避免历史数据缺 canSell 时编辑比新增少字段 */
 const showProductFields = computed(
@@ -1307,6 +1357,7 @@ function onFamilyCodeChange() {
 const barcodeOpts = barcodeTypeOptions.map((v) => ({ label: v, value: v }))
 const materialTypeOpts = materialTypeOptions.map((v) => ({ label: v, value: v }))
 const supplyFormOpts = supplyFormOptions.map((v) => ({ label: v, value: v }))
+const storageConditionOpts = STORAGE_CONDITION_OPTIONS.map((v) => ({ label: v, value: v }))
 const unitOpts = computed(() => {
   void unitState.units
   return getInventoryUnitOptions()
@@ -1382,15 +1433,15 @@ const FIELD_HELP_BY_TAB = {
   basic: [
     {
       name: '供应型态',
-      desc: '标识物料来源方式（外购件、自制件、外协件、组装等），影响销售订单审核后是否自动生成采购申请、生产工单或外协订单。',
+      desc: '标识物料怎么来：自制=本厂产线做（生成批次指令）；外购=直接采购；外协=本厂有配方/规格，原料发出外厂加工后收回（生成外协订单并走发料/收货）；客供=客户来料，不产生采购。',
     },
     {
       name: '计划策略',
-      desc: '选填。按订单MTO：按销售订单排产；按库存MTS：靠库存补货维持水位；按订单MTO+按库存MTS：二者兼有。与库存预警无强制关联。',
+      desc: '选填。按批生产：销售或手工需求驱动，生成批次指令；备库存：低于最低库存时由库存预警生成批次计划，须维护最低库存。连续线另用投料计划，不靠这里拆日工单。',
     },
     {
       name: '补货批量',
-      desc: '选填。一次建议最少补多少（库存单位）。库存预警算建议量时：取「补到最高库存还差多少」与「补货批量」的较大值，避免补得太碎。例：最高100、可用80、补货批量50 → 建议补50。',
+      desc: '选填。一次建议最少补多少（库存单位）。备库存时库存预警算建议量：取「补到最高库存还差多少」与「补货批量」的较大值，避免补得太碎。例：最高100、可用80、补货批量50 → 建议补50。',
     },
   ],
   units: [
@@ -1481,6 +1532,12 @@ const form = reactive({
   techParams: '',
   weight: '',
   inventoryUnit: undefined,
+  density: undefined,
+  content: undefined,
+  shelfLifeDays: undefined,
+  recheckDays: undefined,
+  storageCondition: [],
+  packSpecs: [],
   isVariableLength: false,
   needsBlankingSettle: false,
   purchaseUnit: undefined,
@@ -1508,6 +1565,7 @@ const form = reactive({
   standardSpec: '',
   isAssemblyPart: false,
   matchingRequirements: '',
+  remark: '',
   outputTaxRate: undefined,
   inputTaxRate: undefined,
   laborEnabled: false,
@@ -1774,6 +1832,12 @@ function resetForm() {
   form.techParams = ''
   form.weight = ''
   form.inventoryUnit = undefined
+  form.density = undefined
+  form.content = undefined
+  form.shelfLifeDays = undefined
+  form.recheckDays = undefined
+  form.storageCondition = []
+  form.packSpecs = []
   form.isVariableLength = false
   form.needsBlankingSettle = false
   form.purchaseUnit = undefined
@@ -1801,6 +1865,7 @@ function resetForm() {
   form.standardSpec = ''
   form.isAssemblyPart = false
   form.matchingRequirements = ''
+  form.remark = ''
   form.outputTaxRate = undefined
   form.inputTaxRate = undefined
   form.laborEnabled = false
@@ -1839,6 +1904,12 @@ function loadEditRecord(record) {
   form.techParams = source.techParams || ''
   form.weight = source.weight || ''
   form.inventoryUnit = source.inventoryUnit
+  form.density = source.density ?? undefined
+  form.content = source.content ?? undefined
+  form.shelfLifeDays = source.shelfLifeDays ?? undefined
+  form.recheckDays = source.recheckDays ?? undefined
+  form.storageCondition = normalizeStorageConditions(source.storageCondition)
+  form.packSpecs = normalizePackSpecs(source.packSpecs, source.packSpec, source.inventoryUnit)
   form.isVariableLength = Boolean(source.isVariableLength)
   form.needsBlankingSettle = Boolean(source.needsBlankingSettle)
   form.purchaseUnit = source.purchaseUnit || source.inventoryUnit
@@ -1905,7 +1976,8 @@ function loadEditRecord(record) {
   form.productCategoryKey = source.productCategoryKey
   form.standardSpec = source.standardSpec || ''
   form.isAssemblyPart = Boolean(source.isAssemblyPart)
-  form.matchingRequirements = source.matchingRequirements || source.remark || ''
+  form.matchingRequirements = source.matchingRequirements || ''
+  form.remark = source.remark || ''
   form.outputTaxRate = source.outputTaxRate
   form.inputTaxRate = source.inputTaxRate
   form.laborEnabled = source.laborEnabled ?? false
@@ -2192,6 +2264,18 @@ function validate() {
       activeTabKey.value = 'units'
       return false
     }
+    const packCheck = validatePackSpecs(form.packSpecs)
+    if (!packCheck.ok) {
+      message.warning(packCheck.message)
+      activeTabKey.value = 'packs'
+      return false
+    }
+    const expiryCheck = validateExpiryAlert(form.alert)
+    if (!expiryCheck.ok) {
+      message.warning(expiryCheck.message)
+      activeTabKey.value = 'alert'
+      return false
+    }
   }
   {
     const flat = applyUnitManageToFlat(form.inventoryUnit, form.auxUnits)
@@ -2289,6 +2373,12 @@ function buildProductPayload() {
     bomOverrides: form.bomOverrides || [],
     weight: Number(form.weight) || 0,
     inventoryUnit: form.inventoryUnit,
+    density: form.density ?? null,
+    content: null,
+    shelfLifeDays: form.shelfLifeDays ?? null,
+    recheckDays: form.recheckDays ?? null,
+    storageCondition: normalizeStorageConditions(form.storageCondition),
+    packSpecs: normalizePackSpecs(form.packSpecs, '', form.inventoryUnit),
     isVariableLength: form.isVariableLength,
     needsBlankingSettle: Boolean(form.needsBlankingSettle),
     purchaseUnit: form.isVariableLength
@@ -2339,7 +2429,7 @@ function buildProductPayload() {
     materialCategoryKey: form.categoryKey || undefined,
     supplyForm: form.supplyForm || undefined,
     matchingRequirements: form.matchingRequirements?.trim() || '',
-    remark: form.matchingRequirements?.trim() || '',
+    remark: form.remark?.trim() || '',
     outputTaxRate: form.outputTaxRate,
     inputTaxRate: form.inputTaxRate,
     laborEnabled: form.laborEnabled,
@@ -2383,6 +2473,12 @@ function buildMaterialPayload() {
     techParams: form.techParams?.trim() || '',
     weight: form.weight,
     inventoryUnit: form.inventoryUnit,
+    density: form.density ?? null,
+    content: null,
+    shelfLifeDays: form.shelfLifeDays ?? null,
+    recheckDays: form.recheckDays ?? null,
+    storageCondition: normalizeStorageConditions(form.storageCondition),
+    packSpecs: normalizePackSpecs(form.packSpecs, '', form.inventoryUnit),
     isVariableLength: form.isVariableLength,
     needsBlankingSettle: Boolean(form.needsBlankingSettle),
     purchaseUnit: form.isVariableLength
@@ -2429,7 +2525,7 @@ function buildMaterialPayload() {
     materialCategoryKey: form.categoryKey,
     isAssemblyPart: isPm ? form.isAssemblyPart : false,
     matchingRequirements: form.matchingRequirements?.trim() || '',
-    remark: form.matchingRequirements?.trim() || '',
+    remark: form.remark?.trim() || '',
     outputTaxRate: form.outputTaxRate,
     inputTaxRate: form.inputTaxRate,
     requisitionAttr: form.production.requisitionEnabled ? 1 : 0,
@@ -2479,6 +2575,12 @@ function buildSpuPayloadFromForm() {
       materialType: form.materialType,
       supplyForm: form.supplyForm,
       inventoryUnit: form.inventoryUnit,
+      density: form.density ?? null,
+      content: null,
+      shelfLifeDays: form.shelfLifeDays ?? null,
+      recheckDays: form.recheckDays ?? null,
+      storageCondition: normalizeStorageConditions(form.storageCondition),
+      packSpecs: normalizePackSpecs(form.packSpecs, '', form.inventoryUnit),
       categoryKey: catKey,
       parentCategoryKey: parentKey,
       categoryName: cat?.title || '',
@@ -2516,17 +2618,54 @@ function openTemplateBom() {
   })
 }
 
-function navigateToMaintainBom(itemType, itemId, itemName) {
-  const nav = resolveItemBomNavigation(itemType, itemId)
-  const resolved = router.resolve({
-    path: nav.path,
-    query: {
-      ...(nav.query || {}),
-      itemName: itemName || '',
-    },
-  })
-  openTab(resolved.fullPath || resolved.path, nav.title || '维护BOM')
-  router.push(resolved)
+function navigateToFormula(itemId, itemName) {
+  const hit = findMaintainFormula(itemId)
+  if (hit) {
+    const path = `/product-process/bom/${hit.id}`
+    openTab(path, hit.name || '配方详情')
+    router.push(path)
+    return
+  }
+  const query = new URLSearchParams({ itemId: String(itemId) })
+  if (itemName) query.set('itemName', itemName)
+  const fullPath = `/product-process/bom/new?${query.toString()}`
+  openTab(fullPath, '新增配方')
+  router.push(fullPath)
+}
+
+function handleMaintainFormula() {
+  const id = props.editRecord?.id
+  if (!id) {
+    message.warning('请先保存产品，再维护配方')
+    return
+  }
+  navigateToFormula(id, form.name)
+}
+
+function handleSaveAndMaintainFormula() {
+  if (!validate()) return
+  if (isMultiVariantMode.value || isSpuEdit.value) {
+    message.info('产品族请在具体变体上维护配方')
+    return
+  }
+  const productPayload = showProductFields.value ? buildProductPayload() : null
+  const materialPayload = showMaterialFields.value ? buildMaterialPayload() : null
+  const payload = {
+    isEdit: isEdit.value,
+    id: props.editRecord?.id,
+    productPayload,
+    materialPayload,
+  }
+  const result = saveMasterItem(payload)
+  emit('saved', { ...payload, alreadySaved: true, id: result?.id })
+  if (!result?.id) {
+    message.warning('保存成功，但无法定位物品，请稍后从列表维护配方')
+    closeAfterSave()
+    return
+  }
+  message.success(isEdit.value ? '已更新，正在打开配方' : '已保存，正在打开配方')
+  closeAfterSave()
+  navigateToFormula(result.id, form.name)
 }
 
 function handleGoEditFromDetail() {
@@ -2536,20 +2675,6 @@ function handleGoEditFromDetail() {
     path: `/product-process/products/${id}/edit`,
     title: `编辑产品 ${form.code || form.name || ''}`.trim(),
   })
-}
-
-function handleMaintainBomFromDetail() {
-  const id = props.editRecord?.id
-  if (!id) {
-    message.warning('无法定位物品，请稍后从列表维护 BOM')
-    return
-  }
-  const itemType =
-    derivedItemKind.value === ITEM_KIND.MATERIAL ||
-    (!showProductFields.value && showMaterialFields.value)
-      ? 'material'
-      : 'product'
-  navigateToMaintainBom(itemType, id, form.name)
 }
 
 /** 新增产品且存在 BOM 草稿明细时，随主数据一并落库为待发布产品 BOM */
@@ -2636,36 +2761,6 @@ function handleOk() {
   message.success(isEdit.value ? '已更新' : '已保存')
   closeAfterSave()
 }
-
-function handleSaveAndMaintainBom() {
-  if (!validate()) return
-  if (isMultiVariantMode.value || isSpuEdit.value) {
-    message.info('产品族请通过「族模板 BOM」入口维护')
-    return
-  }
-  const productPayload = showProductFields.value ? buildProductPayload() : null
-  const materialPayload = showMaterialFields.value ? buildMaterialPayload() : null
-  const payload = {
-    isEdit: isEdit.value,
-    id: props.editRecord?.id,
-    productPayload,
-    materialPayload,
-  }
-  const result = saveMasterItem(payload)
-  emit('saved', { ...payload, alreadySaved: true, id: result?.id })
-  if (!result?.id) {
-    message.warning('保存成功，但无法定位物品，请稍后从列表维护 BOM')
-    closeAfterSave()
-    return
-  }
-  const itemType =
-    result.kind === ITEM_KIND.MATERIAL || (!showProductFields.value && showMaterialFields.value)
-      ? 'material'
-      : 'product'
-  message.success(isEdit.value ? '已更新，正在打开 BOM' : '已保存，正在打开 BOM')
-  closeAfterSave()
-  navigateToMaintainBom(itemType, result.id, form.name)
-}
 </script>
 
 <style lang="less" scoped>
@@ -2698,9 +2793,9 @@ function handleSaveAndMaintainBom() {
 .spu-inherit-banner {
   margin: 0 16px 12px;
   padding: 8px 12px;
-  background: #e6f4ff;
+  background: #e7f2f0;
   border-radius: 4px;
-  border: 1px solid #91caff;
+  border: 1px solid #a9c6c2;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2760,7 +2855,7 @@ function handleSaveAndMaintainBom() {
 
   &:hover,
   &:focus {
-    border-bottom-color: #1677ff;
+    border-bottom-color: #307068;
     box-shadow: none;
   }
 
@@ -2786,7 +2881,7 @@ function handleSaveAndMaintainBom() {
 .entity-identity-panel,
 .entity-capability-panel {
   padding: 12px 14px;
-  border: 1px solid #91caff;
+  border: 1px solid #a9c6c2;
   border-radius: 8px;
 }
 
@@ -2841,7 +2936,7 @@ function handleSaveAndMaintainBom() {
 .entity-capability-panel .master-data-mode-row {
   margin-top: 4px;
   padding-top: 4px;
-  border-top: 1px dashed #91caff;
+  border-top: 1px dashed #a9c6c2;
 }
 
 .derived-type-tag {
@@ -3245,7 +3340,7 @@ function handleSaveAndMaintainBom() {
 .add-line-link {
   display: inline-block;
   margin-top: 8px;
-  color: #1677ff;
+  color: #307068;
   font-size: 13px;
   cursor: pointer;
 }
@@ -3324,8 +3419,8 @@ function handleSaveAndMaintainBom() {
 
 .add-labor-row-btn {
   margin-top: 4px;
-  color: #1677ff;
-  border-color: #91caff;
+  color: #307068;
+  border-color: #a9c6c2;
 }
 
 .row-remove-col {

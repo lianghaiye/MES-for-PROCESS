@@ -88,7 +88,7 @@ function onConfirm(names) {
   transition: border-color 0.2s;
 
   &:hover:not(.disabled) {
-    border-color: #1677ff;
+    border-color: #307068;
   }
 
   &.disabled {

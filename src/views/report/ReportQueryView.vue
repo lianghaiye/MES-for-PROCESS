@@ -255,7 +255,7 @@ watch(
 
 .time-tag {
   margin-left: 8px;
-  color: #1677ff;
+  color: #307068;
 }
 
 .summary-bar {

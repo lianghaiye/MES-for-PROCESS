@@ -581,7 +581,7 @@ function goOrder(row) {
 }
 
 .link-code {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 
@@ -596,7 +596,7 @@ function goOrder(row) {
 }
 
 .is-invoice {
-  color: #1677ff;
+  color: #307068;
 }
 
 .is-end {
@@ -668,7 +668,7 @@ function goOrder(row) {
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #1677ff;
+  color: #307068;
 }
 
 .metric-grid {

@@ -139,6 +139,16 @@ function onMenuClick({ key }) {
     flex: 1;
   }
 
+  :deep(.ant-menu-item-selected),
+  :deep(.ant-menu-submenu-selected > .ant-menu-submenu-title) {
+    background: #e7f3f1 !important;
+    color: #307068;
+  }
+
+  :deep(.ant-menu-item:not(.ant-menu-item-selected):hover) {
+    background: #f2f7f6 !important;
+  }
+
   :deep(.menu-label-with-badge) {
     display: inline-flex;
     align-items: center;

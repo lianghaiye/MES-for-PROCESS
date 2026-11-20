@@ -40,7 +40,7 @@
               <template v-if="isProductionScope">
                 <a-col :span="6">
                   <a-form-item label="工单号">
-                    <a-input :value="productionHeader.workOrderNo || '—'" disabled size="small" />
+                    <a-input value="—" disabled size="small" />
                   </a-form-item>
                 </a-col>
                 <a-col :span="6">
@@ -1854,8 +1854,8 @@ async function doSubmit() {
   height: 24px;
   margin-top: 2px;
   border-radius: 50%;
-  background: #e6f4ff;
-  color: #1677ff;
+  background: #e7f2f0;
+  color: #307068;
   font-size: 12px;
   font-weight: 600;
   line-height: 24px;
@@ -1926,7 +1926,7 @@ async function doSubmit() {
 .line-sheet-title {
   margin-bottom: 12px;
   padding-left: 8px;
-  border-left: 3px solid #1677ff;
+  border-left: 3px solid #307068;
   font-size: 14px;
   font-weight: 600;
   color: rgba(0, 0, 0, 0.88);

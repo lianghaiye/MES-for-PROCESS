@@ -20,9 +20,7 @@
           <div class="info-grid">
             <div class="info-item">
               <span class="field-label">工单号</span>
-              <span class="field-value" :title="basicInfo.workOrderNo">{{
-                basicInfo.workOrderNo
-              }}</span>
+              <span class="field-value">—</span>
             </div>
             <div class="info-item">
               <span class="field-label">产品名称</span>

@@ -37,7 +37,7 @@
           </a-form-item>
         </a-col>
         <a-col :span="12">
-          <a-form-item label="规格型号" name="model">
+          <a-form-item label="型号" name="model">
             <a-input v-model:value="form.model" allow-clear placeholder="选填" />
           </a-form-item>
         </a-col>

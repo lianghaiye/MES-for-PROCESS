@@ -517,8 +517,8 @@ function handleOk() {
 
   .item-preview {
     padding: 12px 16px;
-    background: #e6f4ff;
-    border: 1px solid #91caff;
+    background: #e7f2f0;
+    border: 1px solid #a9c6c2;
     border-radius: 8px;
   }
 

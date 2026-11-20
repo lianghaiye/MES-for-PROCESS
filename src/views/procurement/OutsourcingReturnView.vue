@@ -552,7 +552,7 @@ function openBatchPrint() {
 }
 
 .link-code {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 

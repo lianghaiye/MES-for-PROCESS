@@ -39,9 +39,9 @@ defineProps({
   margin-bottom: -1px;
 
   &.active {
-    color: #1677ff;
+    color: #307068;
     font-weight: 600;
-    border-bottom-color: #1677ff;
+    border-bottom-color: #307068;
   }
 }
 </style>

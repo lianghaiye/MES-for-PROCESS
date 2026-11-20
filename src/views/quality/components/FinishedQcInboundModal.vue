@@ -727,7 +727,7 @@ export default { name: 'FinishedQcInboundModal' }
   color: #595959;
 
   strong {
-    color: #1677ff;
+    color: #307068;
     font-size: 15px;
     margin-left: 4px;
   }

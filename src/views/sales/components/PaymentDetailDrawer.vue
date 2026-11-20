@@ -302,7 +302,7 @@ const progressColor = computed(() => {
   const rate = Number(summary.value?.collectionRate) || 0
   if (summary.value?.paymentStatus === CONTRACT_PAYMENT_STATUS.OVERDUE) return '#ff4d4f'
   if (rate >= 100) return '#52c41a'
-  if (rate > 0) return '#1677ff'
+  if (rate > 0) return '#307068'
   return '#d9d9d9'
 })
 
@@ -444,7 +444,7 @@ function onMaintained() {
 .mini-value {
   font-size: 18px;
   font-weight: 600;
-  color: #1677ff;
+  color: #307068;
   line-height: 1.3;
   word-break: break-all;
 }
@@ -484,7 +484,7 @@ function onMaintained() {
   .bar {
     width: 3px;
     height: 14px;
-    background: #1677ff;
+    background: #307068;
     border-radius: 2px;
   }
 

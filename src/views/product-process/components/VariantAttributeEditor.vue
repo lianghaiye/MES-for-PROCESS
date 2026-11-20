@@ -512,7 +512,7 @@ function openMaterialGrades() {
   color: rgba(0, 0, 0, 0.45);
 }
 .grade-link {
-  color: #1677ff;
+  color: #307068;
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;

@@ -130,6 +130,39 @@
                   </a-form-item>
                 </a-col>
                 <a-col :span="8">
+                  <a-form-item label="保质期(天)">
+                    <a-input-number
+                      v-model:value="form.shelfLifeDays"
+                      size="small"
+                      :min="0"
+                      style="width: 100%"
+                    />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="8">
+                  <a-form-item label="复验期(天)">
+                    <a-input-number
+                      v-model:value="form.recheckDays"
+                      size="small"
+                      :min="0"
+                      style="width: 100%"
+                    />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="8">
+                  <a-form-item label="储存条件">
+                    <a-select
+                      v-model:value="form.storageCondition"
+                      size="small"
+                      mode="multiple"
+                      allow-clear
+                      :max-tag-count="1"
+                      :options="storageConditionOpts"
+                      placeholder="请选择储存条件"
+                    />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="8">
                   <a-form-item label="标准规范">
                     <a-select
                       v-model:value="form.standardSpec"
@@ -213,6 +246,18 @@
               </a-row>
             </a-form>
           </div>
+        </div>
+      </a-tab-pane>
+
+      <a-tab-pane key="packs" tab="包装规格">
+        <div class="tab-pane-body">
+          <PackSpecTab
+            v-model:pack-specs="form.packSpecs"
+            :inventory-unit="form.inventoryUnit"
+            v-model:output-tax-rate="form.outputTaxRate"
+            v-model:input-tax-rate="form.inputTaxRate"
+            :disabled="viewOnly"
+          />
         </div>
       </a-tab-pane>
 
@@ -682,6 +727,20 @@
                   <a-switch v-model:checked="form.alert.expiryAlertEnabled" :disabled="viewOnly" />
                 </a-form-item>
               </a-col>
+              <a-col v-if="form.alert.expiryAlertEnabled" :span="8">
+                <a-form-item label="提前天数" required>
+                  <a-input-number
+                    v-model:value="form.alert.expiryAlertDays"
+                    size="small"
+                    :min="1"
+                    :precision="0"
+                    :disabled="viewOnly"
+                    placeholder="到期前几天预警"
+                    style="width: 100%"
+                    addon-after="天"
+                  />
+                </a-form-item>
+              </a-col>
               <a-col :span="8">
                 <a-form-item label="不良率预警阈值">
                   <a-input-number
@@ -791,7 +850,13 @@ import {
   normalizePartProductAttribute,
   PLAN_STRATEGY_OPTIONS,
   isPlanStrategyMts,
+  normalizePlanStrategy,
+  STORAGE_CONDITION_OPTIONS,
+  normalizeStorageConditions,
 } from '@/mock/productInfoOptions'
+import PackSpecTab from '@/views/product-process/components/PackSpecTab.vue'
+import { normalizePackSpecs, validatePackSpecs } from '@/utils/packSpec'
+import { validateExpiryAlert } from '@/utils/expiryAlert'
 import { unitState, getInventoryUnitOptions, getAllEnabledUnitOptions } from '@/store/unitStore'
 import { getMaterialGradeOptions, materialGradeState } from '@/store/materialGradeStore'
 import { generateProductCode, addProduct, updateProduct } from '@/store/productInfoStore'
@@ -881,6 +946,7 @@ const flatMatCats = flattenMatCats(materialCategoryTree).filter((c) => !c.childr
 const barcodeOpts = barcodeTypeOptions.map((v) => ({ label: v, value: v }))
 const materialTypeOpts = materialTypeOptions.map((v) => ({ label: v, value: v }))
 const supplyFormOpts = supplyFormOptions.map((v) => ({ label: v, value: v }))
+const storageConditionOpts = STORAGE_CONDITION_OPTIONS.map((v) => ({ label: v, value: v }))
 const materialCategoryOpts = flatMatCats.map((c) => ({
   label: `(${c.code}) ${c.title}`,
   value: c.key,
@@ -932,7 +998,7 @@ const FIELD_HELP_BY_TAB = {
   basic: [
     {
       name: '供应型态',
-      desc: '标识物料来源方式（外购件、自制件、外协件、组装等），影响销售订单审核后是否自动生成采购申请、生产工单或外协订单。',
+      desc: '标识物料怎么来：自制=本厂产线做（生成批次指令）；外购=直接采购；外协=本厂有配方/规格，原料发出外厂加工后收回（生成外协订单并走发料/收货）；客供=客户来料，不产生采购。',
     },
     {
       name: '启用双单位',
@@ -962,17 +1028,17 @@ const FIELD_HELP_BY_TAB = {
   production: [
     {
       name: '计划策略',
-      desc: '选填。按订单MTO：按销售订单排产；按库存MTS：靠库存补货维持水位；按订单MTO+按库存MTS：二者兼有。与库存预警无强制关联。',
+      desc: '选填。按批生产：销售或手工需求驱动，生成批次指令；备库存：低于最低库存时由库存预警生成批次计划，须维护最低库存。连续线另用投料计划，不靠这里拆日工单。',
     },
     {
       name: '补货批量',
-      desc: '选填。一次建议最少补多少（库存单位）。库存预警算建议量时：取「补到最高库存还差多少」与「补货批量」的较大值，避免补得太碎。',
+      desc: '选填。一次建议最少补多少（库存单位）。备库存时库存预警算建议量：取「补到最高库存还差多少」与「补货批量」的较大值，避免补得太碎。例：最高100、可用80、补货批量50 → 建议补50。',
     },
   ],
   alert: [
     {
       name: '库存预警',
-      desc: '开启后可维护最高/最低库存；与计划策略无强制关联。',
+      desc: '开启后可维护最高/最低库存。计划策略为备库存时，最低库存必填，低于下限可生成批次计划。',
     },
   ],
   labor: [
@@ -1004,6 +1070,12 @@ const form = reactive({
   material: '',
   weight: '',
   inventoryUnit: undefined,
+  density: undefined,
+  content: undefined,
+  shelfLifeDays: undefined,
+  recheckDays: undefined,
+  storageCondition: [],
+  packSpecs: [],
   purchaseUnit: undefined,
   unitPrice: undefined,
   purchaseUnitPrice: undefined,
@@ -1045,6 +1117,12 @@ function resetForm() {
   form.material = ''
   form.weight = ''
   form.inventoryUnit = undefined
+  form.density = undefined
+  form.content = undefined
+  form.shelfLifeDays = undefined
+  form.recheckDays = undefined
+  form.storageCondition = []
+  form.packSpecs = []
   form.purchaseUnit = undefined
   form.unitPrice = undefined
   form.purchaseUnitPrice = undefined
@@ -1098,6 +1176,12 @@ function loadEditRecord(record) {
     material: source.material || '',
     weight: source.weight ?? '',
     inventoryUnit: source.inventoryUnit,
+    density: source.density,
+    content: source.content,
+    shelfLifeDays: source.shelfLifeDays,
+    recheckDays: source.recheckDays,
+    storageCondition: normalizeStorageConditions(source.storageCondition),
+    packSpecs: normalizePackSpecs(source.packSpecs, source.packSpec, source.inventoryUnit),
     purchaseUnit: source.purchaseUnit || source.inventoryUnit,
     unitPrice: source.unitPrice,
     purchaseUnitPrice: source.purchaseUnitPrice,
@@ -1133,6 +1217,7 @@ function loadEditRecord(record) {
     if (row.processName) onLaborProcessChange(row)
   })
   form.production = { ...createDefaultProductProduction(), ...(source.production || {}) }
+  form.production.planStrategy = normalizePlanStrategy(form.production.planStrategy)
   form.alert = { ...createDefaultProductAlert(), ...(source.alert || {}) }
   fileList.value = (source.alert?.attachments || []).map((f, i) => ({
     uid: f.uid || String(i),
@@ -1307,6 +1392,16 @@ function validate() {
     message.warning('请选择库存单位')
     return false
   }
+  const packCheck = validatePackSpecs(form.packSpecs)
+  if (!packCheck.ok) {
+    message.warning(packCheck.message)
+    return false
+  }
+  const expiryCheck = validateExpiryAlert(form.alert)
+  if (!expiryCheck.ok) {
+    message.warning(expiryCheck.message)
+    return false
+  }
   if (form.isProductMaterial) {
     if (!form.materialType) {
       message.warning('请选择物料类型')
@@ -1375,6 +1470,12 @@ function buildPayload() {
     material: form.material,
     weight: Number(form.weight) || 0,
     inventoryUnit: form.inventoryUnit,
+    density: form.density ?? null,
+    content: null,
+    shelfLifeDays: form.shelfLifeDays ?? null,
+    recheckDays: form.recheckDays ?? null,
+    storageCondition: normalizeStorageConditions(form.storageCondition),
+    packSpecs: normalizePackSpecs(form.packSpecs, '', form.inventoryUnit),
     purchaseUnit: form.purchaseUnit || form.inventoryUnit,
     standardSpec: form.standardSpec || '',
     techParams: form.techParams?.trim() || '',
@@ -1690,8 +1791,8 @@ function navigateToMaintainBom(productId, productName) {
 
 .add-labor-row-btn {
   margin-top: 4px;
-  color: #1677ff;
-  border-color: #91caff;
+  color: #307068;
+  border-color: #a9c6c2;
 }
 
 .row-remove-col {

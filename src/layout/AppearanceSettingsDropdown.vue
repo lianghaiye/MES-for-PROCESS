@@ -55,7 +55,7 @@ import {
   align-items: center;
   justify-content: center;
   font-size: 18px;
-  color: var(--primary, #1677ff);
+  color: var(--primary, #307068);
   cursor: pointer;
   line-height: 1;
 }

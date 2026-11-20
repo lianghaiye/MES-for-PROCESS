@@ -658,6 +658,7 @@ import {
   resolveDeliveryVariantAttr,
   isDeliveryLineShipLocked,
 } from '@/utils/deliveryLine'
+import { contentSettlementReady, isContentPricing } from '@/utils/salesContentPricing'
 import {
   getSelectedMaterialPicks,
   initScatterShipment,
@@ -1474,6 +1475,10 @@ function validateWholeMachineLines() {
     const maxQty = salesLine
       ? calcSalesLineAvailableQty(so, salesLine, { excludeIds: excludeDeliveryIds() })
       : lineRemainShipQty(line)
+    if (isContentPricing(line) && !contentSettlementReady(line)) {
+      message.warning(`「${line.productName}」请先编辑明细，填写含量结算`)
+      return false
+    }
     if (shipQty > maxQty + 1e-9) {
       message.warning(
         `「${line.productName}」本次发货数量不能超过可发数量 ${formatDeliveryQty(maxQty)}（订单 ${formatDeliveryQty(line.orderQty)}，已申请 ${formatDeliveryQty(line.appliedShipQty)}）`,
@@ -1496,6 +1501,10 @@ function validateScatterShipments() {
   for (const ship of ships) {
     if (!getSelectedMaterialPicks(ship).length) {
       message.warning(`散件行「${ship.productName}」请选择发运物料；若不发请取消纳入本单`)
+      return false
+    }
+    if (isContentPricing(ship) && !contentSettlementReady(ship)) {
+      message.warning(`「${ship.productName}」请先编辑明细，填写含量结算`)
       return false
     }
     const sets = Number(ship.shipSets)

@@ -109,21 +109,32 @@ function buildBuiltinFallbackTemplate(bizScope) {
   }
 }
 
-function pickByProductScope(candidates = [], target = {}, sourcePrefix = '') {
+/** 过程化验：优先精确化验类型，其次兼容未填化验类型的旧模板 */
+function filterByAssayType(candidates = [], assayType, bizScope) {
+  const want = String(assayType || '').trim()
+  if (!want || !isProcessInspectBizScope(bizScope)) return candidates
+  const exact = candidates.filter((t) => String(t.assayType || '').trim() === want)
+  if (exact.length) return exact
+  return candidates.filter((t) => !String(t.assayType || '').trim())
+}
+
+function pickByProductScope(candidates = [], target = {}, sourcePrefix = '', assayType = '') {
   const prefix = sourcePrefix ? `${sourcePrefix}_` : ''
-  const singleHits = candidates.filter(
+  const bizScope = candidates[0]?.bizScope || ''
+  const pool = filterByAssayType(candidates, assayType, bizScope)
+  const singleHits = pool.filter(
     (t) => t.scopeType === QC_TEMPLATE_SCOPE_TYPE.SINGLE && templateMatchesTarget(t, target),
   )
   const bestSingle = pickBestTemplate(singleHits)
   if (bestSingle) return { template: bestSingle, matchSource: `${prefix}single` }
 
-  const categoryHits = candidates.filter(
+  const categoryHits = pool.filter(
     (t) => t.scopeType === QC_TEMPLATE_SCOPE_TYPE.CATEGORY && templateMatchesTarget(t, target),
   )
   const bestCategory = pickBestTemplate(categoryHits)
   if (bestCategory) return { template: bestCategory, matchSource: `${prefix}category` }
 
-  const globalHits = candidates.filter((t) => t.scopeType === QC_TEMPLATE_SCOPE_TYPE.GLOBAL)
+  const globalHits = pool.filter((t) => t.scopeType === QC_TEMPLATE_SCOPE_TYPE.GLOBAL)
   const bestGlobal = pickBestTemplate(globalHits)
   if (bestGlobal) return { template: bestGlobal, matchSource: `${prefix}global` }
 
@@ -154,6 +165,7 @@ export function matchQcTemplate({
   categoryKey,
   processCode,
   processName,
+  assayType,
 } = {}) {
   if (!bizScope) return { ok: false, message: '缺少业务类型' }
 
@@ -171,16 +183,17 @@ export function matchQcTemplate({
   const enabledCustom = qcTemplateState.templates.filter(
     (t) => !t.isSystem && t.bizScope === bizScope && isTemplateEnabled(t),
   )
+  const typeHint = isProcessInspectBizScope(bizScope) ? assayType : ''
 
   if (isProcessInspectBizScope(bizScope) && hasProcess) {
     const linked = enabledCustom.filter(
       (t) => isProcessLinkedTemplate(t) && templateAppliesToProcess(t, process),
     )
-    const linkedHit = pickByProductScope(linked, target, 'process')
+    const linkedHit = pickByProductScope(linked, target, 'process', typeHint)
     if (linkedHit) return { ok: true, ...linkedHit }
 
     const unrestricted = enabledCustom.filter((t) => !isProcessLinkedTemplate(t))
-    const freeHit = pickByProductScope(unrestricted, target)
+    const freeHit = pickByProductScope(unrestricted, target, '', typeHint)
     if (freeHit) return { ok: true, ...freeHit }
     return fallbackSystemOrBuiltin(bizScope)
   }
@@ -189,7 +202,7 @@ export function matchQcTemplate({
     isProcessInspectBizScope(bizScope) && !hasProcess
       ? enabledCustom.filter((t) => !isProcessLinkedTemplate(t))
       : enabledCustom
-  const scoped = pickByProductScope(pool, target)
+  const scoped = pickByProductScope(pool, target, '', typeHint)
   if (scoped) return { ok: true, ...scoped }
   return fallbackSystemOrBuiltin(bizScope)
 }

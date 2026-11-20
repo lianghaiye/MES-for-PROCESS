@@ -43,7 +43,7 @@ import {
   buildWorkOrderDisplayOptions,
   getAllWorkOrderOptions,
 } from '@/utils/workOrderPicker'
-import WorkOrderSelectModal from '@/views/engineering-change/components/WorkOrderSelectModal.vue'
+import WorkOrderSelectModal from '@/views/production/components/WorkOrderSelectModal.vue'
 
 const props = defineProps({
   value: { type: String, default: '' },
@@ -140,7 +140,7 @@ export default { name: 'WorkOrderSearchSelect' }
 .search-more-row {
   padding: 8px 12px;
   text-align: center;
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
   font-size: 13px;
 

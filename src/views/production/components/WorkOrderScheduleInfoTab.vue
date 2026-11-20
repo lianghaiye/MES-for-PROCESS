@@ -336,8 +336,8 @@ function saveExecutor() {
     background: #fff;
 
     &.is-active {
-      border-color: #91caff;
-      box-shadow: 0 0 0 1px rgba(22, 119, 255, 0.08);
+      border-color: #a9c6c2;
+      box-shadow: 0 0 0 1px rgba(48, 112, 104, 0.08);
     }
 
     &:last-child {

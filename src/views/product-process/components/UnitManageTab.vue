@@ -443,7 +443,7 @@ defineExpose({
 
 .base-unit-card {
   background: #e8f3ff;
-  border: 1px solid #91caff;
+  border: 1px solid #a9c6c2;
   border-radius: 8px;
   padding: 12px 16px;
   margin-bottom: 16px;

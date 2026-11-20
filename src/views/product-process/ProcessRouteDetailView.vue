@@ -31,7 +31,19 @@
           <DetailInfoGrid :meta-items="basicMeta" :fields="basicFields" flush />
         </DetailSectionCard>
 
-        <DetailSectionCard title="工序流程">
+        <DetailSectionCard v-if="isEquipmentMode" title="设备顺序">
+          <a-table
+            :columns="unitCols"
+            :data-source="unitRows"
+            row-key="key"
+            size="small"
+            bordered
+            :pagination="false"
+            :locale="{ emptyText: '还没有设备' }"
+          />
+        </DetailSectionCard>
+
+        <DetailSectionCard v-else-if="hasProcessGrid" title="工序流程">
           <a-tabs v-model:active-key="flowTab" class="detail-tabs detail-tabs-pill">
             <a-tab-pane key="grid" tab="网格展示">
               <ProcessRouteGridEditor
@@ -87,11 +99,14 @@ import {
   cloneProcessRoute,
 } from '@/store/processRouteStore'
 import {
+  countGridProcesses,
   flattenGridToSteps,
   formatApplyScopeLabel,
-  formatCompletionModeLabel,
   syncStepPolicies,
 } from '@/utils/processRouteGrid'
+import { deviceLabelById } from '@/store/equipmentStore'
+import { ROUTE_MODE_EQUIPMENT } from '@/constants/processRouteMode'
+import { resolveRouteEditMode } from '@/store/processMesSettingsStore'
 import DetailInfoGrid from './components/DetailInfoGrid.vue'
 import ProcessRouteGridEditor from './components/ProcessRouteGridEditor.vue'
 
@@ -134,13 +149,29 @@ const basicFields = computed(() => {
   ]
 })
 
+const isEquipmentMode = computed(() => resolveRouteEditMode(record.value) === ROUTE_MODE_EQUIPMENT)
+const hasProcessGrid = computed(() => countGridProcesses(record.value?.grid) > 0)
+
+const unitCols = [
+  { title: '顺序', dataIndex: 'seq', width: 70, align: 'center' },
+  { title: '设备', dataIndex: 'equipmentText' },
+]
+
+const unitRows = computed(() =>
+  (record.value?.units || []).map((unit, index) => ({
+    key: `${unit.equipmentId || 'unit'}-${index}`,
+    seq: index + 1,
+    equipmentText: deviceLabelById(unit.equipmentId) || '—',
+  })),
+)
+
 const stepCols = [
-  { title: '步骤', dataIndex: 'stepNo', width: 70 },
-  { title: '行号', dataIndex: 'rowNo', width: 70 },
-  { title: '完成方式', dataIndex: 'completionModeLabel', width: 100 },
-  { title: '工序编码', dataIndex: 'processCode', width: 120 },
-  { title: '工序名称', dataIndex: 'name', width: 120 },
-  { title: '工艺文件', key: 'processFile', width: 180 },
+  { title: '列', dataIndex: 'stepNo', width: 70 },
+  { title: '行', dataIndex: 'rowNo', width: 70 },
+  { title: '工序', dataIndex: 'name', width: 120 },
+  { title: '设备', dataIndex: 'equipmentText', width: 180 },
+  { title: '回流', dataIndex: 'returnText', width: 220 },
+  { title: '工艺文件', key: 'processFile', width: 160 },
 ]
 
 const flatSteps = computed(() => {
@@ -149,7 +180,11 @@ const flatSteps = computed(() => {
   return flattenGridToSteps(record.value.grid, policies).map((s, i) => ({
     ...s,
     id: `${s.stepNo}-${s.rowNo}-${i}`,
-    completionModeLabel: formatCompletionModeLabel(s.completionMode),
+    equipmentText:
+      (Array.isArray(s.equipmentIds) && s.equipmentIds.length
+        ? s.equipmentIds.map((id) => deviceLabelById(id) || id).join('、')
+        : deviceLabelById(s.equipmentId)) || '—',
+    returnText: s.returnText || '—',
   }))
 })
 
@@ -172,6 +207,10 @@ function openEdit() {
   openCreateTab(router, openTab, {
     path: `/product-process/routing/${record.value.id}/edit`,
     title: `编辑工艺路线 ${record.value.code || record.value.name || ''}`.trim(),
+    query: {
+      returnTo: route.fullPath,
+      returnTitle: record.value.name || record.value.code || '路线详情',
+    },
   })
 }
 

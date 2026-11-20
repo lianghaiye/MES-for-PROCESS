@@ -100,7 +100,7 @@
               <a-badge
                 :count="dashboard.todoGroups[cat] || 0"
                 :number-style="{
-                  backgroundColor: (dashboard.todoGroups[cat] || 0) > 0 ? '#1677ff' : '#d9d9d9',
+                  backgroundColor: (dashboard.todoGroups[cat] || 0) > 0 ? '#307068' : '#d9d9d9',
                 }"
               />
             </div>
@@ -252,7 +252,7 @@ export default { name: 'WorkshopDirectorDashboardView' }
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 
   &.tone-blue {
-    border-top: 3px solid #1677ff;
+    border-top: 3px solid #307068;
   }
   &.tone-purple {
     border-top: 3px solid #722ed1;
@@ -264,7 +264,7 @@ export default { name: 'WorkshopDirectorDashboardView' }
     border-top: 3px solid #52c41a;
   }
   &.tone-cyan {
-    border-top: 3px solid #13c2c2;
+    border-top: 3px solid #307068;
   }
   &.tone-red {
     border-top: 3px solid #ff4d4f;
@@ -337,8 +337,8 @@ export default { name: 'WorkshopDirectorDashboardView' }
     box-shadow 0.2s;
 
   &:hover {
-    border-color: #91caff;
-    box-shadow: 0 2px 8px rgba(22, 119, 255, 0.08);
+    border-color: #a9c6c2;
+    box-shadow: 0 2px 8px rgba(48, 112, 104, 0.08);
   }
 }
 
@@ -392,7 +392,7 @@ export default { name: 'WorkshopDirectorDashboardView' }
 
   &:hover {
     background: #f0f7ff;
-    border-color: #91caff;
+    border-color: #a9c6c2;
   }
 }
 

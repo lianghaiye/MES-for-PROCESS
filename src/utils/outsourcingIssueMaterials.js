@@ -16,10 +16,10 @@ import { resolveMaterialsForProcessOutsource } from '@/utils/workOrderProcessOut
 /** 产品色条调色板（与物料行同源） */
 export const WX_ISSUE_PRODUCT_COLORS = [
   { key: 'c0', bar: '#F5222D', bg: 'rgba(245, 34, 45, 0.06)' },
-  { key: 'c1', bar: '#1677FF', bg: 'rgba(22, 119, 255, 0.06)' },
+  { key: 'c1', bar: '#307068', bg: 'rgba(48, 112, 104, 0.06)' },
   { key: 'c2', bar: '#52C41A', bg: 'rgba(82, 196, 26, 0.06)' },
   { key: 'c3', bar: '#722ED1', bg: 'rgba(114, 46, 209, 0.06)' },
-  { key: 'c4', bar: '#13C2C2', bg: 'rgba(19, 194, 194, 0.06)' },
+  { key: 'c4', bar: '#307068', bg: 'rgba(48, 112, 104, 0.06)' },
   { key: 'c5', bar: '#EB2F96', bg: 'rgba(235, 47, 150, 0.06)' },
 ]
 

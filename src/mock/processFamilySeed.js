@@ -1,0 +1,353 @@
+/**
+ * 流程型产品族：规格 × 第二维（颜色 / 粘度 / 含量）。
+ * 第二维沿用变体轴 key「material」，展示名改成流程口径。
+ */
+
+function specValues(items) {
+  return items.map((item) => ({
+    name: item.name,
+    code: item.code,
+    description: item.description || '',
+  }))
+}
+
+function secondAxis(label, items) {
+  return {
+    key: 'material',
+    label,
+    code: 'MATERIAL',
+    required: true,
+    locked: true,
+    source: 'materialGrade',
+    enumValues: items.map((item) => ({
+      name: item.name,
+      code: item.code,
+      materialGradeId: '',
+      description: item.description || '',
+    })),
+  }
+}
+
+function specAxis(items) {
+  return {
+    key: 'specModel',
+    label: '规格型号',
+    code: 'SPEC',
+    required: true,
+    locked: true,
+    source: 'enum',
+    enumValues: specValues(items),
+  }
+}
+
+const now = '2026-11-12'
+
+export const PROCESS_FAMILY_SEEDS = [
+  {
+    id: 'spu-paint-001',
+    code: 'F1001',
+    name: '醇酸面漆',
+    categoryKey: 'pcat-topcoat',
+    parentCategoryKey: 'pcat-topcoat',
+    categoryName: '面漆',
+    categoryTreeMode: 'product',
+    itemKind: 'productMaterial',
+    canSell: true,
+    canProduce: true,
+    canPurchase: false,
+    canOutsource: false,
+    variantAxes: [
+      specAxis([
+        { name: '固体分45%', code: 'S45', description: '低固体分，施工黏度较低' },
+        { name: '固体分55%', code: 'S55', description: '常规面漆' },
+      ]),
+      secondAxis('颜色', [
+        { name: '白色', code: 'WHT' },
+        { name: '灰色', code: 'GRY' },
+      ]),
+    ],
+    skuCodePattern: '{SPU_CODE}-{SPEC}-{MATERIAL}',
+    enabledCombinations: [],
+    bomStrategy: 'independent',
+    baseBomId: '',
+    sharedFields: {
+      inventoryUnit: 'kg',
+      materialType: '成品',
+      supplyForm: '自制',
+      productAttribute: '标准产品',
+      categoryKey: 'pcat-topcoat',
+      productCategoryKey: 'pcat-topcoat',
+      categoryName: '面漆',
+      barcodeType: '一批一码',
+      shelfLifeDays: 365,
+      recheckDays: 180,
+      storageCondition: ['常温密封', '阴凉避光'],
+      packSpecs: [
+        {
+          id: 'spu-paint-pack-1',
+          name: '20kg铁桶',
+          packUnit: '桶',
+          qty: 20,
+          isBulk: false,
+          isDefault: true,
+          enabled: true,
+          salesPrice: 28.5,
+          purchasePrice: null,
+          remark: '',
+        },
+        {
+          id: 'spu-paint-pack-2',
+          name: '200kg铁桶',
+          packUnit: '桶',
+          qty: 200,
+          isBulk: false,
+          isDefault: false,
+          enabled: true,
+          salesPrice: 26.8,
+          purchasePrice: null,
+          remark: '',
+        },
+      ],
+      status: '启用',
+      techParams: '按色号和固体分区分 SKU，配方按固体分选用',
+      remark: '面漆产品族。颜色与固体分是族内区分维度。',
+    },
+    createdAt: now,
+    updatedAt: now,
+  },
+  {
+    id: 'spu-primer-001',
+    code: 'F1002',
+    name: '环氧底漆',
+    categoryKey: 'pcat-primer',
+    parentCategoryKey: 'pcat-primer',
+    categoryName: '底漆',
+    categoryTreeMode: 'product',
+    itemKind: 'productMaterial',
+    canSell: true,
+    canProduce: true,
+    canPurchase: false,
+    canOutsource: false,
+    variantAxes: [
+      specAxis([
+        { name: '膜厚30μm', code: 'T30' },
+        { name: '膜厚60μm', code: 'T60' },
+      ]),
+      secondAxis('颜色', [
+        { name: '铁红', code: 'RED' },
+        { name: '灰色', code: 'GRY' },
+      ]),
+    ],
+    skuCodePattern: '{SPU_CODE}-{SPEC}-{MATERIAL}',
+    enabledCombinations: [],
+    bomStrategy: 'independent',
+    baseBomId: '',
+    sharedFields: {
+      inventoryUnit: 'kg',
+      materialType: '成品',
+      supplyForm: '自制',
+      productAttribute: '标准产品',
+      categoryKey: 'pcat-primer',
+      productCategoryKey: 'pcat-primer',
+      categoryName: '底漆',
+      barcodeType: '一批一码',
+      density: 1.25,
+      content: 0.6,
+      shelfLifeDays: 365,
+      recheckDays: 180,
+      storageCondition: ['阴凉避光'],
+      packSpecs: [
+        {
+          id: 'spu-primer-pack-1',
+          name: '20kg铁桶',
+          packUnit: '桶',
+          qty: 20,
+          isBulk: false,
+          isDefault: true,
+          enabled: true,
+          salesPrice: 24.6,
+          purchasePrice: null,
+          remark: '',
+        },
+      ],
+      status: '启用',
+      techParams: '双组分环氧底漆，主剂按膜厚和颜色分 SKU',
+      remark: '底漆产品族。固化剂单独作为辅料，不进这个族。',
+    },
+    createdAt: now,
+    updatedAt: now,
+  },
+  {
+    id: 'spu-solvent-001',
+    code: 'F1003',
+    name: '溶剂',
+    categoryKey: 'cat-solvent',
+    parentCategoryKey: 'cat-solvent',
+    categoryName: '溶剂',
+    categoryTreeMode: 'material',
+    itemKind: 'material',
+    canSell: false,
+    canProduce: false,
+    canPurchase: true,
+    canOutsource: false,
+    variantAxes: [
+      specAxis([
+        { name: '二甲苯', code: 'XYL' },
+        { name: '醋酸丁酯', code: 'BAC' },
+      ]),
+      secondAxis('含量', [
+        { name: '80%', code: 'C80' },
+        { name: '99%', code: 'C99' },
+      ]),
+    ],
+    skuCodePattern: '{SPU_CODE}-{SPEC}-{MATERIAL}',
+    enabledCombinations: [],
+    bomStrategy: 'independent',
+    baseBomId: '',
+    sharedFields: {
+      inventoryUnit: 'kg',
+      materialType: '原材料',
+      supplyForm: '外购',
+      categoryKey: 'cat-solvent',
+      materialCategoryKey: 'cat-solvent',
+      categoryName: '溶剂',
+      barcodeType: '一批一码',
+      shelfLifeDays: 720,
+      recheckDays: 365,
+      storageCondition: ['常温密封', '防火防静电'],
+      packSpecs: [
+        {
+          id: 'spu-solvent-pack-1',
+          name: '200L桶',
+          packUnit: '桶',
+          qty: 172,
+          isBulk: false,
+          isDefault: true,
+          enabled: true,
+          salesPrice: null,
+          purchasePrice: 6.8,
+          remark: '200 L × 密度 0.86',
+        },
+        {
+          id: 'spu-solvent-pack-2',
+          name: '散装槽车',
+          packUnit: '',
+          qty: null,
+          isBulk: true,
+          isDefault: false,
+          enabled: true,
+          salesPrice: null,
+          purchasePrice: 6.2,
+          remark: '',
+        },
+      ],
+      status: '启用',
+      techParams: '采购可按升，库存按公斤，换算用各 SKU 密度',
+      remark: '溶剂物料族。含量不同，投料折算不同。',
+    },
+    createdAt: now,
+    updatedAt: now,
+  },
+]
+
+export const PROCESS_FAMILY_SKUS = [
+  {
+    spuId: 'spu-paint-001',
+    items: [
+      {
+        specModel: '固体分45%',
+        material: '白色',
+        code: 'F1001-S45-WHT',
+        content: 0.45,
+        density: 1.12,
+      },
+      {
+        specModel: '固体分45%',
+        material: '灰色',
+        code: 'F1001-S45-GRY',
+        content: 0.45,
+        density: 1.13,
+      },
+      {
+        specModel: '固体分55%',
+        material: '白色',
+        code: 'F1001-S55-WHT',
+        content: 0.55,
+        density: 1.15,
+      },
+      {
+        specModel: '固体分55%',
+        material: '灰色',
+        code: 'F1001-S55-GRY',
+        content: 0.55,
+        density: 1.16,
+      },
+    ],
+  },
+  {
+    spuId: 'spu-primer-001',
+    items: [
+      {
+        specModel: '膜厚30μm',
+        material: '铁红',
+        code: 'F1002-T30-RED',
+        content: 0.58,
+        density: 1.28,
+      },
+      {
+        specModel: '膜厚30μm',
+        material: '灰色',
+        code: 'F1002-T30-GRY',
+        content: 0.58,
+        density: 1.26,
+      },
+      {
+        specModel: '膜厚60μm',
+        material: '铁红',
+        code: 'F1002-T60-RED',
+        content: 0.62,
+        density: 1.32,
+      },
+      {
+        specModel: '膜厚60μm',
+        material: '灰色',
+        code: 'F1002-T60-GRY',
+        content: 0.62,
+        density: 1.3,
+      },
+    ],
+  },
+  {
+    spuId: 'spu-solvent-001',
+    items: [
+      {
+        specModel: '二甲苯',
+        material: '80%',
+        code: 'F1003-XYL-C80',
+        content: 0.8,
+        density: 0.86,
+      },
+      {
+        specModel: '二甲苯',
+        material: '99%',
+        code: 'F1003-XYL-C99',
+        content: 0.99,
+        density: 0.86,
+      },
+      {
+        specModel: '醋酸丁酯',
+        material: '80%',
+        code: 'F1003-BAC-C80',
+        content: 0.8,
+        density: 0.88,
+      },
+      {
+        specModel: '醋酸丁酯',
+        material: '99%',
+        code: 'F1003-BAC-C99',
+        content: 0.99,
+        density: 0.88,
+      },
+    ],
+  },
+]

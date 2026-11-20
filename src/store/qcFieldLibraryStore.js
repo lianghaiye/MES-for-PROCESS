@@ -12,7 +12,7 @@ import { isQcSystemFixedField } from '@/utils/qcConclusionField'
 import { qcTemplateState } from '@/store/qcTemplateStore'
 
 const LIBRARY_SEED_KEY = 'i_doms_qc_field_library_seed_v'
-const LIBRARY_SEED_VERSION = '9'
+const LIBRARY_SEED_VERSION = '12'
 
 function nowText() {
   return dayjs().format('YYYY-MM-DD HH:mm:ss')
@@ -70,8 +70,20 @@ export function ensureQcLibraryDemoSeed() {
   )
   if (qcFieldLibraryState.fields.length !== beforeSeal) changed = true
 
-  const ensureCodes = [...SYSTEM_LIBRARY_CODES, 'QC_RUN_TEST']
-  ensureCodes.forEach((code) => {
+  // 移除已迁出的工序系统指标 / 离散演示复合项
+  const beforeOp = qcFieldLibraryState.fields.length
+  qcFieldLibraryState.fields = qcFieldLibraryState.fields.filter((f) => {
+    const code = String(f.code || '')
+      .trim()
+      .toUpperCase()
+    if (code.startsWith('OP_')) return false
+    if (code === 'QC_RUN_TEST' || code === 'QC_HARDNESS' || code === 'QC_CLEARANCE') return false
+    if (code === 'QC_SEAL_FACE' || code === 'QC_NOISE' || code === 'QC_DIM_OD') return false
+    return true
+  })
+  if (qcFieldLibraryState.fields.length !== beforeOp) changed = true
+
+  SYSTEM_LIBRARY_CODES.forEach((code) => {
     const seed = all.find((f) => String(f.code || '').toUpperCase() === code)
     if (!seed) return
     const idx = qcFieldLibraryState.fields.findIndex(
@@ -85,32 +97,35 @@ export function ensureQcLibraryDemoSeed() {
       changed = true
       return
     }
-    if (SYSTEM_LIBRARY_CODES.has(code)) {
-      const prev = qcFieldLibraryState.fields[idx]
-      qcFieldLibraryState.fields[idx] = {
-        ...seed,
-        id: prev.id || seed.id,
-        isSystem: true,
-        status: prev.status === '停用' ? '停用' : '启用',
-      }
-      changed = true
+    const prev = qcFieldLibraryState.fields[idx]
+    qcFieldLibraryState.fields[idx] = {
+      ...seed,
+      id: prev.id || seed.id,
+      isSystem: true,
+      status: prev.status === '停用' ? '停用' : '启用',
     }
+    changed = true
   })
 
-  const demos = all.filter((f) => f.code === 'QC_RUN_TEST')
-  demos.forEach((d) => {
-    const idx = qcFieldLibraryState.fields.findIndex((f) => f.code === d.code)
+  // 补齐流程型检验项
+  ;[
+    'QC_PH',
+    'QC_SOLID_CONTENT',
+    'QC_DENSITY',
+    'QC_FILTRATE_CLARITY',
+    'QC_MOISTURE',
+    'QC_APPEARANCE',
+  ].forEach((code) => {
+    const seed = all.find((f) => String(f.code || '').toUpperCase() === code)
+    if (!seed) return
+    const idx = qcFieldLibraryState.fields.findIndex(
+      (f) =>
+        String(f.code || '')
+          .trim()
+          .toUpperCase() === code,
+    )
     if (idx < 0) {
-      qcFieldLibraryState.fields.unshift(d)
-      changed = true
-      return
-    }
-    const prev = qcFieldLibraryState.fields[idx]
-    const next = { ...d, id: prev.id || d.id }
-    const sameChildren = JSON.stringify(prev.children || []) === JSON.stringify(next.children || [])
-    if (!sameChildren || idx > 3) {
-      qcFieldLibraryState.fields.splice(idx, 1)
-      qcFieldLibraryState.fields.unshift(next)
+      qcFieldLibraryState.fields.push(seed)
       changed = true
     }
   })
@@ -172,7 +187,7 @@ export function isQcLibraryFieldReferenced(code) {
     .trim()
     .toUpperCase()
   if (!c) return false
-  return (qcTemplateState.templates || []).some((t) =>
+  const inQc = (qcTemplateState.templates || []).some((t) =>
     (t.fields || []).some(
       (f) =>
         String(f.code || '')
@@ -180,6 +195,15 @@ export function isQcLibraryFieldReferenced(code) {
           .toUpperCase() === c,
     ),
   )
+  if (inQc) return true
+  try {
+    // 惰性引用，避免与工序表单模板 store 循环依赖
+    // eslint-disable-next-line global-require
+    const { isProcessFormFieldReferenced } = require('@/store/processFormTemplateStore')
+    return isProcessFormFieldReferenced(c)
+  } catch {
+    return false
+  }
 }
 
 export function addQcLibraryField(payload = {}, operator = 'admin1') {

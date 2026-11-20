@@ -12,10 +12,10 @@ import {
   getProcessByCode,
   getProcessByName,
   processConfigState,
-  RESOURCE_TYPES,
-  REPORT_MODES,
-  TASK_EXECUTION_MODES,
+  PROCESS_RESPONSIBLE_OPTIONS,
 } from '@/store/processConfigStore'
+import { equipmentState } from '@/store/equipmentStore'
+import { EQUIPMENT_STATUS } from '@/mock/equipmentSeed'
 import { getActiveCategoryNames } from '@/store/processCategoryStore'
 import { addProcessRoute, getProcessRouteByCode } from '@/store/processRouteStore'
 import { createEmptyGrid } from '@/utils/processRouteGrid'
@@ -24,38 +24,17 @@ const PROCESS_HEADERS = [
   '工序编码',
   '工序名称',
   '工序分类',
-  '资源类型',
-  '岗位',
-  '报工方式',
-  '任务执行方式',
+  '操作说明',
+  '允许设备',
+  '负责岗位/班组',
+  '门禁',
+  '转移条件',
   '备注',
 ]
 
 const ROUTE_HEADERS = ['路线编码', '路线名称', '状态', '应用范围', '备注']
 
 const STEP_HEADERS = ['路线编码', '步骤序号', '并行行号', '工序编码', '工序名称']
-
-function resolveReportMode(raw) {
-  const text = String(raw || '').trim()
-  if (REPORT_MODES.includes(text)) return text
-  if (text.includes('时长')) return '时长报工'
-  return '批量计件'
-}
-
-function resolveTaskMode(raw) {
-  const text = String(raw || '').trim()
-  const byLabel = TASK_EXECUTION_MODES.find((m) => m.label === text || m.value === text)
-  if (byLabel) return byLabel.value
-  if (text.includes('协作') || text.includes('多人')) return 'collaborative'
-  return 'single_claim'
-}
-
-function resolveResourceType(raw, category) {
-  const text = String(raw || '').trim()
-  if (RESOURCE_TYPES.includes(text)) return text
-  if (category === '组装') return '工人小组'
-  return '工人'
-}
 
 function buildProcessGrid(stepRows) {
   if (!stepRows.length) return createEmptyGrid(1, 1)
@@ -198,17 +177,68 @@ export const processRouteBundleImportDef = {
         })
         return
       }
+      const equipmentTokens = String(cellOf(row, '允许设备', '允许设备类') || '')
+        .split(/[、,，]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+      const equipmentIds = []
+      let unknownEquipment = ''
+      equipmentTokens.forEach((token) => {
+        const device = equipmentState.devices.find(
+          (item) =>
+            item.status !== EQUIPMENT_STATUS.SCRAPPED &&
+            (item.code === token ||
+              item.name === token ||
+              `${item.name}（${item.code}）` === token),
+        )
+        if (!device) unknownEquipment = token
+        else equipmentIds.push(device.id)
+      })
+      const responsibleName = cellOf(row, '负责岗位/班组', '负责班组', '负责岗位')
+      const responsible = PROCESS_RESPONSIBLE_OPTIONS.find((item) => item.name === responsibleName)
+      if (unknownEquipment || !responsible) {
+        const reason = unknownEquipment
+          ? `设备「${unknownEquipment}」不在设备台账中`
+          : '负责岗位/班组不在可选范围内'
+        failRows.push({
+          Sheet: '工序',
+          关键键: code || name,
+          工序编码: code,
+          工序名称: name,
+          工序分类: category,
+          __error: `工序第${lineNo}行：${reason}`,
+        })
+        return
+      }
+      const gateText = cellOf(row, '门禁')
+      let gateMode = 'record'
+      if (gateText) {
+        if (String(gateText).includes('硬')) gateMode = 'hard'
+        else if (String(gateText).includes('只记录') || gateText === 'record') gateMode = 'record'
+        else {
+          failRows.push({
+            Sheet: '工序',
+            关键键: code || name,
+            工序编码: code,
+            工序名称: name,
+            工序分类: category,
+            __error: `工序第${lineNo}行：门禁只能是只记录或硬放行`,
+          })
+          return
+        }
+      }
       const payload = {
         code,
         name,
         category,
-        resourceType: resolveResourceType(cellOf(row, '资源类型'), category),
-        position: cellOf(row, '岗位', 'position') || '机加工岗',
-        reportMode: resolveReportMode(cellOf(row, '报工方式', 'reportMode')),
-        taskExecutionMode: resolveTaskMode(cellOf(row, '任务执行方式')),
+        instruction: cellOf(row, '操作说明'),
+        gateMode,
+        transferCondition: cellOf(row, '转移条件'),
+        equipmentIds,
+        responsibleType: responsible.type,
+        responsibleName: responsible.name,
         remark: cellOf(row, '备注'),
-        operations: { opStart: true, opFinish: true },
-        defaultExecutors: [],
+        operations: {},
         defectItemIds: [],
       }
       const res = addProcessConfig(payload)

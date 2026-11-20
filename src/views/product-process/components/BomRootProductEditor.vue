@@ -44,7 +44,7 @@
                     </template>
                     <a-divider style="margin: 4px 0" />
                     <div class="search-more-row" @mousedown.prevent @click="emit('open-picker')">
-                      搜索更多...
+                      选择更多
                     </div>
                   </div>
                 </template>
@@ -471,7 +471,7 @@ function onCreateClick() {
 .search-more-row,
 .create-option-row {
   padding: 8px 12px;
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
   font-size: 13px;
   text-align: center;

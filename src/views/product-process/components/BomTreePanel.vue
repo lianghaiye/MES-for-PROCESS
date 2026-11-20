@@ -277,7 +277,7 @@ function collapseAll() {
       color: rgba(0, 0, 0, 0.55);
 
       &:hover {
-        color: #1677ff;
+        color: #307068;
       }
     }
   }
@@ -308,7 +308,7 @@ function collapseAll() {
     color: rgba(0, 0, 0, 0.65);
 
     &:hover {
-      color: #1677ff;
+      color: #307068;
       background: #f5f5f5;
     }
 
@@ -327,7 +327,7 @@ function collapseAll() {
     color: rgba(0, 0, 0, 0.65);
 
     &:hover {
-      color: #1677ff;
+      color: #307068;
       background: #f5f5f5;
     }
   }

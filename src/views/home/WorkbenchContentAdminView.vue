@@ -493,7 +493,7 @@ export default { name: 'WorkbenchContentAdminView' }
 }
 
 .ext-link {
-  color: #1677ff;
+  color: #307068;
   word-break: break-all;
 }
 

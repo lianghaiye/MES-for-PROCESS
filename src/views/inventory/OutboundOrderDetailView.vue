@@ -1466,7 +1466,7 @@ function handleInitiateQc() {
 }
 
 .link-code {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 
@@ -1508,7 +1508,7 @@ function handleInitiateQc() {
 .manual-pick-tag {
   margin-bottom: 2px;
   font-size: 11px;
-  color: #1677ff;
+  color: #307068;
 }
 
 .piece-serials {

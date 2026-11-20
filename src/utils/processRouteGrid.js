@@ -2,6 +2,12 @@ import {
   getProcessById,
   getOperationLabels,
   resolveDefaultExecutors,
+  formatProcessResponsible,
+  formatProcessEquipment,
+  resolveRouteGate,
+  resolveRouteTransfer,
+  isCustomRouteGate,
+  formatProcessGate,
 } from '@/store/processConfigStore'
 import { normalizeReportMode } from '@/utils/reportMode'
 import { normalizeTaskExecutionMode } from '@/utils/taskExecutionMode'
@@ -121,12 +127,42 @@ export function createEmptyGrid(stepCount = 9, rowCount = 2) {
   return Array.from({ length: stepCount }, () => Array.from({ length: rowCount }, () => null))
 }
 
+/** 本格候选设备：优先 equipmentIds，兼容历史单字段 equipmentId */
+export function normalizeCellEquipmentIds(cell) {
+  if (!cell) return []
+  const fromArr = Array.isArray(cell.equipmentIds)
+    ? cell.equipmentIds.map((id) => String(id || '').trim()).filter(Boolean)
+    : []
+  if (fromArr.length) {
+    const seen = new Set()
+    return fromArr.filter((id) => {
+      if (seen.has(id)) return false
+      seen.add(id)
+      return true
+    })
+  }
+  const legacy = String(cell.equipmentId || '').trim()
+  return legacy ? [legacy] : []
+}
+
+export function normalizeRouteCell(cell) {
+  if (!cell) return null
+  const equipmentIds = normalizeCellEquipmentIds(cell)
+  return {
+    ...cell,
+    equipmentCategory: String(cell.equipmentCategory || '').trim(),
+    equipmentIds,
+    // 兼容仍读单字段的下游
+    equipmentId: equipmentIds[0] || '',
+  }
+}
+
 export function normalizeGrid(grid) {
   if (!Array.isArray(grid) || !grid.length) {
     return createEmptyGrid()
   }
   return grid.map((step) =>
-    Array.isArray(step) ? step.map((cell) => (cell ? { ...cell } : null)) : [],
+    Array.isArray(step) ? step.map((cell) => (cell ? normalizeRouteCell(cell) : null)) : [],
   )
 }
 
@@ -215,6 +251,91 @@ export function validateProcessRouteGrid(grid) {
   return { ok: true }
 }
 
+export function normalizeCellReturns(returns) {
+  if (!Array.isArray(returns)) return []
+  return returns.map((item) => ({
+    stream: String(item?.stream || '').trim(),
+    toStep: Number(item?.toStep) || 0,
+    toRow: Number(item?.toRow) || 0,
+  }))
+}
+
+export function formatCellReturn(grid, item) {
+  const stream = item?.stream || '物流'
+  if (!item?.toStep || !item?.toRow) return `${stream} → 未指定`
+  const cell = grid?.[item.toStep - 1]?.[item.toRow - 1]
+  const proc = cell?.processId ? getProcessById(cell.processId) : null
+  const name = proc?.name || cell?.processName || ''
+  return `${stream} → 第${item.toStep}列第${item.toRow}行${name ? ` ${name}` : ''}`
+}
+
+export function validateCellReturns(grid) {
+  const filled = new Set()
+  ;(grid || []).forEach((step, stepIndex) => {
+    ;(step || []).forEach((cell, rowIndex) => {
+      if (cell?.processId) filled.add(`${stepIndex + 1}-${rowIndex + 1}`)
+    })
+  })
+  for (let stepIndex = 0; stepIndex < (grid || []).length; stepIndex += 1) {
+    const step = grid[stepIndex] || []
+    for (let rowIndex = 0; rowIndex < step.length; rowIndex += 1) {
+      const cell = step[rowIndex]
+      if (!cell?.processId) continue
+      for (const item of normalizeCellReturns(cell.returns)) {
+        const where = `第${stepIndex + 1}列第${rowIndex + 1}行`
+        if (!item.stream) return { ok: false, message: `${where}的回流要填写物流名称` }
+        if (!item.toStep || !item.toRow)
+          return { ok: false, message: `${where}的回流要选择回到哪一格` }
+        if (item.toStep === stepIndex + 1 && item.toRow === rowIndex + 1) {
+          return { ok: false, message: `${where}不能回流到自己` }
+        }
+        if (!filled.has(`${item.toStep}-${item.toRow}`)) {
+          return { ok: false, message: `${where}的回流目标不存在` }
+        }
+      }
+    }
+  }
+  return { ok: true }
+}
+
+/** 路线上挂过的设备。传 processId 时只取该工序那几格。 */
+export function collectRouteEquipmentIds(route, processId = '') {
+  const ids = []
+  const seen = new Set()
+  const push = (id) => {
+    const equipmentId = String(id || '').trim()
+    if (!equipmentId || seen.has(equipmentId)) return
+    seen.add(equipmentId)
+    ids.push(equipmentId)
+  }
+  ;(route?.grid || []).forEach((step) => {
+    ;(step || []).forEach((cell) => {
+      if (!cell?.processId) return
+      if (processId && cell.processId !== processId) return
+      normalizeCellEquipmentIds(cell).forEach(push)
+    })
+  })
+  if (!ids.length && !processId) {
+    ;(route?.units || []).forEach((unit) => push(unit.equipmentId))
+  }
+  return ids
+}
+
+export function unitsFromGrid(grid) {
+  const ids = []
+  const seen = new Set()
+  ;(grid || []).forEach((step) => {
+    ;(step || []).forEach((cell) => {
+      normalizeCellEquipmentIds(cell).forEach((equipmentId) => {
+        if (!equipmentId || seen.has(equipmentId)) return
+        seen.add(equipmentId)
+        ids.push({ equipmentId })
+      })
+    })
+  })
+  return ids
+}
+
 export function flattenGridToSteps(grid, stepPolicies = null) {
   const policies = syncStepPolicies(grid, stepPolicies)
   const modeByStep = new Map(policies.map((p) => [p.stepNo, p.completionMode]))
@@ -243,6 +364,18 @@ export function flattenGridToSteps(grid, stepPolicies = null) {
         processFileId: cell.processFileId || '',
         processFileName: doc?.name || cell.processFileName || '',
         routeQcOverride: normalizeRouteQcOverride(cell.qcOverride),
+        gateMode: resolveRouteGate(proc, cell),
+        gateCustom: isCustomRouteGate(cell),
+        transferCondition: resolveRouteTransfer(proc, cell),
+        transferCustom: Boolean(cell.transferCustom),
+        equipmentCategory: String(cell.equipmentCategory || '').trim(),
+        equipmentIds: normalizeCellEquipmentIds(cell),
+        equipmentId: normalizeCellEquipmentIds(cell)[0] || '',
+        returns: normalizeCellReturns(cell.returns),
+        returnText:
+          normalizeCellReturns(cell.returns)
+            .map((item) => formatCellReturn(grid, item))
+            .join('；') || '',
       })
     })
   })
@@ -272,6 +405,10 @@ export function buildWorkOrderProcessesFromGrid(grid, routeId = '', stepPolicies
     processFileId: step.processFileId,
     processFileName: step.processFileName,
     routeQcOverride: normalizeRouteQcOverride(step.routeQcOverride),
+    gateMode: step.gateMode,
+    gateCustom: Boolean(step.gateCustom),
+    transferCondition: step.transferCondition || '',
+    transferCustom: Boolean(step.transferCustom),
     executors: resolveDefaultExecutors(getProcessById(step.processId)),
     ...createEmptyWorkOrderProcessExtras(),
     opOutsource: Boolean(step.opOutsource),
@@ -349,6 +486,24 @@ export function getSelectedCellMeta(grid, stepIndex, rowIndex) {
     masterHasQc,
     resourceType: proc?.resourceType || '',
     reportMode: proc?.reportMode || '',
+    category: proc?.category || '',
+    equipmentText: formatProcessEquipment(proc),
+    equipmentCategory: String(cell.equipmentCategory || '').trim(),
+    equipmentIds: normalizeCellEquipmentIds(cell),
+    equipmentId: normalizeCellEquipmentIds(cell)[0] || '',
+    returns: normalizeCellReturns(cell.returns),
+    responsibleText: formatProcessResponsible(proc),
+    instruction: proc?.instruction || '',
+    gateChoice: isCustomRouteGate(cell) ? cell.gateMode : 'inherit',
+    effectiveGate: resolveRouteGate(proc, cell),
+    effectiveGateLabel: formatProcessGate(resolveRouteGate(proc, cell)),
+    gateCustom: isCustomRouteGate(cell),
+    defaultGateLabel: formatProcessGate(proc?.gateMode),
+    transferCustom: Boolean(cell.transferCustom),
+    transferDraft: cell?.transferCustom
+      ? cell.transferCondition || ''
+      : proc?.transferCondition || '',
+    defaultTransfer: proc?.transferCondition || '',
     isBlanking: Boolean(proc?.isBlanking),
     configLabels,
     dispatchStrategy: DISPATCH_STRATEGY_MANUAL,

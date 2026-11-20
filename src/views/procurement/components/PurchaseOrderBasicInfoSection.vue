@@ -62,7 +62,6 @@ const fields = computed(() => [
   { key: 'supplier', label: '供应商' },
   { key: 'reqNo', label: '采购申请单号', slot: 'reqNo' },
   { key: 'salesOrderNo', label: '销售单号', slot: 'salesOrderNo' },
-  { key: 'workOrderNo', label: '生产工单号', slot: 'workOrderNo' },
   { key: 'contractNo', label: '合同编号' },
   { key: 'orderSource', label: '订单来源' },
   { key: 'applyType', label: '采购类型' },

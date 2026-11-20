@@ -34,10 +34,13 @@ export function formatSupplyUnitDisplay(supplyForm, production = {}) {
     ).trim()
     return outsource ? `外协：${outsource}` : '外协：—'
   }
-  if (sf === '外购件') {
+  if (sf === '客供') {
+    return supplier ? `客供：${supplier}` : '客供：—'
+  }
+  if (sf === '外购') {
     return supplier ? `采购：${supplier}` : '采购：—'
   }
-  if (sf === '自制件') {
+  if (sf === '自制') {
     return workCenter ? `自制：${workCenter}` : '自制：—'
   }
   return '—'

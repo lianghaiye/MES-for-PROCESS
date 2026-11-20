@@ -46,7 +46,8 @@
       <div class="center-panel panel-box">
         <div class="box-title">{{ readonly ? '工艺路线' : '配置工艺路线' }}</div>
         <div v-if="!readonly" class="grid-tip">
-          温馨提示：目前支持最大并行数: {{ MAX_ROUTE_PARALLEL }}，最大步数: {{ MAX_ROUTE_STEPS }}
+          从左到右是主线，同一列的多行同时进行。每格选工序，再在右侧挂设备。渣、母液要回到前面某一格时，在右侧写回流。最大并行
+          {{ MAX_ROUTE_PARALLEL }}，最大步数 {{ MAX_ROUTE_STEPS }}。
         </div>
         <div class="grid-area">
           <div class="grid-scroll">
@@ -75,30 +76,6 @@
                   >
                     <PlusOutlined />
                   </button>
-                </div>
-                <a-select
-                  v-if="!readonly && countProcessesInStep(localGrid, col - 1) >= 2"
-                  size="small"
-                  class="completion-select"
-                  :value="getCompletionModeAt(localPolicies, col - 1)"
-                  :options="COMPLETION_MODE_OPTIONS"
-                  :title="completionHint(col - 1)"
-                  @change="(v) => setCompletionMode(col - 1, v)"
-                />
-                <div
-                  v-else
-                  class="completion-placeholder"
-                  :title="
-                    countProcessesInStep(localGrid, col - 1) >= 2
-                      ? completionHint(col - 1)
-                      : '单工序默认为全部完成'
-                  "
-                >
-                  {{
-                    countProcessesInStep(localGrid, col - 1) >= 2
-                      ? completionModeLabel(col - 1)
-                      : '全部完成'
-                  }}
                 </div>
               </div>
             </div>
@@ -147,6 +124,10 @@
                         @click.stop="removeCell(col - 1, row - 1)"
                       />
                       <span class="cell-name">{{ getCellProcess(col - 1, row - 1).name }}</span>
+                      <span v-if="cellEquipmentText(col - 1, row - 1)" class="cell-equip">{{
+                        cellEquipmentText(col - 1, row - 1)
+                      }}</span>
+                      <span v-if="cellHasReturn(col - 1, row - 1)" class="cell-return">有回流</span>
                     </div>
                   </template>
                 </div>
@@ -161,63 +142,173 @@
         <div class="right-panel panel-box">
           <div class="box-title">工序信息</div>
           <template v-if="selectedMeta">
-            <div class="info-rows">
-              <div class="info-row">
-                <span class="k">工序名称：</span>
-                <span class="v">{{ selectedMeta.processName || '—' }}</span>
+            <div class="info-body">
+              <div class="info-meta-card">
+                <div class="info-row">
+                  <span class="k">工序名称</span>
+                  <span class="v">{{ selectedMeta.processName || '—' }}</span>
+                </div>
+                <div class="info-row">
+                  <span class="k">工序编号</span>
+                  <span class="v">{{ selectedMeta.processCode || '—' }}</span>
+                </div>
+                <div class="info-row">
+                  <span class="k">工序分类</span>
+                  <span class="v">{{ selectedMeta.category || '—' }}</span>
+                </div>
+                <div class="info-row">
+                  <span class="k">关联设备</span>
+                  <span class="v">{{ selectedMeta.equipmentText || '—' }}</span>
+                </div>
+                <div class="info-row">
+                  <span class="k">默认执行</span>
+                  <span class="v">{{ selectedMeta.responsibleText || '—' }}</span>
+                </div>
+                <div class="info-row">
+                  <span class="k">操作说明</span>
+                  <span class="v">{{ selectedMeta.instruction || '—' }}</span>
+                </div>
+                <div class="info-row">
+                  <span class="k">所属步骤</span>
+                  <span class="v">{{ selectedStepPosText }}</span>
+                </div>
+                <div class="info-row">
+                  <span class="k">调度策略</span>
+                  <span class="v">{{ selectedMeta.dispatchStrategyLabel || '手动调度' }}</span>
+                </div>
               </div>
-              <div class="info-row">
-                <span class="k">工序编号：</span>
-                <span class="v">{{ selectedMeta.processCode || '—' }}</span>
-              </div>
-              <div class="info-row">
-                <span class="k">资源类型：</span>
-                <span class="v">{{ selectedMeta.resourceType || '—' }}</span>
-              </div>
-              <div class="info-row">
-                <span class="k">报工类型：</span>
-                <span class="v">{{ selectedMeta.reportMode || '—' }}</span>
-              </div>
-              <div class="info-row">
-                <span class="k">工序配置项：</span>
-                <span class="v">
-                  <template v-if="selectedMeta.configLabels?.length">
-                    <a-tag
-                      v-for="label in selectedMeta.configLabels"
-                      :key="label"
-                      color="blue"
-                      class="config-tag"
-                    >
-                      {{ label }}
-                    </a-tag>
-                  </template>
-                  <template v-else>—</template>
-                </span>
-              </div>
-              <div v-if="selectedMeta.masterHasQc" class="info-row info-row--qc-override">
-                <span class="k">本路线质检：</span>
-                <span class="v">
+
+              <div class="info-section">
+                <div class="info-section-title">本格配置</div>
+                <div class="info-field">
+                  <div class="field-label">设备分类</div>
+                  <a-select
+                    v-if="!readonly"
+                    :value="selectedMeta.equipmentCategory || undefined"
+                    allow-clear
+                    show-search
+                    size="small"
+                    option-filter-prop="label"
+                    placeholder="设备分类"
+                    :options="equipmentCategoryOpts"
+                    class="field-control"
+                    @change="onEquipmentCategoryChange"
+                  />
+                  <div v-else class="field-value">{{ selectedMeta.equipmentCategory || '—' }}</div>
+                </div>
+                <div class="info-field">
+                  <div class="field-label">候选设备</div>
+                  <EquipmentSearchSelect
+                    v-if="!readonly"
+                    :model-value="selectedMeta.equipmentIds || []"
+                    :options="cellEquipmentOptions"
+                    :allow-ids="cellEquipmentAllowIds"
+                    :category-filter="selectedMeta.equipmentCategory || ''"
+                    placeholder="候选设备（可多选）"
+                    :max-tag-count="2"
+                    class="field-control"
+                    @change="onEquipmentChange"
+                  />
+                  <div v-else class="field-value">{{ selectedEquipmentLabel }}</div>
+                  <div class="field-hint">
+                    本路线该工序可用的候选设备，可多选；执行时再以产线设备为准。
+                  </div>
+                </div>
+
+                <div class="info-field">
+                  <div class="field-label">回流</div>
+                  <div
+                    v-for="(item, index) in selectedMeta.returns"
+                    :key="`${item.toStep}-${item.toRow}-${index}`"
+                    class="return-line"
+                  >
+                    <template v-if="!readonly">
+                      <a-input
+                        :value="item.stream"
+                        size="small"
+                        placeholder="液、渣、母液"
+                        class="return-stream"
+                        @change="(event) => onReturnStream(index, event.target.value)"
+                      />
+                      <a-select
+                        :value="returnValue(item)"
+                        size="small"
+                        show-search
+                        option-filter-prop="label"
+                        placeholder="回到哪一格"
+                        :options="returnTargetOptions"
+                        class="return-target"
+                        @change="(value) => onReturnTarget(index, value)"
+                      />
+                      <a-button
+                        type="link"
+                        size="small"
+                        danger
+                        class="return-del"
+                        @click="removeReturn(index)"
+                        >删除</a-button
+                      >
+                    </template>
+                    <template v-else>{{ formatReturnLine(item) }}</template>
+                  </div>
+                  <a-button v-if="!readonly" size="small" class="return-add" @click="addReturn"
+                    >添加回流</a-button
+                  >
+                  <div v-if="!selectedMeta.returns.length && readonly" class="field-value">—</div>
+                  <div class="field-hint">渣、母液等要回到前面某一格时写在这里。</div>
+                </div>
+
+                <div class="info-field">
+                  <div class="field-label">门禁</div>
+                  <a-select
+                    v-if="!readonly"
+                    :value="selectedMeta.gateChoice"
+                    size="small"
+                    class="field-control"
+                    :options="routeGateOpts"
+                    @change="onGateChange"
+                  />
+                  <div v-else class="field-value">{{ selectedMeta.effectiveGateLabel }}</div>
+                  <div class="field-hint">{{ gateHint }}</div>
+                </div>
+
+                <div class="info-field">
+                  <div class="field-label">转移条件</div>
+                  <a-checkbox
+                    v-if="!readonly"
+                    :checked="selectedMeta.transferCustom"
+                    class="transfer-check"
+                    @change="onTransferCustomChange"
+                  >
+                    本路线单独设置
+                  </a-checkbox>
+                  <a-textarea
+                    :value="selectedMeta.transferDraft"
+                    size="small"
+                    :rows="3"
+                    :disabled="readonly || !selectedMeta.transferCustom"
+                    placeholder="未填写"
+                    class="field-control"
+                    @change="onTransferChange"
+                  />
+                  <div class="field-hint">{{ transferHint }}</div>
+                </div>
+
+                <div v-if="selectedMeta.masterHasQc" class="info-field">
+                  <div class="field-label">本路线质检</div>
                   <a-select
                     v-if="!readonly"
                     :value="selectedMeta.qcOverride"
                     size="small"
-                    style="width: 100%; max-width: 200px"
+                    class="field-control"
                     :options="routeQcOverrideOpts"
                     @change="onQcOverrideChange"
                   />
-                  <template v-else>{{
-                    formatRouteQcOverrideLabel(selectedMeta.qcOverride)
-                  }}</template>
-                  <div class="qc-override-hint">{{ selectedQcOverrideHint }}</div>
-                </span>
-              </div>
-              <div class="info-row">
-                <span class="k">所属步骤：</span>
-                <span class="v">{{ selectedStepPosText }}</span>
-              </div>
-              <div class="info-row">
-                <span class="k">调度策略：</span>
-                <span class="v">{{ selectedMeta.dispatchStrategyLabel || '手动调度' }}</span>
+                  <div v-else class="field-value">
+                    {{ formatRouteQcOverrideLabel(selectedMeta.qcOverride) }}
+                  </div>
+                  <div class="field-hint">{{ selectedQcOverrideHint }}</div>
+                </div>
               </div>
             </div>
           </template>
@@ -284,12 +375,21 @@ import {
   getActiveProcessCategories,
   getProcessesByCategory,
   getProcessById,
+  PROCESS_GATE_OPTIONS,
+  PROCESS_GATE_INHERIT,
 } from '@/store/processConfigStore'
 import { getEnabledProcessDocs, getProcessDocById } from '@/store/processDocStore'
 import {
+  deviceLabelById,
+  equipmentState,
+  formatDeviceLabel,
+  listDevices,
+} from '@/store/equipmentStore'
+import { EQUIPMENT_CATEGORY_OPTIONS, EQUIPMENT_STATUS } from '@/mock/equipmentSeed'
+import EquipmentSearchSelect from '@/views/product-process/components/EquipmentSearchSelect.vue'
+import {
   MAX_ROUTE_PARALLEL,
   MAX_ROUTE_STEPS,
-  COMPLETION_MODE_OPTIONS,
   normalizeGrid,
   getSelectedCellMeta,
   insertStepAfter,
@@ -299,16 +399,19 @@ import {
   syncStepPolicies,
   insertStepPolicyAfter,
   removeStepPolicyAt,
-  getCompletionModeAt,
   countProcessesInStep,
-  normalizeCompletionMode,
-  formatCompletionModeLabel,
   normalizeRouteQcOverride,
+  normalizeCellReturns,
+  normalizeCellEquipmentIds,
+  normalizeRouteCell,
+  formatCellReturn,
   formatRouteQcOverrideLabel,
   ROUTE_QC_OVERRIDE_OPTIONS,
   ROUTE_QC_INHERIT,
   ROUTE_QC_OFF,
 } from '@/utils/processRouteGrid'
+
+const equipmentCategoryOpts = EQUIPMENT_CATEGORY_OPTIONS
 
 const props = defineProps({
   grid: { type: Array, default: () => [] },
@@ -401,6 +504,28 @@ const selectedProcessFileName = computed(() => {
 
 const routeQcOverrideOpts = ROUTE_QC_OVERRIDE_OPTIONS
 
+const routeGateOpts = computed(() => {
+  const current = selectedMeta.value?.defaultGateLabel || '记录 · 技术员判定'
+  return [
+    { value: PROCESS_GATE_INHERIT, label: `跟随工序默认（${current}）` },
+    ...PROCESS_GATE_OPTIONS,
+  ]
+})
+
+const gateHint = computed(() => {
+  const meta = selectedMeta.value
+  if (!meta) return ''
+  if (meta.gateCustom) return `当前生效：${meta.effectiveGateLabel}，本路线特殊配置`
+  return `当前生效：${meta.effectiveGateLabel}，来自工序默认`
+})
+
+const transferHint = computed(() => {
+  const meta = selectedMeta.value
+  if (!meta) return ''
+  if (meta.transferCustom) return '当前生效为本路线单独填写的条件'
+  return meta.defaultTransfer ? '当前显示工序默认，未单独设置' : '工序未填转移条件'
+})
+
 const selectedQcOverrideHint = computed(() => {
   const m = selectedMeta.value
   if (!m?.masterHasQc) return ''
@@ -426,10 +551,6 @@ function openProcessDocDetail() {
   docDetailOpen.value = true
 }
 
-function completionModeLabel(stepIndex) {
-  return formatCompletionModeLabel(getCompletionModeAt(localPolicies.value, stepIndex))
-}
-
 function emitGrid() {
   emit('update:grid', normalizeGrid(localGrid.value))
 }
@@ -438,21 +559,6 @@ function emitPolicies(next = localPolicies.value) {
   const synced = syncStepPolicies(localGrid.value, next)
   localPolicies.value = synced
   emit('update:stepPolicies', synced)
-}
-
-function completionHint(stepIndex) {
-  const mode = getCompletionModeAt(localPolicies.value, stepIndex)
-  return mode === 'any' ? '下发时从本步候选中勾选要做的工序（可多选）' : '本步所有工序都要做完'
-}
-
-function setCompletionMode(stepIndex, mode) {
-  const next = syncStepPolicies(localGrid.value, localPolicies.value)
-  if (!next[stepIndex]) return
-  next[stepIndex] = {
-    ...next[stepIndex],
-    completionMode: normalizeCompletionMode(mode),
-  }
-  emitPolicies(next)
 }
 
 function isSelected(step, row) {
@@ -496,12 +602,24 @@ function placeProcess(step, row, processId) {
     proc?.operations?.opQc ||
     (Array.isArray(proc?.qcConfigs) && proc.qcConfigs.some((c) => c?.enabled !== false)),
   )
-  const prevOverride = normalizeRouteQcOverride(localGrid.value[step][row]?.qcOverride)
-  const next = {
+  const prev = normalizeRouteCell(localGrid.value[step][row])
+  const prevOverride = normalizeRouteQcOverride(prev?.qcOverride)
+  const allowed = proc?.equipmentIds || []
+  let equipmentIds = normalizeCellEquipmentIds(prev)
+  let equipmentCategory = String(prev?.equipmentCategory || '').trim()
+  if (allowed.length) {
+    const allowSet = new Set(allowed)
+    equipmentIds = equipmentIds.filter((id) => allowSet.has(id))
+  }
+  if (!equipmentIds.length && allowed.length === 1) equipmentIds = [allowed[0]]
+  const next = normalizeRouteCell({
     processId,
     processName: proc?.name,
-    processFileId: localGrid.value[step][row]?.processFileId || '',
-  }
+    processFileId: prev?.processFileId || '',
+    equipmentCategory,
+    equipmentIds,
+    returns: Array.isArray(prev?.returns) ? prev.returns.map((item) => ({ ...item })) : [],
+  })
   // 仅工序已配质检时保留「本路线不检」；否则清掉覆盖
   if (masterHasQc && prevOverride === ROUTE_QC_OFF) next.qcOverride = ROUTE_QC_OFF
   localGrid.value[step][row] = next
@@ -558,6 +676,15 @@ function normalizePoliciesForSparseSteps() {
   emitPolicies(next)
 }
 
+function remapReturns(mapFn) {
+  localGrid.value.forEach((step) => {
+    ;(step || []).forEach((cell) => {
+      if (!cell?.returns?.length) return
+      cell.returns = cell.returns.map(mapFn).filter(Boolean)
+    })
+  })
+}
+
 function insertStepAt(afterIndex) {
   if (stepCount.value >= MAX_ROUTE_STEPS) {
     message.warning(`最大步数 ${MAX_ROUTE_STEPS}`)
@@ -567,6 +694,10 @@ function insertStepAt(afterIndex) {
     syncStepPolicies(localGrid.value, localPolicies.value),
     afterIndex,
   )
+  remapReturns((item) => {
+    const toStep = Number(item.toStep) > afterIndex + 1 ? Number(item.toStep) + 1 : item.toStep
+    return { ...item, toStep }
+  })
   localGrid.value = insertStepAfter(localGrid.value, afterIndex)
   if (props.selectedStep > afterIndex) {
     emit('update:selectedStep', props.selectedStep + 1)
@@ -580,6 +711,10 @@ function insertRowAt(afterIndex) {
     message.warning(`最大并行数 ${MAX_ROUTE_PARALLEL}`)
     return
   }
+  remapReturns((item) => {
+    const toRow = Number(item.toRow) > afterIndex + 1 ? Number(item.toRow) + 1 : item.toRow
+    return { ...item, toRow }
+  })
   localGrid.value = insertRowAfter(localGrid.value, afterIndex)
   if (props.selectedRow > afterIndex) {
     emit('update:selectedRow', props.selectedRow + 1)
@@ -605,6 +740,12 @@ function removeStepAtIndex(index) {
       syncStepPolicies(localGrid.value, localPolicies.value),
       index,
     )
+    remapReturns((item) => {
+      const toStep = Number(item.toStep)
+      if (toStep === index + 1) return null
+      if (toStep > index + 1) return { ...item, toStep: toStep - 1 }
+      return item
+    })
     localGrid.value = removeStepAt(localGrid.value, index)
     if (props.selectedStep === index) {
       emit('update:selectedStep', -1)
@@ -633,6 +774,12 @@ function removeRowAtIndex(index) {
     return
   }
   const doRemove = () => {
+    remapReturns((item) => {
+      const toRow = Number(item.toRow)
+      if (toRow === index + 1) return null
+      if (toRow > index + 1) return { ...item, toRow: toRow - 1 }
+      return item
+    })
     localGrid.value = removeRowAt(localGrid.value, index)
     if (props.selectedRow === index) {
       emit('update:selectedStep', -1)
@@ -654,6 +801,145 @@ function removeRowAtIndex(index) {
   doRemove()
 }
 
+function cellEquipmentText(step, row) {
+  const ids = normalizeCellEquipmentIds(localGrid.value[step]?.[row])
+  if (!ids.length) return ''
+  void equipmentState.devices
+  const first = deviceLabelById(ids[0]) || ids[0]
+  return ids.length > 1 ? `${first} +${ids.length - 1}` : first
+}
+
+function cellHasReturn(step, row) {
+  return normalizeCellReturns(localGrid.value[step]?.[row]?.returns).some((item) => item.toStep)
+}
+
+const selectedEquipmentLabel = computed(() => {
+  const ids = selectedMeta.value?.equipmentIds || []
+  if (!ids.length) return '—'
+  return ids.map((id) => deviceLabelById(id) || id).join('、')
+})
+
+const cellEquipmentAllowIds = computed(() => {
+  void equipmentState.devices
+  const proc = selectedMeta.value?.processId ? getProcessById(selectedMeta.value.processId) : null
+  const category = selectedMeta.value?.equipmentCategory || ''
+  let devices = listDevices().filter((device) => device.status !== EQUIPMENT_STATUS.SCRAPPED)
+  if (proc?.equipmentIds?.length) {
+    const allowSet = new Set(proc.equipmentIds)
+    devices = devices.filter((device) => allowSet.has(device.id))
+  }
+  if (category) devices = devices.filter((device) => device.category === category)
+  return devices.map((device) => device.id)
+})
+
+const cellEquipmentOptions = computed(() => {
+  void equipmentState.devices
+  const allowSet = new Set(cellEquipmentAllowIds.value || [])
+  const options = listDevices()
+    .filter((device) => device.status !== EQUIPMENT_STATUS.SCRAPPED)
+    .filter((device) => allowSet.has(device.id))
+    .map((device) => ({ value: device.id, label: formatDeviceLabel(device) }))
+  ;(selectedMeta.value?.equipmentIds || []).forEach((id) => {
+    if (id && !options.some((item) => item.value === id)) {
+      options.unshift({ value: id, label: deviceLabelById(id) || id })
+    }
+  })
+  return options
+})
+
+const returnTargetOptions = computed(() => {
+  const options = []
+  localGrid.value.forEach((step, stepIndex) => {
+    ;(step || []).forEach((cell, rowIndex) => {
+      if (!cell?.processId) return
+      if (stepIndex === props.selectedStep && rowIndex === props.selectedRow) return
+      const proc = getProcessById(cell.processId)
+      options.push({
+        value: `${stepIndex + 1}-${rowIndex + 1}`,
+        label:
+          `第${stepIndex + 1}列第${rowIndex + 1}行 ${proc?.name || cell.processName || ''}`.trim(),
+      })
+    })
+  })
+  return options
+})
+
+function returnValue(item) {
+  if (!item?.toStep || !item?.toRow) return undefined
+  return `${item.toStep}-${item.toRow}`
+}
+
+function formatReturnLine(item) {
+  return formatCellReturn(localGrid.value, item)
+}
+
+function onEquipmentCategoryChange(value) {
+  if (props.readonly) return
+  patchSelectedCell((cell) => {
+    cell.equipmentCategory = value || ''
+    const next = normalizeRouteCell(cell)
+    const allow = new Set(cellEquipmentAllowIdsFor(next))
+    next.equipmentIds = (next.equipmentIds || []).filter((id) => allow.has(id))
+    next.equipmentId = next.equipmentIds[0] || ''
+    Object.assign(cell, next)
+  })
+}
+
+function cellEquipmentAllowIdsFor(cell) {
+  const proc = cell?.processId ? getProcessById(cell.processId) : null
+  const category = cell?.equipmentCategory || ''
+  let devices = listDevices().filter((device) => device.status !== EQUIPMENT_STATUS.SCRAPPED)
+  if (proc?.equipmentIds?.length) {
+    const allowSet = new Set(proc.equipmentIds)
+    devices = devices.filter((device) => allowSet.has(device.id))
+  }
+  if (category) devices = devices.filter((device) => device.category === category)
+  return devices.map((device) => device.id)
+}
+
+function onEquipmentChange(value) {
+  if (props.readonly) return
+  const ids = Array.isArray(value) ? value.filter(Boolean) : []
+  patchSelectedCell((cell) => {
+    cell.equipmentIds = [...ids]
+    cell.equipmentId = ids[0] || ''
+  })
+}
+
+function patchReturn(index, patch) {
+  patchSelectedCell((cell) => {
+    const returns = normalizeCellReturns(cell.returns)
+    if (!returns[index]) return
+    returns[index] = { ...returns[index], ...patch }
+    cell.returns = returns
+  })
+}
+
+function onReturnStream(index, value) {
+  patchReturn(index, { stream: value })
+}
+
+function onReturnTarget(index, value) {
+  const [toStep, toRow] = String(value || '')
+    .split('-')
+    .map((part) => Number(part))
+  patchReturn(index, { toStep: toStep || 0, toRow: toRow || 0 })
+}
+
+function addReturn() {
+  patchSelectedCell((cell) => {
+    cell.returns = [...normalizeCellReturns(cell.returns), { stream: '', toStep: 0, toRow: 0 }]
+  })
+}
+
+function removeReturn(index) {
+  patchSelectedCell((cell) => {
+    const returns = normalizeCellReturns(cell.returns)
+    returns.splice(index, 1)
+    cell.returns = returns
+  })
+}
+
 function onDocChange(docId) {
   if (props.readonly) return
   const step = props.selectedStep
@@ -662,6 +948,43 @@ function onDocChange(docId) {
   if (!cell) return
   cell.processFileId = docId || ''
   emitGrid()
+}
+
+function patchSelectedCell(mutator) {
+  const cell = localGrid.value[props.selectedStep]?.[props.selectedRow]
+  if (!cell) return
+  mutator(cell)
+  emitGrid()
+}
+
+function onGateChange(value) {
+  if (props.readonly) return
+  patchSelectedCell((cell) => {
+    if (!value || value === PROCESS_GATE_INHERIT) delete cell.gateMode
+    else cell.gateMode = value
+  })
+}
+
+function onTransferCustomChange(event) {
+  if (props.readonly) return
+  const checked = event?.target?.checked
+  patchSelectedCell((cell) => {
+    if (!checked) {
+      delete cell.transferCustom
+      delete cell.transferCondition
+      return
+    }
+    cell.transferCustom = true
+    cell.transferCondition = selectedMeta.value?.defaultTransfer || ''
+  })
+}
+
+function onTransferChange(event) {
+  if (props.readonly) return
+  patchSelectedCell((cell) => {
+    cell.transferCustom = true
+    cell.transferCondition = event?.target?.value || ''
+  })
 }
 
 function onQcOverrideChange(value) {
@@ -720,15 +1043,16 @@ function startResize(e) {
 }
 
 .grid-tip {
-  padding: 8px 12px 0;
+  padding: 10px 14px 0;
   font-size: 13px;
-  color: #666;
+  line-height: 20px;
+  color: #4e5969;
 }
 
 .editor-main {
   display: flex;
   align-items: stretch;
-  min-height: 480px;
+  min-height: 520px;
   gap: 0;
 }
 
@@ -757,16 +1081,17 @@ function startResize(e) {
 }
 
 .resize-handle:hover {
-  background: #bae0ff;
+  background: #d7e8e5;
 }
 
 .box-title {
-  padding: 12px 14px 8px;
+  padding: 12px 14px;
   font-weight: 600;
   font-size: 14px;
-  color: rgba(0, 0, 0, 0.88);
+  line-height: 22px;
+  color: #1f2329;
   background: transparent;
-  border-bottom: none;
+  border-bottom: 1px solid #e5e6eb;
 }
 
 .category-list {
@@ -791,8 +1116,8 @@ function startResize(e) {
 }
 
 .category-item.active {
-  background: #e6f4ff;
-  color: #1677ff;
+  background: #e7f2f0;
+  color: #307068;
   font-weight: 500;
 }
 
@@ -810,10 +1135,10 @@ function startResize(e) {
 
 .process-tile {
   min-height: 52px;
-  border: 1px solid #91caff;
+  border: 1px solid #a9c6c2;
   border-radius: 4px;
-  background: #e6f4ff;
-  color: #1677ff;
+  background: #e7f2f0;
+  color: #307068;
   font-size: 12px;
   display: flex;
   align-items: center;
@@ -826,8 +1151,8 @@ function startResize(e) {
 }
 
 .process-tile.active {
-  border-color: #1677ff;
-  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.25);
+  border-color: #307068;
+  box-shadow: 0 0 0 2px rgba(48, 112, 104, 0.25);
   font-weight: 600;
 }
 
@@ -836,8 +1161,8 @@ function startResize(e) {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  margin-left: 4px;
-  margin-right: 8px;
+  margin-left: 6px;
+  margin-right: 10px;
 }
 
 .grid-area {
@@ -870,9 +1195,9 @@ function startResize(e) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   gap: 4px;
-  min-height: 52px;
+  min-height: 28px;
 }
 
 .step-ctrl-row {
@@ -882,24 +1207,6 @@ function startResize(e) {
   justify-content: center;
   gap: 2px;
   width: 100%;
-}
-
-.completion-select {
-  width: 100%;
-  font-size: 12px;
-}
-
-.completion-select :deep(.ant-select-selector) {
-  padding-inline: 4px !important;
-  font-size: 12px;
-}
-
-.completion-placeholder {
-  width: 100%;
-  text-align: center;
-  font-size: 11px;
-  line-height: 24px;
-  color: rgba(0, 0, 0, 0.45);
 }
 
 .row-ctrl {
@@ -933,7 +1240,7 @@ function startResize(e) {
 }
 
 .ctrl-plus {
-  color: #1677ff;
+  color: #307068;
 }
 
 .ctrl-minus {
@@ -959,8 +1266,8 @@ function startResize(e) {
 }
 
 .grid-cell {
-  width: 110px;
-  height: 64px;
+  width: 120px;
+  height: 78px;
   border: 1px dashed #d9d9d9;
   border-radius: 4px;
   background: #fafafa;
@@ -974,32 +1281,46 @@ function startResize(e) {
 
 .grid-cell.filled {
   border-style: solid;
-  border-color: #91caff;
+  border-color: #a9c6c2;
   background: #fff;
   padding: 4px;
 }
 
 .grid-cell.selected {
-  border-color: #1677ff;
-  box-shadow: inset 0 0 0 1px #1677ff;
+  border-color: #307068;
+  box-shadow: inset 0 0 0 1px #307068;
 }
 
 .cell-tile {
   width: 100%;
   height: 100%;
-  background: #e6f4ff;
-  border: 1px solid #91caff;
+  background: #e7f2f0;
+  border: 1px solid #a9c6c2;
   border-radius: 4px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   position: relative;
   padding: 4px;
+  gap: 2px;
+}
+
+.cell-equip,
+.cell-return {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1.2;
+  color: #4e5969;
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .cell-name {
   font-size: 12px;
-  color: #1677ff;
+  color: #307068;
   text-align: center;
   line-height: 1.2;
 }
@@ -1014,11 +1335,11 @@ function startResize(e) {
 }
 
 .right-column {
-  width: 280px;
+  width: 340px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   min-height: 480px;
 }
 
@@ -1037,44 +1358,121 @@ function startResize(e) {
   flex-shrink: 0;
 }
 
-.info-rows {
-  padding: 4px 14px 12px;
+.info-body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.info-meta-card {
+  padding: 12px 14px;
+  background: #fafbfc;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .info-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  column-gap: 10px;
+  align-items: start;
   font-size: 13px;
-  line-height: 1.7;
-  margin-bottom: 6px;
+  line-height: 22px;
 }
 
 .info-row .k {
-  color: rgba(0, 0, 0, 0.45);
+  color: #4e5969;
   flex-shrink: 0;
 }
 
 .info-row .v {
-  color: rgba(0, 0, 0, 0.88);
-  flex: 1;
+  color: #1f2329;
   min-width: 0;
-  word-break: break-all;
+  word-break: break-word;
 }
 
-.config-tag {
-  margin-bottom: 4px;
+.info-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
-.qc-override-hint {
-  margin-top: 4px;
+.info-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2329;
+  line-height: 22px;
+}
+
+.info-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #4e5969;
+  line-height: 20px;
+}
+
+.field-control {
+  width: 100%;
+}
+
+.field-value {
+  font-size: 13px;
+  line-height: 22px;
+  color: #1f2329;
+  word-break: break-word;
+}
+
+.field-hint {
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 18px;
   color: rgba(0, 0, 0, 0.45);
 }
 
+.return-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: #fafbfc;
+  border: 1px solid #e5e6eb;
+  border-radius: 6px;
+}
+
+.return-stream {
+  width: 88px;
+  flex-shrink: 0;
+}
+
+.return-target {
+  flex: 1;
+  min-width: 140px;
+}
+
+.return-del {
+  padding-inline: 0;
+}
+
+.return-add {
+  align-self: flex-start;
+}
+
+.transfer-check {
+  align-self: flex-start;
+}
+
 .file-form {
-  padding: 0 14px 12px;
+  padding: 4px 14px 14px;
 }
 
 .file-readonly-line {
@@ -1093,12 +1491,12 @@ function startResize(e) {
 }
 
 .file-link {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
   word-break: break-all;
 
   &:hover {
-    color: #4096ff;
+    color: #4e8a82;
   }
 }
 
@@ -1106,7 +1504,7 @@ function startResize(e) {
   color: #999;
   font-size: 13px;
   text-align: center;
-  padding: 24px 12px 32px;
+  padding: 40px 16px;
 }
 
 .right-empty.compact {

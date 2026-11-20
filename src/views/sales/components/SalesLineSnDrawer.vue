@@ -181,15 +181,15 @@ function openSalesOrder() {
 }
 
 .link-code {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 
   &:hover {
-    color: #4096ff;
+    color: #4e8a82;
   }
 }
 
 :deep(.sn-hit-row) > td {
-  background: #e6f4ff !important;
+  background: #e7f2f0 !important;
 }
 </style>

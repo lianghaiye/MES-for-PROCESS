@@ -122,7 +122,7 @@ export default { name: 'PlanSupplierSelect' }
 .search-more-row {
   padding: 8px 12px;
   text-align: center;
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
   font-size: 13px;
 

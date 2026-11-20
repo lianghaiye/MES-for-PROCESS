@@ -169,7 +169,7 @@ export default { name: 'WorkbenchFavoriteModal' }
     background 0.15s;
 
   &:hover {
-    border-color: #91caff;
+    border-color: #a9c6c2;
     background: #f0f7ff;
   }
 

@@ -282,8 +282,8 @@ export default { name: 'ListPeriodStatsPanel' }
   box-sizing: border-box;
   overflow: hidden;
   /* 默认浅蓝渐变；按右侧图标色系换肤 */
-  background: linear-gradient(145deg, #e6f4ff 0%, #f0f7ff 45%, #ffffff 100%);
-  box-shadow: 0 1px 2px rgba(22, 119, 255, 0.06);
+  background: linear-gradient(145deg, #e7f2f0 0%, #f0f7ff 45%, #ffffff 100%);
+  box-shadow: 0 1px 2px rgba(48, 112, 104, 0.06);
 
   &.is-dense {
     padding: 8px 10px;
@@ -311,8 +311,8 @@ export default { name: 'ListPeriodStatsPanel' }
   &:has(.icon-blue),
   &.icon-shop,
   &.icon-blue {
-    background: linear-gradient(145deg, #e6f4ff 0%, #f0f7ff 45%, #ffffff 100%);
-    border-color: #91caff;
+    background: linear-gradient(145deg, #e7f2f0 0%, #f0f7ff 45%, #ffffff 100%);
+    border-color: #a9c6c2;
   }
 
   &:has(.icon-screen),
@@ -339,8 +339,8 @@ export default { name: 'ListPeriodStatsPanel' }
 
   &:has(.icon-cyan),
   &.icon-cyan {
-    background: linear-gradient(145deg, #e6fffb 0%, #e0f9f6 45%, #ffffff 100%);
-    border-color: #87e8de;
+    background: linear-gradient(145deg, #e7f2f0 0%, #e0f9f6 45%, #ffffff 100%);
+    border-color: #a9c6c2;
   }
 
   &:has(.icon-red),
@@ -419,8 +419,8 @@ export default { name: 'ListPeriodStatsPanel' }
   opacity: 0.85;
   margin-left: 8px;
   &.icon-shop {
-    background: linear-gradient(145deg, #91caff 0%, #1677ff 55%, #69b1ff 100%);
-    box-shadow: 0 6px 16px rgba(22, 119, 255, 0.25);
+    background: linear-gradient(145deg, #a9c6c2 0%, #307068 55%, #6a9e98 100%);
+    box-shadow: 0 6px 16px rgba(48, 112, 104, 0.25);
   }
   &.icon-screen {
     background: linear-gradient(145deg, #b37feb 0%, #722ed1 50%, #9254de 100%);
@@ -431,8 +431,8 @@ export default { name: 'ListPeriodStatsPanel' }
     box-shadow: 0 6px 16px rgba(250, 140, 22, 0.22);
   }
   &.icon-blue {
-    background: linear-gradient(145deg, #91caff 0%, #1677ff 55%, #69b1ff 100%);
-    box-shadow: 0 6px 16px rgba(22, 119, 255, 0.25);
+    background: linear-gradient(145deg, #a9c6c2 0%, #307068 55%, #6a9e98 100%);
+    box-shadow: 0 6px 16px rgba(48, 112, 104, 0.25);
   }
   &.icon-purple {
     background: linear-gradient(145deg, #b37feb 0%, #722ed1 50%, #9254de 100%);
@@ -447,8 +447,8 @@ export default { name: 'ListPeriodStatsPanel' }
     box-shadow: 0 6px 16px rgba(82, 196, 26, 0.22);
   }
   &.icon-cyan {
-    background: linear-gradient(145deg, #5cdbd3 0%, #13c2c2 55%, #36cfc9 100%);
-    box-shadow: 0 6px 16px rgba(19, 194, 194, 0.22);
+    background: linear-gradient(145deg, #6a9e98 0%, #307068 55%, #4e8a82 100%);
+    box-shadow: 0 6px 16px rgba(48, 112, 104, 0.22);
   }
   &.icon-red {
     background: linear-gradient(145deg, #ff9c9c 0%, #f5222d 55%, #ff7875 100%);

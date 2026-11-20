@@ -1534,7 +1534,7 @@ function handleConfirmAndCreateQc() {
   color: #595959;
 
   strong {
-    color: #1677ff;
+    color: #307068;
     font-size: 15px;
     margin-left: 4px;
   }
@@ -1546,7 +1546,7 @@ function handleConfirmAndCreateQc() {
   margin-top: 0;
   font-size: 12px;
   line-height: 1.6;
-  color: #1677ff;
+  color: #307068;
   text-align: right;
 }
 

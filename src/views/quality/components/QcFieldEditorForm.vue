@@ -362,7 +362,7 @@
               <a-button type="link" size="small" @click="addChildOption(i)">+ 添加选项</a-button>
             </a-form-item>
           </template>
-          <a-row :gutter="[12, 12]" class="child-judge-block">
+          <a-row v-if="!hideJudge" :gutter="[12, 12]" class="child-judge-block">
             <a-col :span="6">
               <a-form-item label="判定方式">
                 <a-select
@@ -479,7 +479,7 @@
         </a-button>
       </div>
 
-      <div class="form-section-box">
+      <div v-if="!hideJudge" class="form-section-box">
         <div class="section-label">合格标准</div>
         <a-row :gutter="[12, 12]">
           <a-col :span="6">
@@ -658,6 +658,8 @@ const props = defineProps({
   /** @deprecated 分类已取消，保留 prop 以免调用方报错 */
   showCategory: { type: Boolean, default: false },
   showSyncToLibrary: { type: Boolean, default: false },
+  /** 过程采集等场景：隐藏合格判定配置，强制不做质检判定 */
+  hideJudge: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:model'])
@@ -1139,7 +1141,7 @@ function updateChildOptionFillPlaceholder(childIndex, optIndex, value) {
       width: 3px;
       height: 14px;
       border-radius: 2px;
-      background: #1677ff;
+      background: #307068;
       flex-shrink: 0;
     }
   }

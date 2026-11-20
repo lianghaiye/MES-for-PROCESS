@@ -179,7 +179,7 @@ export default { name: 'WorkbenchProcessConfigModal' }
   gap: 10px;
 
   &.shown {
-    border-color: #91caff;
+    border-color: #a9c6c2;
     background: #f5f9ff;
   }
 }
@@ -208,8 +208,8 @@ export default { name: 'WorkbenchProcessConfigModal' }
     border-color 0.15s;
 
   &:hover {
-    border-color: #91caff;
-    box-shadow: 0 2px 8px rgba(22, 119, 255, 0.08);
+    border-color: #a9c6c2;
+    box-shadow: 0 2px 8px rgba(48, 112, 104, 0.08);
   }
 
   &.dragging {

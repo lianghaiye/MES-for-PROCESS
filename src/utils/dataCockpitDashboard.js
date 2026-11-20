@@ -61,7 +61,7 @@ function buildOutputMaterialChart(mock) {
           name: '报工产出',
           type: 'bar',
           data: output,
-          itemStyle: { color: '#1677ff' },
+          itemStyle: { color: '#307068' },
           barMaxWidth: 28,
         },
         {
@@ -143,7 +143,7 @@ function buildWipChart(mock) {
               y2: 1,
               colorStops: [
                 { offset: 0, color: '#597ef7' },
-                { offset: 1, color: '#1677ff' },
+                { offset: 1, color: '#307068' },
               ],
             },
           },
@@ -351,7 +351,7 @@ function buildSalesDeliveryChart(mock) {
           style: {
             text: `${rate}%`,
             textAlign: 'center',
-            fill: '#1677ff',
+            fill: '#307068',
             fontSize: 22,
             fontWeight: 700,
           },
@@ -380,8 +380,8 @@ function buildSalesDeliveryChart(mock) {
             fontSize: 11,
           },
           data: [
-            { name: '已发货金额', value: deliveryAmount, itemStyle: { color: '#13c2c2' } },
-            { name: '待发货金额', value: pendingAmount, itemStyle: { color: '#91caff' } },
+            { name: '已发货金额', value: deliveryAmount, itemStyle: { color: '#307068' } },
+            { name: '待发货金额', value: pendingAmount, itemStyle: { color: '#A9C6C2' } },
           ],
         },
       ],

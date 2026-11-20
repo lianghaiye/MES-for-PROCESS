@@ -164,7 +164,7 @@ function goOutsourcing(row) {
     margin-bottom: 10px;
   }
   .link {
-    color: #1677ff;
+    color: #307068;
     cursor: pointer;
   }
 }

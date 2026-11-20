@@ -2,6 +2,9 @@ import { reactive, watch } from 'vue'
 import dayjs from 'dayjs'
 
 const STORAGE_KEY = 'i_doms_measure_units'
+const SEED_VERSION_KEY = 'i_doms_measure_units_seed_v'
+/** v4：包装单位增加吨桶、吨袋 */
+const CURRENT_SEED_VERSION = '4'
 
 /** 适用类型 */
 export const UNIT_SCOPE = {
@@ -38,7 +41,27 @@ export const UNIT_ROUNDING_LABEL = {
   [UNIT_ROUNDING.FLOOR]: '向下保留',
 }
 
-const DECIMAL_UNIT_NAMES = new Set(['kg', 'g', 't', 'm', '米', 'cm', 'mm', '㎡', 'm²', 'L', 'ml'])
+const DECIMAL_UNIT_NAMES = new Set([
+  'kg',
+  'g',
+  'mg',
+  't',
+  '吨',
+  'm',
+  '米',
+  'cm',
+  'mm',
+  '㎡',
+  'm²',
+  'm³',
+  '立方米',
+  'L',
+  'l',
+  '升',
+  'ml',
+  'mL',
+  '毫升',
+])
 
 function defaultPrecisionForName(name) {
   return DECIMAL_UNIT_NAMES.has(String(name || '').trim()) ? 2 : 0
@@ -53,19 +76,72 @@ function defaultRoundingForName(name) {
 
 function seedUnits() {
   const now = dayjs().format('YYYY-MM-DD HH:mm')
+  const both = ['inventory', 'purchase']
+  // 排序即使用频率：质量、体积在前，包装在后
   const rows = [
-    { code: 'UNIT001', name: '个', scopes: ['inventory', 'purchase'], sort: 10 },
-    { code: 'UNIT002', name: '件', scopes: ['inventory', 'purchase'], sort: 20 },
-    { code: 'UNIT003', name: '套', scopes: ['inventory', 'purchase'], sort: 30 },
-    { code: 'UNIT004', name: '台', scopes: ['inventory', 'purchase'], sort: 40 },
-    { code: 'UNIT005', name: 'kg', scopes: ['inventory', 'purchase'], sort: 50 },
-    { code: 'UNIT006', name: 'm', scopes: ['inventory', 'purchase'], sort: 60 },
-    { code: 'UNIT007', name: '米', scopes: ['inventory', 'purchase'], sort: 70 },
-    { code: 'UNIT008', name: '根', scopes: ['inventory', 'purchase'], sort: 80 },
-    { code: 'UNIT009', name: '支', scopes: ['purchase'], sort: 90 },
-    { code: 'UNIT010', name: '条', scopes: ['purchase'], sort: 100 },
-    { code: 'UNIT011', name: '张', scopes: ['inventory', 'purchase'], sort: 110 },
-    { code: 'UNIT012', name: '㎡', scopes: ['inventory', 'purchase'], sort: 120 },
+    {
+      code: 'UNIT005',
+      name: 'kg',
+      scopes: both,
+      sort: 10,
+      precision: 2,
+      remark: '配方、库存、投料的主单位',
+    },
+    {
+      code: 'UNIT013',
+      name: '升',
+      scopes: both,
+      sort: 20,
+      precision: 2,
+      remark: '液体体积。与公斤换算取物料密度',
+    },
+    {
+      code: 'UNIT014',
+      name: '吨',
+      scopes: both,
+      sort: 30,
+      precision: 3,
+      remark: '大宗原料。1 吨 = 1000 kg',
+    },
+    { code: 'UNIT015', name: 'g', scopes: both, sort: 40, precision: 2, remark: '小料、助剂' },
+    {
+      code: 'UNIT016',
+      name: 'mL',
+      scopes: both,
+      sort: 50,
+      precision: 2,
+      remark: '微量液体。1000 mL = 1 升',
+    },
+    {
+      code: 'UNIT017',
+      name: 'm³',
+      scopes: both,
+      sort: 60,
+      precision: 3,
+      remark: '储罐与大宗液体。1 m³ = 1000 升',
+    },
+    {
+      code: 'UNIT018',
+      name: '桶',
+      scopes: both,
+      sort: 70,
+      precision: 0,
+      remark: '包装单位，换算率写在具体物料上',
+    },
+    { code: 'UNIT019', name: '袋', scopes: both, sort: 80, precision: 0, remark: '粉体包装' },
+    { code: 'UNIT020', name: '瓶', scopes: both, sort: 90, precision: 0, remark: '小包装液体' },
+    { code: 'UNIT021', name: '罐', scopes: both, sort: 100, precision: 0, remark: '成品罐装' },
+    {
+      code: 'UNIT023',
+      name: '吨桶',
+      scopes: both,
+      sort: 105,
+      precision: 0,
+      remark: '大宗液体包装',
+    },
+    { code: 'UNIT024', name: '吨袋', scopes: both, sort: 108, precision: 0, remark: '粉体吨包装' },
+    { code: 'UNIT002', name: '件', scopes: both, sort: 110, precision: 0, remark: '成件出货' },
+    { code: 'UNIT022', name: 'mg', scopes: both, sort: 120, precision: 2, remark: '微量固体' },
   ]
   return rows.map((r, i) =>
     normalizeUnit({
@@ -74,9 +150,9 @@ function seedUnits() {
       name: r.name,
       scopes: [...r.scopes],
       status: UNIT_STATUS.ENABLED,
-      precision: defaultPrecisionForName(r.name),
+      precision: r.precision,
       roundingRule: defaultRoundingForName(r.name),
-      remark: '',
+      remark: r.remark,
       sort: r.sort,
       creator: 'admin',
       createdAt: now,
@@ -85,43 +161,20 @@ function seedUnits() {
   )
 }
 
-/** 确保板材相关单位存在（兼容旧 localStorage） */
-function ensurePlateUnits(units) {
-  const list = Array.isArray(units) ? [...units] : []
-  const now = dayjs().format('YYYY-MM-DD HH:mm')
-  const extras = [
-    { code: 'UNIT011', name: '张', scopes: ['inventory', 'purchase'], sort: 110 },
-    { code: 'UNIT012', name: '㎡', scopes: ['inventory', 'purchase'], sort: 120 },
-  ]
-  extras.forEach((extra, i) => {
-    if (list.some((u) => u.name === extra.name || u.code === extra.code)) return
-    list.push(
-      normalizeUnit({
-        id: `unit-plate-${i + 1}`,
-        ...extra,
-        status: UNIT_STATUS.ENABLED,
-        creator: 'admin',
-        createdAt: now,
-        updatedAt: now,
-      }),
-    )
-  })
-  return list
-}
-
 function loadFromStorage() {
   try {
+    if (localStorage.getItem(SEED_VERSION_KEY) !== CURRENT_SEED_VERSION) return null
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
       const parsed = JSON.parse(raw)
       if (Array.isArray(parsed.units) && parsed.units.length) {
-        return ensurePlateUnits(parsed.units.map(normalizeUnit))
+        return parsed.units.map(normalizeUnit)
       }
     }
   } catch {
     /* ignore */
   }
-  return seedUnits()
+  return null
 }
 
 function normalizeRoundingRule(value, unitName) {
@@ -190,10 +243,11 @@ export function roundQtyByUnit(qty, unitOrName) {
 
 function persist() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ units: unitState.units }))
+  localStorage.setItem(SEED_VERSION_KEY, CURRENT_SEED_VERSION)
 }
 
 export const unitState = reactive({
-  units: loadFromStorage(),
+  units: loadFromStorage() || seedUnits(),
 })
 
 watch(

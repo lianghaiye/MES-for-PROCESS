@@ -47,11 +47,6 @@
                 </a-form-item>
               </a-col>
               <a-col :span="6">
-                <a-form-item label="生产工单">
-                  <WorkOrderSearchSelect v-model:value="form.workOrderNo" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="6">
                 <a-form-item label="合同编号">
                   <ContractSelect
                     v-model="form.contractNo"
@@ -838,6 +833,7 @@ import {
   resolveInventoryUnit,
   convertStockDemandToPurchase,
 } from '@/utils/purchaseUomConvert'
+import { resolvePurchaseListPrice } from '@/utils/tradePrice'
 import { applySettleFieldsFromMaterial, estimateSettleQty, hasSettleUnit } from '@/utils/settleUnit'
 import {
   addPurchaseOrder,
@@ -857,7 +853,6 @@ import ContractSelect from '@/views/sales/components/ContractSelect.vue'
 import { getSalesContractByNo, resolveContractPrice } from '@/store/salesContractStore'
 import { CONTRACT_CASH_DIRECTION, CONTRACT_TYPE } from '@/constants/salesContract'
 import SalesOrderSearchSelect from './SalesOrderSearchSelect.vue'
-import WorkOrderSearchSelect from './WorkOrderSearchSelect.vue'
 import PurchaseOrderLineEditModal from './PurchaseOrderLineEditModal.vue'
 import InventoryLineEditableCell from '@/views/inventory/components/InventoryLineEditableCell.vue'
 import InventoryLineTableFooter from '@/views/inventory/components/InventoryLineTableFooter.vue'
@@ -1183,7 +1178,13 @@ function applyContractPriceToPoLine(line, contract) {
     materialInfoState.materials.find((m) => m.code === code) ||
     productInfoState.products.find((p) => p.code === code) ||
     null
-  const baseList = Number(master?.unitPrice) || Number(line.unitPriceExTax) || 0
+  const baseList =
+    resolvePurchaseListPrice(master, {
+      supplierName: form.supplier,
+      packSpecId: line.packSpecId,
+    }).price ||
+    Number(line.unitPriceExTax) ||
+    0
   const priced = resolveContractPrice(contract, line.productId || '', code, baseList)
   const rate = Number(priced.lineDiscountRate)
   const list = Number(priced.listUnitPriceExTax) || 0
@@ -1221,7 +1222,13 @@ function mapContractLineToPoLine(cl, contract) {
     productInfoState.products.find((p) => p.code === code) ||
     null
   const qty = Number(cl.qty ?? cl.purchaseQty) || 1
-  const unitPrice = Number(cl.unitPriceExTax) || Number(master?.unitPrice) || 0
+  const unitPrice =
+    Number(cl.unitPriceExTax) ||
+    resolvePurchaseListPrice(master, {
+      supplierName: form.supplier,
+      packSpecId: cl.packSpecId,
+    }).price ||
+    0
   const taxRate = Number(master?.inputTaxRate ?? 13)
   const line = createPoLineItem({
     productName: cl.productName || cl.itemName || master?.name || '',
@@ -1411,7 +1418,13 @@ function headerDeliveryDateStr() {
 function mapPickerToPoLine(payload) {
   const master = resolveMasterRecord(payload)
   const code = payload.code || ''
-  const unitPrice = Number(master?.unitPrice ?? payload.unitPrice ?? 0)
+  const unitPrice =
+    resolvePurchaseListPrice(master, {
+      supplierName: form.supplier,
+      packSpecId: payload.packSpecId,
+    }).price ||
+    Number(payload.unitPrice) ||
+    0
   const taxRate = Number(master?.inputTaxRate ?? 13)
   const variantValues = master?.variantValues
     ? { ...master.variantValues }
@@ -1543,7 +1556,10 @@ function onVariantConfigConfirm(payload) {
   target.stockQty = resolveStockQty(resolved.productCode)
   const master = resolveMasterBySkuId(resolved.productId)
   if (master) {
-    const unitPrice = Number(master.unitPrice ?? 0)
+    const unitPrice = resolvePurchaseListPrice(master, {
+      supplierName: form.supplier,
+      packSpecId: target.packSpecId,
+    }).price
     if (taxModeExcluding.value) {
       target.unitPriceExTax = unitPrice
     } else {
@@ -2069,9 +2085,9 @@ function handleSave() {
   margin-bottom: 8px;
 
   .tax-toggle-btn {
-    color: #1677ff;
-    border-color: #91caff;
-    background: #e6f4ff;
+    color: #307068;
+    border-color: #a9c6c2;
+    background: #e7f2f0;
   }
 
   .tax-hint {
@@ -2085,12 +2101,12 @@ function handleSave() {
 }
 
 .variant-field-link {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
   word-break: break-word;
 
   &:hover {
-    color: #4096ff;
+    color: #4e8a82;
   }
 }
 
@@ -2229,12 +2245,12 @@ function handleSave() {
 }
 
 .order-size-link {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
   word-break: break-word;
 
   &:hover {
-    color: #4096ff;
+    color: #4e8a82;
   }
 }
 </style>

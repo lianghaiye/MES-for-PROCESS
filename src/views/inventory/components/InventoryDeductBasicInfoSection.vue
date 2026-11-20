@@ -37,7 +37,10 @@
 
 <script setup>
 import { computed } from 'vue'
-import { resolveInventoryDeductDocNo } from '@/mock/materialRequisitionRecords'
+import {
+  isQuickMaterialDeduct,
+  resolveInventoryDeductDocNo,
+} from '@/mock/materialRequisitionRecords'
 
 const props = defineProps({
   record: { type: Object, required: true },
@@ -66,12 +69,13 @@ const metaItems = computed(() => {
 const fields = computed(() => {
   const r = props.record
   const docNo = resolveInventoryDeductDocNo(r)
+  const quick = isQuickMaterialDeduct(r)
   const list = [
     {
       key: 'docNo',
-      label: '工单/领料单号',
-      value: display(docNo),
-      linkable: Boolean(docNo),
+      label: quick ? '领料单号' : '工单号',
+      value: quick ? display(docNo) : '—',
+      linkable: quick && Boolean(docNo),
     },
     { key: 'deductNo', label: '扣减单号', value: display(r.deductNo) },
     { key: 'productName', label: '产品名称', value: display(r.productName) },
@@ -148,7 +152,7 @@ export default { name: 'InventoryDeductBasicInfoSection' }
 }
 
 .doc-link {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 

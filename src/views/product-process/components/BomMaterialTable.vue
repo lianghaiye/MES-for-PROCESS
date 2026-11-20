@@ -1256,7 +1256,7 @@ function customRow(record, index) {
     }
 
     &:hover {
-      color: #1677ff;
+      color: #307068;
     }
   }
 
@@ -1312,19 +1312,19 @@ function customRow(record, index) {
   }
 
   :deep(.drag-over-row > td) {
-    background: #e6f4ff !important;
+    background: #e7f2f0 !important;
   }
 
   :deep(tr.drag-over-row > td) {
-    background: #e6f4ff !important;
+    background: #e7f2f0 !important;
   }
 
   :deep(.ant-table-tbody > tr.bom-row-active > td) {
-    background: #e6f4ff !important;
+    background: #e7f2f0 !important;
   }
 
   :deep(.ant-table-tbody > tr.bom-row-context > td:first-child) {
-    box-shadow: inset 3px 0 0 #1677ff;
+    box-shadow: inset 3px 0 0 #307068;
   }
 
   :deep(.ant-table-tbody > tr.bom-row-stripe-alt > td) {
@@ -1392,7 +1392,7 @@ function customRow(record, index) {
   }
 
   .item-code-link {
-    color: #1677ff;
+    color: #307068;
     cursor: pointer;
     white-space: nowrap;
     overflow: hidden;
@@ -1402,12 +1402,12 @@ function customRow(record, index) {
     vertical-align: bottom;
 
     &:hover {
-      color: #4096ff;
+      color: #4e8a82;
     }
   }
 
   .variant-field-link {
-    color: #1677ff;
+    color: #307068;
     cursor: pointer;
     white-space: nowrap;
     overflow: hidden;
@@ -1417,12 +1417,12 @@ function customRow(record, index) {
     vertical-align: bottom;
 
     &:hover {
-      color: #4096ff;
+      color: #4e8a82;
     }
   }
 
   .blank-size-link {
-    color: #1677ff;
+    color: #307068;
     cursor: pointer;
     white-space: nowrap;
     overflow: hidden;
@@ -1432,7 +1432,7 @@ function customRow(record, index) {
     vertical-align: bottom;
 
     &:hover {
-      color: #4096ff;
+      color: #4e8a82;
     }
   }
 

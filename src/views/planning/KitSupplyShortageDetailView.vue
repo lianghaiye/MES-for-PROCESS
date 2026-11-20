@@ -463,7 +463,7 @@ watch(
 }
 
 .crumb {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
   font-weight: 600;
 }
@@ -594,7 +594,7 @@ watch(
 }
 
 .linkish {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 

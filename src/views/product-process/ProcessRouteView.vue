@@ -73,8 +73,15 @@
           <template v-else-if="column.key === 'product'">
             {{ record.productDisplay || record.itemName || record.categoryName || '—' }}
           </template>
+          <template v-else-if="column.key === 'routeMode'">
+            {{ formatRouteModeLabel(record.routeMode) }}
+          </template>
           <template v-else-if="column.key === 'processCount'">
-            {{ countGridProcesses(record.grid) }}
+            {{
+              record.routeMode === ROUTE_MODE_EQUIPMENT
+                ? (record.units || []).length
+                : countGridProcesses(record.grid)
+            }}
           </template>
           <template v-else-if="column.key === 'status'">
             <a-tag :color="statusColor(record.status)">{{ record.status }}</a-tag>
@@ -159,6 +166,7 @@ import { countGridProcesses, formatApplyScopeLabel } from '@/utils/processRouteG
 import ImportExcelModal from '@/components/ImportExcelModal.vue'
 import ImportExportHistoryModal from '@/components/ImportExportHistoryModal.vue'
 import { processRouteBundleImportDef } from '@/utils/importDefs/processRouteBundleImport'
+import { ROUTE_MODE_EQUIPMENT, formatRouteModeLabel } from '@/constants/processRouteMode'
 
 const router = useRouter()
 const { openTab } = useTabs()
@@ -174,9 +182,10 @@ const baseColumns = [
   { title: '状态', key: 'status', width: 90 },
   { title: '路线编码', key: 'code', width: 120 },
   { title: '路线名称', dataIndex: 'name', width: 160 },
+  { title: '模式', key: 'routeMode', width: 100 },
   { title: '适用范围', key: 'applyScope', dataIndex: 'applyScope', width: 100 },
   { title: '适用对象', key: 'product', width: 120, ellipsis: true },
-  { title: '工序数量', key: 'processCount', width: 88, align: 'right' },
+  { title: '工序/设备数', key: 'processCount', width: 110, align: 'right' },
   { title: '创建人', key: 'creator', dataIndex: 'creator', width: 90 },
   { title: '创建日期', dataIndex: 'createdAt', width: 160 },
   { title: '更新人', key: 'updater', dataIndex: 'updater', width: 90 },
@@ -185,7 +194,7 @@ const baseColumns = [
 ]
 
 const { columnSettings, columnDrawerOpen, displayColumns, tableScrollX, defaultColumnSettings } =
-  useTableColumnSettings('process-route-list-v2', baseColumns, { minScrollX: 1400 })
+  useTableColumnSettings('process-route-list-v5', baseColumns, { minScrollX: 1500 })
 
 const filteredList = computed(() => {
   const base = filterProcessRoutes(processRouteState.routes, applied)
@@ -314,7 +323,7 @@ function onSaved() {
 }
 
 .link-code {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 </style>

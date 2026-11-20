@@ -169,9 +169,9 @@ function onOpsMenuClick({ key }) {
       border-color 0.2s;
 
     &:hover {
-      background: #e6f4ff;
-      border-color: #91caff;
-      color: #1677ff;
+      background: #e7f3f1;
+      border-color: #a9c6c2;
+      color: #307068;
     }
   }
 
@@ -221,18 +221,18 @@ function onOpsMenuClick({ key }) {
   }
 
   :deep(.ant-tabs-tab-active) {
-    background: #e6f4ff !important;
+    background: #e7f3f1 !important;
 
     .ant-tabs-tab-btn {
-      color: #1677ff !important;
+      color: #307068 !important;
       font-weight: 600;
     }
 
     .ant-tabs-tab-remove {
-      color: #1677ff;
+      color: #307068;
 
       &:hover {
-        color: #0958d9;
+        color: #245850;
       }
     }
   }

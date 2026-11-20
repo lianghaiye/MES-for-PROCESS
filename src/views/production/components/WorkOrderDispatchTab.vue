@@ -368,7 +368,7 @@ function emitDispatchAndStart() {
 
   .process-icon-wrap {
     display: inline-flex;
-    color: #1677ff;
+    color: #307068;
   }
 
   .config-tags {

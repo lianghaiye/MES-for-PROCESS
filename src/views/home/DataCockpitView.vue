@@ -128,7 +128,7 @@ export default { name: 'DataCockpitView' }
   border-top: 3px solid #d9d9d9;
 
   &.tone-blue {
-    border-top-color: #1677ff;
+    border-top-color: #307068;
   }
   &.tone-purple {
     border-top-color: #722ed1;
@@ -140,7 +140,7 @@ export default { name: 'DataCockpitView' }
     border-top-color: #52c41a;
   }
   &.tone-cyan {
-    border-top-color: #13c2c2;
+    border-top-color: #307068;
   }
   &.tone-red {
     border-top-color: #ff4d4f;
@@ -192,6 +192,6 @@ export default { name: 'DataCockpitView' }
   font-weight: 600;
   color: rgba(0, 0, 0, 0.85);
   padding-left: 10px;
-  border-left: 3px solid #1677ff;
+  border-left: 3px solid #307068;
 }
 </style>

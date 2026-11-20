@@ -151,9 +151,7 @@ const remnantDispositionLabel = computed(() => {
 })
 
 const workOrderNos = computed(() => {
-  const lines = record.value?.lines || []
-  const nos = [...new Set(lines.map((l) => l.workOrderNo).filter(Boolean))]
-  return nos.join('、') || '—'
+  return '—'
 })
 
 watch(

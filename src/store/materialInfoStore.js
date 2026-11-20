@@ -1,61 +1,32 @@
 import { reactive, watch } from 'vue'
 import dayjs from 'dayjs'
-import { mockMaterials } from '@/mock/materialInfo'
 import { migrateMaterialList } from '@/utils/masterDataMigrate'
 import {
   generateSharedItemId,
   syncAfterMaterialSave,
   removeLinkedProduct,
 } from '@/utils/productMaterialSync'
-import { applyLaborConfigSeed } from '@/mock/laborConfigSeed'
-import { createDemoDualUnitMaterials } from '@/mock/stockBatchSeed'
-import { createOneItemOneCodeDemoMaterials } from '@/mock/oneItemOneCodeInventoryDemoSeed'
-import { createStockAlertDemoMaterials } from '@/mock/stockAlertDemoMaterials'
-import { createPackageConvertDemoMaterial } from '@/mock/packageConvertPurchaseDemoSeed'
+import { PROCESS_MATERIALS } from '@/mock/processMasterSeed'
+import { dropLegacyPumpMasters } from '@/utils/legacyPumpMaster'
 import { persistJson } from '@/utils/safeStorage'
 
 const STORAGE_KEY = 'i_doms_material_info'
-/** v19：一物一码库存演示料 WL-OIOC-* */
-const DATA_VERSION = 19
+/** v27：过期预警提前天数 */
+const DATA_VERSION = 27
 let codeSeq = 100048
 
-function ensureDemoMaterialsByCodes(list, demos) {
-  const materials = Array.isArray(list) ? [...list] : []
-  for (const demo of demos) {
-    const idx = materials.findIndex((m) => m.code === demo.code)
-    if (idx === -1) {
-      materials.unshift(demo)
-    } else {
-      materials[idx] = {
-        ...materials[idx],
-        ...demo,
-        id: materials[idx].id || demo.id,
-      }
-    }
-  }
-  return materials
+function cloneProcessMaterials() {
+  return PROCESS_MATERIALS.map((row) => ({ ...row }))
 }
 
-function ensureDemoVariableLengthMaterials(list) {
-  return ensureDemoMaterialsByCodes(list, [
-    ...createDemoDualUnitMaterials(),
-    ...createOneItemOneCodeDemoMaterials(),
-  ])
-}
-
-function ensureDemoPackagePurchaseMaterials(list) {
-  const fromMock = (mockMaterials || []).filter(
-    (m) =>
-      m.packageContent > 1 &&
-      m.purchaseUnit &&
-      m.inventoryUnit &&
-      m.purchaseUnit !== m.inventoryUnit,
-  )
-  return ensureDemoMaterialsByCodes(list, [...fromMock, createPackageConvertDemoMaterial()])
-}
-
-function ensureStockAlertDemoMaterials(list) {
-  return ensureDemoMaterialsByCodes(list, createStockAlertDemoMaterials())
+function mergeMasterRows(list, rows, overwrite) {
+  const next = Array.isArray(list) ? [...list] : []
+  rows.forEach((demo) => {
+    const idx = next.findIndex((row) => row.id === demo.id || row.code === demo.code)
+    if (idx === -1) next.unshift({ ...demo })
+    else if (overwrite) next[idx] = { ...demo, id: demo.id }
+  })
+  return next
 }
 
 function loadFromStorage() {
@@ -65,12 +36,9 @@ function loadFromStorage() {
       const parsed = JSON.parse(raw)
       if (Array.isArray(parsed.materials)) {
         const force = parsed.version !== DATA_VERSION
-        return ensureStockAlertDemoMaterials(
-          ensureDemoPackagePurchaseMaterials(
-            ensureDemoVariableLengthMaterials(
-              applyLaborConfigSeed(migrateMaterialList(parsed.materials), { force }),
-            ),
-          ),
+        if (force) return cloneProcessMaterials()
+        return dropLegacyPumpMasters(
+          mergeMasterRows(migrateMaterialList(parsed.materials), PROCESS_MATERIALS, false),
         )
       }
     }
@@ -88,9 +56,7 @@ function persist() {
 }
 
 export const materialInfoState = reactive({
-  materials: ensureStockAlertDemoMaterials(
-    loadFromStorage() || JSON.parse(JSON.stringify(mockMaterials)),
-  ),
+  materials: loadFromStorage() || cloneProcessMaterials(),
 })
 
 watch(

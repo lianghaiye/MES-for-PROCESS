@@ -1,6 +1,21 @@
 /** 加工工单弹窗下拉选项 Mock */
-export const processRouteOptions = ['机加标准路线', '装配标准路线', '热处理路线', '焊接标准路线']
-export const workCenterOptions = ['默认工厂', '机加车间', '装配车间', '总装车间', '热处理车间']
+export const processRouteOptions = [
+  '机加标准路线',
+  '装配标准路线',
+  '热处理路线',
+  '焊接标准路线',
+  '树脂合成路线',
+  '配漆路线',
+]
+export const workCenterOptions = [
+  '默认工厂',
+  '机加车间',
+  '装配车间',
+  '总装车间',
+  '热处理车间',
+  '反应车间',
+  '配漆车间',
+]
 export const personInChargeOptions = ['孙琴丽', '张三', '李四', '王五']
 
 /** 工作中心默认负责人 */

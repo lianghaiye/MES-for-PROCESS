@@ -271,7 +271,7 @@ function submitWriteOff() {
 }
 
 .amt-pos {
-  color: #1677ff;
+  color: #307068;
   font-variant-numeric: tabular-nums;
 }
 

@@ -517,7 +517,6 @@ const baseColumns = [
   { title: '供应商', dataIndex: 'supplier', width: 130, ellipsis: true },
   { title: '采购数量', key: 'purchaseQty', width: 120 },
   { title: '合同编号', dataIndex: 'contractNo', width: 120, ellipsis: true },
-  { title: '生产工单号', dataIndex: 'workOrderNo', width: 120, ellipsis: true },
   { title: '结算类型', dataIndex: 'settlementType', width: 110 },
   { title: '结算周期', dataIndex: 'settlementCycle', width: 90 },
   { title: '结算方式', dataIndex: 'settlementMethod', width: 100 },
@@ -1246,7 +1245,7 @@ function onInboundSaved() {
 }
 
 .link-code {
-  color: #1677ff;
+  color: #307068;
 }
 
 .action-disabled {

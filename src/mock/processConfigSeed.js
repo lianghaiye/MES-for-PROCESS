@@ -18,15 +18,10 @@ export const PROCESS_OPERATION_DEFS = [
   { key: 'opDisassemblyQc', label: '拆解质检' },
 ]
 
-export const RESOURCE_TYPES = ['工人', '工人小组']
+/** 流程型工序只挂岗位，不再用班组/工人个人 */
+export const RESOURCE_TYPES = ['岗位']
 
-export const MOCK_POSITIONS = ['机加工岗', '装配工岗', '质检岗', '仓储岗', '热处理岗', '动平衡岗']
-
-const MOCK_IMAGE =
-  'data:image/svg+xml,' +
-  encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect fill="#e6f4ff" width="48" height="48" rx="4"/><text x="24" y="28" text-anchor="middle" fill="#1677ff" font-size="10">工序</text></svg>',
-  )
+export const MOCK_POSITIONS = ['配料岗', '反应岗', '分离岗', '灌装岗', '储运岗', '质检岗']
 
 function defaultOperations(overrides = {}) {
   const base = Object.fromEntries(PROCESS_OPERATION_DEFS.map((d) => [d.key, false]))
@@ -37,13 +32,71 @@ function padCode(n) {
   return `GX${String(n).padStart(8, '0')}`
 }
 
-function resolveResourceType(category, name) {
-  if (category === '组装') return '工人小组'
-  if (category === '拆解' && name === '拆解') return '工人小组'
-  return '工人'
+/** 工序默认执行：只挂岗位（与基础配置岗位主数据对齐），用来把步骤分到对应终端。 */
+export const PROCESS_RESPONSIBLE_OPTIONS = [
+  { type: 'position', name: '配料岗' },
+  { type: 'position', name: '反应岗' },
+  { type: 'position', name: '分离岗' },
+  { type: 'position', name: '灌装岗' },
+]
+
+export function responsibleKey(type, name) {
+  if (!name) return ''
+  return `${type === 'group' ? 'group' : 'position'}:${name}`
 }
 
-import { PROCESS_DEFECT_ITEM_MAP, PROCESS_REPORT_MODE_MAP } from '@/mock/defectItemSeed'
+export function parseResponsibleKey(key) {
+  const text = String(key || '')
+  const index = text.indexOf(':')
+  if (index < 0) return { type: 'position', name: '' }
+  const type = text.slice(0, index) === 'group' ? 'group' : 'position'
+  return { type, name: text.slice(index + 1) }
+}
+
+export const PROCESS_GATE_RECORD = 'record'
+export const PROCESS_GATE_HARD = 'hard'
+export const PROCESS_GATE_INHERIT = 'inherit'
+export const PROCESS_GATE_OPTIONS = [
+  { value: PROCESS_GATE_RECORD, label: '记录 · 技术员判定' },
+  { value: PROCESS_GATE_HARD, label: '硬门禁 · 系统自动卡' },
+]
+
+export function normalizeProcessGate(value) {
+  return value === PROCESS_GATE_HARD ? PROCESS_GATE_HARD : PROCESS_GATE_RECORD
+}
+
+export function formatProcessGate(value) {
+  return normalizeProcessGate(value) === PROCESS_GATE_HARD
+    ? '硬门禁 · 系统自动卡'
+    : '记录 · 技术员判定'
+}
+
+export function isCustomRouteGate(cell) {
+  return cell?.gateMode === PROCESS_GATE_RECORD || cell?.gateMode === PROCESS_GATE_HARD
+}
+
+export function resolveRouteGate(process, cell) {
+  if (isCustomRouteGate(cell)) return cell.gateMode
+  return normalizeProcessGate(process?.gateMode)
+}
+
+export function resolveRouteTransfer(process, cell) {
+  if (cell?.transferCustom) return cell.transferCondition || ''
+  return process?.transferCondition || ''
+}
+
+export function formatProcessResponsible(process) {
+  const list =
+    Array.isArray(process?.defaultExecutors) && process.defaultExecutors.length
+      ? process.defaultExecutors
+      : process?.responsibleName
+        ? [process.responsibleName]
+        : []
+  return list
+    .map((n) => String(n || '').trim())
+    .filter(Boolean)
+    .join('、')
+}
 
 export const REPORT_MODES = ['批量计件', '时长报工']
 
@@ -52,96 +105,208 @@ export const TASK_EXECUTION_MODES = [
   { value: 'collaborative', label: '多人协作' },
 ]
 
-/** 默认多人协作的时长报工工序（演示） */
-const COLLABORATIVE_DURATION_PROCESSES = new Set(['装配', '热处理', '整机调试'])
+/** 稳定设备 id，与 equipmentSeed 对齐 */
+const EQ = {
+  R101: 'eq-d-1',
+  R201: 'eq-d-2',
+  F301: 'eq-d-3',
+  C401: 'eq-d-4',
+  T501: 'eq-d-5',
+  T601: 'eq-d-6',
+  P701: 'eq-d-7',
+}
 
-/** 机泵行业常用工序 */
+/** 流程型单元操作名录 */
 export function createProcessConfigSeed() {
   const defs = [
-    ['机械', '下料', { opStart: true, opFinish: true, opFeeding: true }, ['张三', '李四']],
-    ['机械', '粗车', { opStart: true, opFinish: true, opQc: true }, ['张三']],
-    ['机械', '精车', { opStart: true, opFinish: true }],
-    ['机械', '钻孔', { opStart: true, opFinish: true }],
-    ['机械', '铣削', { opStart: true, opFinish: true }],
-    ['机械', '磨削', { opStart: true, opFinish: true }],
-    [
-      '机械',
-      '热处理',
-      { opStart: true, opFinish: true, opAutoFinish: true, opOutsource: true, opQc: true },
-    ],
-    ['机械', '动平衡粗调', { opStart: true, opFinish: true, opQc: true }],
-    ['组装', '领料', { opStart: true, opFeeding: true, opInbound: true }, ['总装小组']],
-    ['组装', '叶轮装配', { opStart: true, opFinish: true }],
-    ['组装', '密封装配', { opStart: true, opFinish: true }],
-    ['组装', '轴承装配', { opStart: true, opFinish: true }],
-    ['组装', '联轴器装配', { opStart: true, opFinish: true }],
-    ['组装', '总装', { opStart: true, opFinish: true, opAutoStart: true }, ['总装小组']],
-    ['组装', '灌胶', { opStart: true, opFinish: true, opFeeding: true }],
-    ['组装', '整机调试', { opStart: true, opFinish: true, opAttachment: true }],
-    ['拆解', '拆解', { opStart: true, opFinish: true, opDisassembly: true }, ['加工小组']],
-    [
-      '拆解',
-      '拆解质检',
-      { opStart: true, opFinish: true, opQc: true, opDisassemblyQc: true },
-      ['孙琴丽'],
-    ],
-    ['拆解', '零件清洗', { opStart: true, opFinish: true }],
-    ['系统工序', '质检', { opStart: true, opFinish: true, opQc: true }, ['孙琴丽']],
-    [
-      '系统工序',
-      '入库',
-      { opStart: true, opFinish: true, opInbound: true, opProductInbound: true },
-      ['王五'],
-    ],
-    ['系统工序', '出库', { opStart: true, opProductOutbound: true }],
-    ['系统工序', '打孔', { opStart: true, opFinish: true }],
-    ['系统工序', '动平衡', { opStart: true, opFinish: true, opQc: true }],
-    ['系统工序', '试压', { opStart: true, opFinish: true, opQc: true, opAttachment: true }],
-    ['系统工序', '喷漆', { opStart: true, opFinish: true, opOutsource: true }],
-    ['系统工序', '包装', { opStart: true, opFinish: true, opInbound: true }],
-    ['系统工序', '外协发货', { opStart: true, opFinish: true, opOutsource: true }],
-    ['系统工序', '外协收货', { opStart: true, opFinish: true, opOutsource: true, opInbound: true }],
-    ['系统工序', '报废', { opStart: true, opScrap: true }],
-    ['系统工序', '配比', { opStart: true, opFinish: true, opFeeding: true, opAttrModify: true }],
-    ['机械', '点焊', { opStart: true, opFinish: true }],
-    ['机械', '打磨', { opStart: true, opFinish: true }],
-    ['机械', '车削', { opStart: true, opFinish: true, opQc: true }],
-    ['机械', '铣削', { opStart: true, opFinish: true }],
-    ['组装', '装配', { opStart: true, opFinish: true }],
+    {
+      category: '配料',
+      name: '投料',
+      instruction: '按配方称取原料，核对批号后投入指定设备。',
+      gateMode: 'record',
+      transferCondition: '投料完成后可进入下一步',
+      responsibleType: 'position',
+      responsibleName: '配料岗',
+      equipmentIds: [EQ.R101, EQ.R201],
+      formTemplateId: 'pft-feed',
+      operations: { opFeeding: true, opStart: true, opFinish: true },
+      qcConfigs: [
+        {
+          id: 'pqc-feed-check',
+          bizScope: '生产过程检',
+          assayType: 'feed_check',
+          gateMode: 'record',
+          allowMultiple: true,
+        },
+      ],
+    },
+    {
+      category: '反应',
+      name: '升温',
+      instruction: '按设定温度升温，记录实际温度。',
+      params: [{ name: '温度', unit: '℃', target: null, min: null, max: null }],
+      gateMode: 'record',
+      transferCondition: '温度记录完成后可进入下一步',
+      responsibleType: 'position',
+      responsibleName: '反应岗',
+      equipmentIds: [EQ.R201],
+      formTemplateId: 'pft-react',
+      operations: { opStart: true, opFinish: true, opAttachment: true },
+    },
+    {
+      category: '反应',
+      name: '保温',
+      instruction: '维持温度至规定时间，记录温度和时间。',
+      params: [
+        { name: '温度', unit: '℃', target: 80, min: 75, max: 85 },
+        { name: '时间', unit: 'min', target: 30, min: 25, max: 40 },
+        { name: '转速', unit: 'rpm', target: 60, min: 40, max: 80 },
+      ],
+      gateMode: 'record',
+      transferCondition: '保温时间到达后可进入下一步',
+      responsibleType: 'position',
+      responsibleName: '反应岗',
+      equipmentIds: [EQ.R201],
+      formTemplateId: 'pft-react',
+      operations: { opStart: true, opFinish: true, opAttachment: true },
+      qcConfigs: [
+        {
+          id: 'pqc-hold-monitor',
+          bizScope: '生产过程检',
+          assayType: 'in_process',
+          gateMode: 'record',
+          allowMultiple: true,
+        },
+      ],
+    },
+    {
+      category: '分离',
+      name: '过滤',
+      instruction: '固液分离，滤液和滤渣分别收集。',
+      gateMode: 'hard',
+      transferCondition: '滤液和滤渣都收集完成后可放行',
+      responsibleType: 'position',
+      responsibleName: '分离岗',
+      equipmentIds: [EQ.F301],
+      formTemplateId: 'pft-separate',
+      operations: { opStart: true, opFinish: true, opQc: true },
+      qcConfigs: [
+        {
+          id: 'pqc-filter-monitor',
+          bizScope: '生产过程检',
+          assayType: 'in_process',
+          gateMode: 'record',
+          allowMultiple: true,
+        },
+        {
+          id: 'pqc-filter-release',
+          bizScope: '生产过程检',
+          assayType: 'release',
+          gateMode: 'hard',
+          allowMultiple: true,
+        },
+      ],
+    },
+    {
+      category: '分离',
+      name: '离心',
+      instruction: '按设定转速分离，记录出料。',
+      params: [
+        { name: '转速', unit: 'rpm', target: null, min: null, max: null },
+        { name: '时间', unit: 'min', target: null, min: null, max: null },
+      ],
+      gateMode: 'hard',
+      transferCondition: '分离完成并核对出料后可放行',
+      responsibleType: 'position',
+      responsibleName: '分离岗',
+      equipmentIds: [EQ.C401],
+      formTemplateId: 'pft-separate',
+      operations: { opStart: true, opFinish: true, opQc: true },
+      qcConfigs: [
+        {
+          id: 'pqc-centrifuge-release',
+          bizScope: '生产过程检',
+          assayType: 'release',
+          gateMode: 'hard',
+          allowMultiple: true,
+        },
+      ],
+    },
+    {
+      category: '灌装',
+      name: '灌装',
+      instruction: '按包装规格灌装并核对重量。',
+      gateMode: 'hard',
+      transferCondition: '灌装重量核对通过后可放行',
+      responsibleType: 'position',
+      responsibleName: '灌装岗',
+      equipmentIds: [EQ.P701],
+      formTemplateId: 'pft-separate',
+      operations: { opStart: true, opFinish: true, opInbound: true, opQc: true },
+      qcConfigs: [
+        {
+          id: 'pqc-fill-fg',
+          bizScope: '成品检',
+          assayType: 'finished',
+          gateMode: 'hard',
+          allowMultiple: true,
+        },
+      ],
+    },
+    {
+      category: '储运',
+      name: '转罐',
+      instruction: '从源罐转入目标罐，核对数量。',
+      gateMode: 'hard',
+      transferCondition: '转入数量核对通过后可放行',
+      responsibleType: 'position',
+      responsibleName: '配料岗',
+      equipmentIds: [EQ.T501, EQ.T601],
+      formTemplateId: '',
+      operations: {
+        opStart: true,
+        opFinish: true,
+        opProductOutbound: true,
+        opProductInbound: true,
+      },
+    },
   ]
 
-  return defs.map(([category, name, ops, defaultExecutors = []], index) => {
-    const isDrill = name === '钻孔'
+  return defs.map((item, index) => {
+    const operations = defaultOperations(item.operations || {})
+    const qcConfigs = Array.isArray(item.qcConfigs) ? item.qcConfigs : []
+    if (qcConfigs.length) operations.opQc = true
+    const responsibleName = item.responsibleName
     return {
-      id: `proc-${String(index + 1).padStart(3, '0')}`,
+      id: `proc-op-${String(index + 1).padStart(3, '0')}`,
       code: padCode(index + 1),
-      name,
-      category,
-      resourceType: resolveResourceType(category, name),
-      position: category === '组装' ? '装配工岗' : category === '系统工序' ? '质检岗' : '机加工岗',
-      image: MOCK_IMAGE,
+      name: item.name,
+      category: item.category,
+      instruction: item.instruction,
+      params: item.params || [],
+      gateMode: item.gateMode,
+      transferCondition: item.transferCondition,
+      equipmentIds: [...(item.equipmentIds || [])],
+      formTemplateId: item.formTemplateId || '',
+      responsibleType: 'position',
+      responsibleName,
+      resourceType: '岗位',
+      position: responsibleName || '',
+      image: '',
       remark: '',
       status: '使用中',
-      /** 下料工序：路线含此工序的工单可进下料结算；具体物料看主数据「需要下料结算」 */
-      isBlanking: name === '下料',
-      operations: defaultOperations(ops),
-      defaultExecutors: [...defaultExecutors],
-      reportMode: PROCESS_REPORT_MODE_MAP[name] || '',
-      taskExecutionMode: COLLABORATIVE_DURATION_PROCESSES.has(name)
-        ? 'collaborative'
-        : 'single_claim',
-      defectItemIds: [...(PROCESS_DEFECT_ITEM_MAP[name] || [])],
-      reportQtyMode: isDrill ? 'schedule' : 'schedule',
-      wageQtyMode: isDrill ? 'itemized' : 'reported',
-      workItemTemplates: isDrill
-        ? [
-            { code: 'HOLE-L', name: '大孔', unit: '个' },
-            { code: 'HOLE-S', name: '小孔', unit: '个' },
-            { code: 'HOLE-C', name: '内角孔', unit: '个' },
-          ]
-        : [],
-      createdAt: '2026-05-01',
-      updatedAt: '2026-06-01',
+      isBlanking: false,
+      operations,
+      qcConfigs,
+      defaultExecutors: [item.responsibleName],
+      reportMode: '',
+      taskExecutionMode: 'single_claim',
+      defectItemIds: [],
+      reportQtyMode: 'schedule',
+      wageQtyMode: 'reported',
+      workItemTemplates: [],
+      createdAt: '2026-11-16',
+      updatedAt: '2026-11-16',
     }
   })
 }

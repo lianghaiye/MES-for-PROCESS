@@ -3,104 +3,83 @@
     <!-- 筛选区 -->
     <div class="filter-card">
       <a-form :model="filters" layout="inline" class="filter-form horizontal-form">
-        <a-row :gutter="[12, 8]" style="width: 100%">
-          <a-col :xs="24" :sm="12" :md="6">
-            <a-form-item label="销售单号">
-              <a-input
-                v-model:value="filters.orderNo"
-                allow-clear
-                placeholder="请输入"
-                size="small"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :sm="12" :md="6">
-            <a-form-item label="合同编号">
-              <a-input
-                v-model:value="filters.contractNo"
-                allow-clear
-                placeholder="请输入"
-                size="small"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :sm="12" :md="6">
-            <a-form-item label="客户名称">
-              <a-select
-                v-model:value="filters.customerName"
-                allow-clear
-                placeholder="请选择"
-                size="small"
-                :options="customerOpts"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :sm="12" :md="6">
-            <a-form-item label="订单来源">
-              <a-select
-                v-model:value="filters.orderSource"
-                allow-clear
-                placeholder="请选择"
-                size="small"
-                :options="orderSourceOpts"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :sm="12" :md="6">
-            <a-form-item label="业务员">
-              <a-select
-                v-model:value="filters.salesperson"
-                allow-clear
-                placeholder="请选择"
-                size="small"
-                show-search
-                :options="salespersonOpts"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :sm="12" :md="6">
-            <a-form-item label="状态">
-              <a-select
-                v-model:value="filters.progressStatus"
-                allow-clear
-                placeholder="请选择"
-                size="small"
-                :options="progressStatusOpts"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :sm="12" :md="6">
-            <a-form-item label="发货状态">
-              <a-select
-                v-model:value="filters.deliveryStatus"
-                allow-clear
-                placeholder="请选择"
-                size="small"
-                :options="deliveryStatusOpts"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :sm="12" :md="8">
-            <a-form-item label="单据日期">
-              <a-range-picker
-                v-model:value="filters.documentDateRange"
-                size="small"
-                style="width: 100%"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :sm="12" :md="10">
-            <a-form-item class="filter-actions-item">
-              <a-space>
-                <a-button type="primary" size="small" @click="handleSearch">
-                  <SearchOutlined />
-                  搜索
-                </a-button>
-                <a-button size="small" @click="handleReset"> 清空 </a-button>
-              </a-space>
-            </a-form-item>
-          </a-col>
-        </a-row>
+        <ListFilterBar
+          :field-count="8"
+          search-text="搜索"
+          reset-text="清空"
+          @search="handleSearch"
+          @reset="handleReset"
+        >
+          <a-form-item label="销售单号">
+            <a-input
+              v-model:value="filters.orderNo"
+              allow-clear
+              placeholder="请输入"
+              size="small"
+            />
+          </a-form-item>
+          <a-form-item label="合同编号">
+            <a-input
+              v-model:value="filters.contractNo"
+              allow-clear
+              placeholder="请输入"
+              size="small"
+            />
+          </a-form-item>
+          <a-form-item label="客户名称">
+            <a-select
+              v-model:value="filters.customerName"
+              allow-clear
+              placeholder="请选择"
+              size="small"
+              :options="customerOpts"
+            />
+          </a-form-item>
+          <a-form-item label="订单来源">
+            <a-select
+              v-model:value="filters.orderSource"
+              allow-clear
+              placeholder="请选择"
+              size="small"
+              :options="orderSourceOpts"
+            />
+          </a-form-item>
+          <a-form-item label="业务员">
+            <a-select
+              v-model:value="filters.salesperson"
+              allow-clear
+              placeholder="请选择"
+              size="small"
+              show-search
+              :options="salespersonOpts"
+            />
+          </a-form-item>
+          <a-form-item label="状态">
+            <a-select
+              v-model:value="filters.progressStatus"
+              allow-clear
+              placeholder="请选择"
+              size="small"
+              :options="progressStatusOpts"
+            />
+          </a-form-item>
+          <a-form-item label="发货状态">
+            <a-select
+              v-model:value="filters.deliveryStatus"
+              allow-clear
+              placeholder="请选择"
+              size="small"
+              :options="deliveryStatusOpts"
+            />
+          </a-form-item>
+          <a-form-item label="单据日期">
+            <a-range-picker
+              v-model:value="filters.documentDateRange"
+              size="small"
+              style="width: 100%"
+            />
+          </a-form-item>
+        </ListFilterBar>
       </a-form>
     </div>
 
@@ -378,7 +357,6 @@ import dayjs from 'dayjs'
 import { useTabs } from '@/composables/useTabs'
 import {
   PlusOutlined,
-  SearchOutlined,
   ReloadOutlined,
   DownOutlined,
   CheckOutlined,
@@ -417,6 +395,7 @@ import SalesPriceChangeModal from './components/SalesPriceChangeModal.vue'
 import SalesOrderPrintModal from './components/SalesOrderPrintModal.vue'
 import SalesOrderPaymentNodePresetModal from './components/SalesOrderPaymentNodePresetModal.vue'
 import { buildEligibleDeliveryModeLines } from '@/utils/changeDeliveryMode'
+import ListFilterBar from '@/components/ListFilterBar.vue'
 import TableColumnSettingDrawer from '@/components/TableColumnSettingDrawer.vue'
 import TableColumnSettingButton from '@/components/TableColumnSettingButton.vue'
 import ExportExcelModal from '@/components/ExportExcelModal.vue'
@@ -1101,7 +1080,7 @@ function confirmDelete(record) {
 }
 
 .link-code {
-  color: #1677ff;
+  color: #307068;
 }
 
 .action-disabled {

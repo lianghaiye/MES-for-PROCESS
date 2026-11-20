@@ -83,6 +83,7 @@ import { listAxisOptions, areRequiredAxesFilled, resolveSkuFromSpu } from '@/uti
 import { buildSkuDisplayName } from '@/utils/spuVariant'
 import { productInfoState } from '@/store/productInfoStore'
 import { materialInfoState } from '@/store/materialInfoStore'
+import { resolveSalesListPrice } from '@/utils/tradePrice'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -133,7 +134,7 @@ function resolveMasterPrice(productId) {
   const master =
     productInfoState.products.find((p) => p.id === productId) ||
     materialInfoState.materials.find((m) => m.id === productId)
-  return Number(master?.unitPrice) || 0
+  return resolveSalesListPrice(master).price || 0
 }
 
 const matchState = computed(() => {
@@ -225,7 +226,7 @@ function handleConfirm() {
 
 .spu-code {
   font-weight: 600;
-  color: #1677ff;
+  color: #307068;
   flex-shrink: 0;
 }
 
@@ -277,13 +278,13 @@ function handleConfirm() {
   transition: all 0.15s;
 
   &:hover {
-    border-color: #1677ff;
-    color: #1677ff;
+    border-color: #307068;
+    color: #307068;
   }
 
   &.active {
-    border-color: #1677ff;
-    background: #1677ff;
+    border-color: #307068;
+    background: #307068;
     color: #fff;
 
     .tag-code {

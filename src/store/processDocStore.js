@@ -1,7 +1,10 @@
 import { reactive, watch } from 'vue'
 import { createProcessDocSeed } from '@/mock/processDocSeed'
+import { persistJson, safeSetItem } from '@/utils/safeStorage'
 
 const STORAGE_KEY = 'i_doms_process_docs'
+const SEED_VERSION_KEY = 'i_doms_process_docs_seed_v'
+const CURRENT_SEED_VERSION = '2'
 
 function loadFromStorage() {
   try {
@@ -16,12 +19,17 @@ function loadFromStorage() {
   return null
 }
 
+function shouldReseed() {
+  return localStorage.getItem(SEED_VERSION_KEY) !== CURRENT_SEED_VERSION
+}
+
 function persist() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ docs: processDocState.docs }))
+  persistJson(STORAGE_KEY, { docs: processDocState.docs })
+  safeSetItem(SEED_VERSION_KEY, CURRENT_SEED_VERSION)
 }
 
 export const processDocState = reactive({
-  docs: loadFromStorage() || createProcessDocSeed(),
+  docs: shouldReseed() ? createProcessDocSeed() : loadFromStorage() || createProcessDocSeed(),
 })
 
 watch(
@@ -29,6 +37,7 @@ watch(
   () => persist(),
   { deep: true },
 )
+persist()
 
 export function getProcessDocById(id) {
   return processDocState.docs.find((d) => d.id === id) || null

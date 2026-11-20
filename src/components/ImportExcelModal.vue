@@ -191,7 +191,7 @@ function handleCancel() {
 
 .file-name {
   margin: -4px 0 12px 72px;
-  color: #1677ff;
+  color: #307068;
   font-size: 13px;
 }
 

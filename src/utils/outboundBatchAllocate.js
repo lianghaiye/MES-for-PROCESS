@@ -1,6 +1,7 @@
 /** 出库按规则自动分配批次（FIFO / LIFO）及自主多批分配 */
 
 import { getBatchById, listBatches } from '@/store/stockBatchStore'
+import { compareExpiry, isIssueAllowedBatch } from '@/utils/processBatchMath'
 import {
   getStockPieceById,
   isPieceManagedBatch,
@@ -307,6 +308,10 @@ export function allocateOutboundBatches({
     // 显式开启：可扣自由备货，剔除挂了销售单的按单批（避免误扣他单）
     rawBatches = rawBatches.filter((b) => !(b.salesOrderId || b.salesOrderNo))
   }
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  rawBatches = rawBatches.filter((b) => isIssueAllowedBatch(b, today))
+  if (rule !== OUTBOUND_ISSUE_RULES.LIFO) rawBatches = [...rawBatches].sort(compareExpiry)
   const available = roundQty(rawBatches.reduce((s, b) => s + (Number(b.currentLength) || 0), 0))
   if (available < need) {
     return {

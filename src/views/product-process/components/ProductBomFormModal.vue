@@ -19,15 +19,8 @@
       <a-form-item label="BOM名称" name="bomName">
         <a-input v-model:value="form.bomName" placeholder="请输入 BOM 名称" />
       </a-form-item>
-      <a-form-item label="关联物品" name="itemId">
-        <a-select
-          v-model:value="form.itemId"
-          show-search
-          placeholder="请选择产品或物料"
-          :filter-option="filterItem"
-          :options="itemOptions"
-          @change="onItemChange"
-        />
+      <a-form-item label="关联物品" name="masterId" value-prop-name="modelValue">
+        <MasterItemSelect placeholder="请选择产品或物料" @select="onMasterSelect" />
       </a-form-item>
       <a-form-item label="物品类型">
         <a-tag :color="form.itemType === 'product' ? 'blue' : 'cyan'">
@@ -61,8 +54,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { productInfoState } from '@/store/productInfoStore'
-import { materialInfoState } from '@/store/materialInfoStore'
+import MasterItemSelect from '@/views/product-process/components/MasterItemSelect.vue'
 import { saveProductBom } from '@/store/productBomStore'
 import { formatBomVersion, getBomVersionYear, nextSubVersionForYear } from '@/utils/bomVersion'
 
@@ -78,6 +70,7 @@ const isEdit = computed(() => !!props.editRecord?.id)
 
 const form = reactive({
   bomName: '',
+  masterId: undefined,
   itemId: undefined,
   itemType: 'product',
   itemName: '',
@@ -87,28 +80,8 @@ const form = reactive({
 
 const rules = {
   bomName: [{ required: true, message: '请输入 BOM 名称' }],
-  itemId: [{ required: true, message: '请选择关联物品' }],
+  masterId: [{ required: true, message: '请选择关联物品' }],
 }
-
-const itemOptions = computed(() => {
-  const products = productInfoState.products.slice(0, 200).map((p) => ({
-    label: `[产品] ${p.code} ${p.name}`,
-    value: `product:${p.id}`,
-    itemType: 'product',
-    itemId: p.id,
-    itemName: p.name,
-    itemCode: p.code,
-  }))
-  const materials = materialInfoState.materials.slice(0, 100).map((m) => ({
-    label: `[物料] ${m.code} ${m.name}`,
-    value: `material:${m.id}`,
-    itemType: 'material',
-    itemId: m.id,
-    itemName: m.name,
-    itemCode: m.code,
-  }))
-  return [...products, ...materials]
-})
 
 const previewVersion = computed(() => {
   const year = getBomVersionYear()
@@ -116,21 +89,25 @@ const previewVersion = computed(() => {
   return formatBomVersion(year, sub)
 })
 
-function filterItem(input, option) {
-  return (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-}
-
-function onItemChange(val) {
-  const opt = itemOptions.value.find((o) => o.value === val)
-  if (!opt) return
-  form.itemType = opt.itemType
-  form.itemName = opt.itemName
-  form.itemCode = opt.itemCode
-  if (!form.bomName) form.bomName = `${opt.itemName} BOM`
+function onMasterSelect(item) {
+  if (!item) {
+    form.masterId = undefined
+    form.itemId = undefined
+    form.itemName = ''
+    form.itemCode = ''
+    return
+  }
+  form.masterId = item.id
+  form.itemType = item.itemType === '物料' ? 'material' : 'product'
+  form.itemId = item.id
+  form.itemName = item.name
+  form.itemCode = item.code
+  if (!form.bomName) form.bomName = `${item.name} BOM`
 }
 
 function resetForm() {
   form.bomName = ''
+  form.masterId = undefined
   form.itemId = undefined
   form.itemType = 'product'
   form.itemName = ''
@@ -145,7 +122,8 @@ watch(
     if (props.editRecord) {
       const r = props.editRecord
       form.bomName = r.bomName
-      form.itemId = `${r.itemType}:${r.itemId}`
+      form.masterId = r.itemId
+      form.itemId = r.itemId
       form.itemType = r.itemType
       form.itemName = r.itemName
       form.itemCode = r.itemCode
@@ -168,9 +146,7 @@ async function handleOk() {
   }
   saving.value = true
   try {
-    const rawItemId = form.itemId
-    const itemId =
-      typeof rawItemId === 'string' && rawItemId.includes(':') ? rawItemId.split(':')[1] : rawItemId
+    const itemId = form.masterId || form.itemId
     const payload = {
       bomName: form.bomName,
       itemType: form.itemType,

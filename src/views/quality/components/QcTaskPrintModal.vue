@@ -162,13 +162,13 @@ function openPreview(autoPrint) {
       box-shadow 0.2s;
 
     &:hover {
-      border-color: #1677ff;
-      box-shadow: 0 2px 8px rgba(22, 119, 255, 0.12);
+      border-color: #307068;
+      box-shadow: 0 2px 8px rgba(48, 112, 104, 0.12);
     }
 
     .action-icon {
       font-size: 18px;
-      color: #1677ff;
+      color: #307068;
     }
 
     .action-title {

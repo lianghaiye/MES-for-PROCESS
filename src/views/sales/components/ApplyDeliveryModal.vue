@@ -214,6 +214,14 @@
             <a-input v-model:value="record.lineRemark" size="small" placeholder="请输入" />
           </template>
           <template v-else-if="column.key === 'action'">
+            <a-button
+              v-if="isContentPricing(record)"
+              type="link"
+              size="small"
+              @click="openContentSettle(record)"
+            >
+              含量结算
+            </a-button>
             <a-button type="link" size="small" danger @click="form.lineItems.splice(index, 1)">
               删除
             </a-button>
@@ -310,6 +318,12 @@
       </a-table>
     </div>
 
+    <DeliveryLineEditModal
+      v-model:open="lineEditOpen"
+      :line="lineEditTarget"
+      @saved="onContentSettleSaved"
+    />
+
     <ScatterShipDrawer
       v-model:open="scatterDrawerOpen"
       :shipment="activeScatterShipment"
@@ -341,6 +355,8 @@ import {
   formatShipProgress,
   lineShipStatusColor,
 } from '@/utils/deliveryLine'
+import { contentSettlementReady, isContentPricing } from '@/utils/salesContentPricing'
+import DeliveryLineEditModal from './DeliveryLineEditModal.vue'
 import {
   formatScatterShipProgress,
   getSelectedMaterialPicks,
@@ -363,6 +379,8 @@ const props = defineProps({
 const emit = defineEmits(['update:open', 'confirmed'])
 
 const scatterDrawerOpen = ref(false)
+const lineEditOpen = ref(false)
+const lineEditTarget = ref(null)
 const activeScatterShipment = ref(null)
 const expandedScatterRowKeys = ref([])
 
@@ -386,7 +404,7 @@ const lineColumns = [
   { title: '包装形式', dataIndex: 'packagingForm', width: 88, ellipsis: true },
   { title: '交付方式', key: 'deliveryMode', width: 88, align: 'center' },
   { title: '备注', key: 'lineRemark', width: 120 },
-  { title: '操作', key: 'action', width: 64, fixed: 'right' },
+  { title: '操作', key: 'action', width: 140, fixed: 'right' },
 ]
 
 const scatterLineColumns = computed(() =>
@@ -507,6 +525,18 @@ function onLineCalc(record) {
   refreshLineBatchPreview(record)
 }
 
+function openContentSettle(record) {
+  lineEditTarget.value = record
+  lineEditOpen.value = true
+}
+
+function onContentSettleSaved(updated) {
+  const idx = form.lineItems.findIndex((line) => line.id === updated.id)
+  if (idx === -1) return
+  Object.assign(form.lineItems[idx], updated)
+  recalcDeliveryLine(form.lineItems[idx])
+}
+
 function refreshLineBatchPreview(line) {
   const so = props.salesOrder
   const shipQty = Number(line.shipQty) || 0
@@ -572,6 +602,10 @@ function validateWholeMachineLines() {
       message.warning(
         `「${line.productName}」本次发货数量不能超过可发数量 ${formatDeliveryQty(maxQty)}`,
       )
+      return false
+    }
+    if (isContentPricing(line) && !contentSettlementReady(line)) {
+      message.warning(`「${line.productName}」请填写含量结算`)
       return false
     }
     const pre = refreshLineBatchPreview(line)

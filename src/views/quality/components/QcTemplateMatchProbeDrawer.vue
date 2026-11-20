@@ -23,6 +23,14 @@
           allow-clear
         />
       </a-form-item>
+      <a-form-item v-if="isProcessInspect" label="化验类型">
+        <a-select
+          v-model:value="form.assayType"
+          allow-clear
+          placeholder="可选，与模板化验类型对齐"
+          :options="assayTypeOpts"
+        />
+      </a-form-item>
       <a-form-item v-if="isProcessInspect" label="工序">
         <a-select
           v-model:value="form.processCode"
@@ -75,7 +83,14 @@
             {{ probeResult.template?.name || '—' }}
           </a-descriptions-item>
           <a-descriptions-item label="业务类型">
-            {{ probeResult.template?.bizScope || form.bizScope || '—' }}
+            {{ qcBizScopeLabel(probeResult.template?.bizScope || form.bizScope) || '—' }}
+          </a-descriptions-item>
+          <a-descriptions-item v-if="isProcessInspect" label="化验类型">
+            {{
+              probeResult.template?.assayType
+                ? assayTypeLabel(probeResult.template.assayType, probeResult.template.bizScope)
+                : '—'
+            }}
           </a-descriptions-item>
           <a-descriptions-item label="适用范围">
             {{ qcTemplateScopeTypeLabel(probeResult.template?.scopeType) }}
@@ -130,8 +145,10 @@ export default { name: 'QcTemplateMatchProbeDrawer' }
 import { computed, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { qcTemplateBizScopeOptions, qcTemplateScopeTypeLabel } from '@/mock/qcTemplates'
+import { qcBizScopeLabel } from '@/constants/qcBizScopeLabel'
 import { probeQcTemplateMatch } from '@/utils/qcTemplateMatchService'
 import { isProcessInspectBizScope } from '@/utils/qcTemplateProcessLink'
+import { PROCESS_ASSAY_TYPE_OPTIONS, assayTypeLabel } from '@/utils/qcProcessConfig'
 import { processConfigState } from '@/store/processConfigStore'
 import { buildBomSubItemPickerRows, filterBomSubItemPickerRows } from '@/utils/bomSubItemPicker'
 import SelectBomMaterialModal from '@/views/product-process/components/SelectBomMaterialModal.vue'
@@ -142,7 +159,10 @@ const props = defineProps({
 
 const emit = defineEmits(['update:open'])
 
-const bizScopeOpts = qcTemplateBizScopeOptions.map((v) => ({ label: v, value: v }))
+const bizScopeOpts = qcTemplateBizScopeOptions.map((v) => ({
+  label: qcBizScopeLabel(v),
+  value: v,
+}))
 const itemPickerOpen = ref(false)
 const itemSearchKeyword = ref('')
 const probing = ref(false)
@@ -150,6 +170,7 @@ const probeResult = ref(null)
 
 const form = reactive({
   bizScope: '来料质检',
+  assayType: undefined,
   processCode: undefined,
   itemCode: undefined,
   itemName: '',
@@ -159,6 +180,10 @@ const form = reactive({
 })
 
 const isProcessInspect = computed(() => isProcessInspectBizScope(form.bizScope))
+const assayTypeOpts = PROCESS_ASSAY_TYPE_OPTIONS.map((item) => ({
+  label: item.label,
+  value: item.value,
+}))
 const processOpts = computed(() =>
   (processConfigState.processes || [])
     .filter((p) => p.status === '使用中')
@@ -168,7 +193,10 @@ const processOpts = computed(() =>
 watch(
   () => form.bizScope,
   (val) => {
-    if (!isProcessInspectBizScope(val)) form.processCode = undefined
+    if (!isProcessInspectBizScope(val)) {
+      form.processCode = undefined
+      form.assayType = undefined
+    }
   },
 )
 
@@ -239,6 +267,7 @@ function onItemPicked(payload) {
 
 function resetForm() {
   form.bizScope = '来料质检'
+  form.assayType = undefined
   form.processCode = undefined
   form.itemCode = undefined
   form.itemName = ''
@@ -258,6 +287,7 @@ function runProbe() {
     const proc = (processConfigState.processes || []).find((p) => p.code === form.processCode)
     probeResult.value = probeQcTemplateMatch({
       bizScope: form.bizScope,
+      assayType: form.assayType || '',
       itemCode: form.itemCode || '',
       categoryCode: form.categoryCode || '',
       categoryKey: form.categoryKey || '',
@@ -350,7 +380,7 @@ function handleClose() {
 }
 
 .item-code {
-  color: #1677ff;
+  color: #307068;
   flex-shrink: 0;
 }
 

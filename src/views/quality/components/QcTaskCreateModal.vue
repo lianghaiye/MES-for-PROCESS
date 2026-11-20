@@ -28,7 +28,7 @@
       </a-row>
 
       <a-row v-if="isProductionScope" :gutter="16">
-        <a-col :span="12">
+        <a-col v-if="false" :span="12">
           <a-form-item label="工单号">
             <a-input v-model:value="form.workOrderNo" placeholder="请输入工单号" />
           </a-form-item>

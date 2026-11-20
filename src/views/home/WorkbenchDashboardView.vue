@@ -3,6 +3,12 @@
     <a-row :gutter="[12, 8]">
       <a-col :xs="24" :xl="18">
         <div class="main-stack">
+          <section class="panel-card">
+            <div class="panel-header">
+              <span class="panel-title">产线批次</span>
+            </div>
+            <ProcessRouteBatchBoard :orders="lineOrders" />
+          </section>
           <!-- 工序任务 -->
           <section class="panel-card process-panel">
             <div class="panel-header">
@@ -216,7 +222,7 @@
           </section>
 
           <!-- 工单进度报表 -->
-          <section class="panel-card wo-panel">
+          <section v-if="false" class="panel-card wo-panel">
             <div class="panel-header">
               <span class="panel-title">工单进度报表</span>
               <span class="panel-hint">共 {{ woRows.length }} 条</span>
@@ -450,6 +456,8 @@ import {
   listWorkbenchTodoCards,
   touchWorkbenchTodoSources,
 } from '@/utils/workbenchTodos'
+import ProcessRouteBatchBoard from '@/components/ProcessRouteBatchBoard.vue'
+import { listBatchOrders } from '@/store/batchInstructionStore'
 import WorkbenchFavoriteModal from '@/views/home/components/WorkbenchFavoriteModal.vue'
 import WorkbenchProcessConfigModal from '@/views/home/components/WorkbenchProcessConfigModal.vue'
 import WorkbenchTodoConfigModal from '@/views/home/components/WorkbenchTodoConfigModal.vue'
@@ -457,6 +465,8 @@ import WorkbenchReleaseMessageModal from '@/views/home/components/WorkbenchRelea
 
 const router = useRouter()
 const { openTab } = useTabs()
+
+const lineOrders = computed(() => listBatchOrders())
 
 const period = ref('today')
 const includeNotStarted = ref(true)
@@ -583,8 +593,8 @@ function favSubtitle(fav) {
 
 function toneColor(tone) {
   const map = {
-    blue: '#1677ff',
-    cyan: '#13c2c2',
+    blue: '#307068',
+    cyan: '#307068',
     orange: '#fa8c16',
     purple: '#722ed1',
     green: '#52c41a',
@@ -593,7 +603,7 @@ function toneColor(tone) {
     geekblue: '#2f54eb',
     gold: '#faad14',
   }
-  return map[tone] || '#1677ff'
+  return map[tone] || '#307068'
 }
 
 function formatNum(n) {
@@ -742,7 +752,7 @@ export default { name: 'WorkbenchDashboardView' }
 </script>
 
 <style lang="less" scoped>
-@primary: #1677ff;
+@primary: #307068;
 @text: rgba(0, 0, 0, 0.88);
 @text-secondary: rgba(0, 0, 0, 0.45);
 @border: #f0f0f0;
@@ -875,14 +885,14 @@ export default { name: 'WorkbenchDashboardView' }
 
   &:hover {
     transform: translateY(-1px);
-    border-color: #91caff;
-    box-shadow: 0 6px 16px rgba(22, 119, 255, 0.1);
+    border-color: #a9c6c2;
+    box-shadow: 0 6px 16px rgba(48, 112, 104, 0.1);
   }
 
   &.tone-cyan {
     background: linear-gradient(180deg, #f0fffe 0%, #fff 48%);
     .process-ribbon {
-      background: #13c2c2;
+      background: #307068;
     }
   }
   &.tone-orange {
@@ -1053,7 +1063,7 @@ export default { name: 'WorkbenchDashboardView' }
   cursor: pointer;
 
   &:hover {
-    color: #4096ff;
+    color: #4e8a82;
   }
 }
 
@@ -1107,8 +1117,8 @@ export default { name: 'WorkbenchDashboardView' }
 
   &:hover {
     transform: translateY(-1px);
-    border-color: #91caff;
-    box-shadow: 0 4px 12px rgba(22, 119, 255, 0.1);
+    border-color: #a9c6c2;
+    box-shadow: 0 4px 12px rgba(48, 112, 104, 0.1);
   }
 
   &.is-flyout-host {
@@ -1245,8 +1255,8 @@ export default { name: 'WorkbenchDashboardView' }
 
   &:hover {
     transform: translateY(-1px);
-    border-color: #91caff;
-    box-shadow: 0 4px 12px rgba(22, 119, 255, 0.08);
+    border-color: #a9c6c2;
+    box-shadow: 0 4px 12px rgba(48, 112, 104, 0.08);
 
     .favorite-remove {
       opacity: 1;
@@ -1254,7 +1264,7 @@ export default { name: 'WorkbenchDashboardView' }
   }
 
   &.fav-tone-0 .favorite-icon {
-    background: #e6f4ff;
+    background: #e7f2f0;
     color: @primary;
   }
   &.fav-tone-1 .favorite-icon {
@@ -1270,8 +1280,8 @@ export default { name: 'WorkbenchDashboardView' }
     color: #722ed1;
   }
   &.fav-tone-4 .favorite-icon {
-    background: #e6fffb;
-    color: #13c2c2;
+    background: #e7f2f0;
+    color: #307068;
   }
 }
 
@@ -1422,7 +1432,7 @@ export default { name: 'WorkbenchDashboardView' }
   font-weight: 500;
 
   &:hover {
-    color: #4096ff;
+    color: #4e8a82;
   }
 }
 
@@ -1514,7 +1524,7 @@ export default { name: 'WorkbenchDashboardView' }
 
   &.scenario {
     background: @primary;
-    box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.15);
+    box-shadow: 0 0 0 3px rgba(48, 112, 104, 0.15);
   }
 }
 
@@ -1560,7 +1570,7 @@ export default { name: 'WorkbenchDashboardView' }
   height: 22px;
   padding: 0 8px;
   border-radius: 4px;
-  background: #e6f4ff;
+  background: #e7f2f0;
   color: @primary;
   font-size: 12px;
   font-weight: 600;
@@ -1582,7 +1592,7 @@ export default { name: 'WorkbenchDashboardView' }
   transition: border-color 0.15s;
 
   &:focus-within {
-    border-color: #91caff;
+    border-color: #a9c6c2;
     background: #fff;
   }
 
@@ -1617,7 +1627,7 @@ export default { name: 'WorkbenchDashboardView' }
   flex-shrink: 0;
 
   &.g-0 {
-    background: #e6f4ff;
+    background: #e7f2f0;
     color: @primary;
   }
   &.g-1 {

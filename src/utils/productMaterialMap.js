@@ -37,7 +37,7 @@ export function buildMaterialFromProduct(product) {
     name: product.name,
     barcodeType: product.barcodeType || '一物一码',
     materialType: normalizeMaterialType(product.materialType) || '零部件',
-    supplyForm: normalizeSupplyForm(product.supplyForm) || '自制件',
+    supplyForm: normalizeSupplyForm(product.supplyForm) || '自制',
     ...cat,
     specModel: product.specModel || '',
     drawingNo: product.drawingNo || '',

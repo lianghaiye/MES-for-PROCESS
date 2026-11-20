@@ -3,13 +3,10 @@ import {
   isQuickMaterialDeduct,
   resolveInventoryDeductDocNo,
 } from '@/mock/materialRequisitionRecords'
-import { findWorkOrderByCode } from '@/utils/workOrderBlanking'
-import { workOrderState } from '@/store/workOrderStore'
-import { assemblyWorkOrderState } from '@/store/assemblyWorkOrderStore'
 import { listMobileMaterialReqs } from '@/store/mobileMaterialReqStore'
 
 /**
- * 打开库存扣减单关联的工单 / 领料申请
+ * 打开库存扣减单关联单据（流程仓：领料申请；生产工单入口已下线）
  * @returns {boolean} 是否成功打开
  */
 export function openInventoryDeductSourceDoc(record, { router, openTab } = {}) {
@@ -33,27 +30,6 @@ export function openInventoryDeductSourceDoc(record, { router, openTab } = {}) {
     return true
   }
 
-  const code = String(record.workOrderNo || resolveInventoryDeductDocNo(record) || '').trim()
-  let wo =
-    (record.workOrderId &&
-      (workOrderState.orders.find((o) => o.id === record.workOrderId) ||
-        assemblyWorkOrderState.orders.find((o) => o.id === record.workOrderId))) ||
-    null
-  if (!wo && code) {
-    wo =
-      findWorkOrderByCode(code) ||
-      assemblyWorkOrderState.orders.find((o) => o.code === code) ||
-      null
-  }
-  if (!wo) {
-    message.info('未找到关联生产工单')
-    return false
-  }
-  const isAssembly = assemblyWorkOrderState.orders.some((o) => o.id === wo.id)
-  const basePath = isAssembly ? '/production/assembly-work-orders' : '/production/work-orders'
-  const woCode = wo.code || code
-  const path = `${basePath}?code=${encodeURIComponent(woCode)}`
-  openTab(path, `生产工单 ${woCode}`)
-  router.push({ path: basePath, query: { code: woCode } })
-  return true
+  // 离散生产/总装工单入口已移除，不再跳转
+  return false
 }

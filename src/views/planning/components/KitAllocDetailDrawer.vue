@@ -566,7 +566,7 @@ function confirmQtyModal() {
   margin-inline-end: 0 !important;
 }
 :deep(.is-current-flow) > td {
-  background: #e6f4ff !important;
+  background: #e7f2f0 !important;
 }
 .modal-tip {
   margin-bottom: 12px;

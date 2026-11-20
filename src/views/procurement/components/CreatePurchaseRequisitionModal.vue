@@ -997,22 +997,22 @@ function handleSave() {
 }
 
 .variant-field-link {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
   word-break: break-word;
 
   &:hover {
-    color: #4096ff;
+    color: #4e8a82;
   }
 }
 
 .order-size-link {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
   word-break: break-word;
 
   &:hover {
-    color: #4096ff;
+    color: #4e8a82;
   }
 }
 

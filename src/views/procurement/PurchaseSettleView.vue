@@ -847,8 +847,8 @@ resetToCurrentPeriod()
   --ps-ink: #1c2b3a;
   --ps-muted: #5b6b7c;
   --ps-line: rgba(28, 43, 58, 0.08);
-  --ps-accent: #1677ff;
-  --ps-accent-soft: rgba(22, 119, 255, 0.12);
+  --ps-accent: #307068;
+  --ps-accent-soft: rgba(48, 112, 104, 0.12);
   --ps-warm: #c2410c;
   --ps-surface: #ffffff;
   --ps-panel: linear-gradient(135deg, #f5f8fc 0%, #eef3f9 48%, #f7f9fc 100%);
@@ -873,7 +873,7 @@ resetToCurrentPeriod()
   width: 220px;
   height: 220px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(22, 119, 255, 0.14) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(48, 112, 104, 0.14) 0%, transparent 70%);
   pointer-events: none;
 }
 
@@ -956,8 +956,8 @@ resetToCurrentPeriod()
   border-color: var(--ps-accent);
   &:hover,
   &:focus {
-    background: #4096ff !important;
-    border-color: #4096ff !important;
+    background: #4e8a82 !important;
+    border-color: #4e8a82 !important;
   }
 }
 
@@ -1005,8 +1005,8 @@ resetToCurrentPeriod()
     border-color 0.2s,
     box-shadow 0.2s;
   &:hover {
-    border-color: rgba(22, 119, 255, 0.35);
-    box-shadow: 0 2px 8px rgba(22, 119, 255, 0.1);
+    border-color: rgba(48, 112, 104, 0.35);
+    box-shadow: 0 2px 8px rgba(48, 112, 104, 0.1);
   }
 }
 

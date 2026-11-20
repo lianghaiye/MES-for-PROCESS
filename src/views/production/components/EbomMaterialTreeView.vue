@@ -161,7 +161,7 @@ function onExpand(keys) {
   }
 
   .node-code {
-    color: #1677ff;
+    color: #307068;
     font-family: monospace;
     flex-shrink: 0;
   }

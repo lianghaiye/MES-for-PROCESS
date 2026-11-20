@@ -260,7 +260,7 @@ function handleDelete(record) {
     margin-bottom: 8px;
   }
   .link-name {
-    color: #1677ff;
+    color: #307068;
   }
   .danger-link {
     color: #ff4d4f;

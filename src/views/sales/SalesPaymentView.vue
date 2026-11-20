@@ -1050,7 +1050,7 @@ function handleSave() {
   }
 
   .link-code {
-    color: #1677ff;
+    color: #307068;
     cursor: pointer;
   }
 
@@ -1115,7 +1115,7 @@ function handleSave() {
   word-break: break-all;
 
   &.accent {
-    color: #1677ff;
+    color: #307068;
   }
 }
 

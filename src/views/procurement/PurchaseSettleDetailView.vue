@@ -1826,7 +1826,7 @@ function onDelete() {
 }
 
 .invoice-tip {
-  background: rgba(22, 119, 255, 0.06);
+  background: rgba(48, 112, 104, 0.06);
   color: var(--psd-muted);
 }
 
@@ -1902,7 +1902,7 @@ function onDelete() {
 }
 
 .link-code {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 
@@ -1976,14 +1976,14 @@ function onDelete() {
 }
 
 .is-linkish {
-  color: #1677ff;
+  color: #307068;
 }
 
 .payment-tip {
   margin: -2px 0 10px;
   padding: 10px 14px;
   border-radius: 10px;
-  background: rgba(22, 119, 255, 0.06);
+  background: rgba(48, 112, 104, 0.06);
   color: var(--psd-muted);
   font-size: 13px;
   line-height: 1.5;

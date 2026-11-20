@@ -67,17 +67,14 @@
                 </a-form-item>
               </a-col>
               <a-col :span="6">
-                <a-form-item label="结算币种" required>
+                <a-form-item label="订单类型">
                   <a-select
-                    v-model:value="form.settlementCurrency"
+                    v-model:value="form.orderType"
                     size="small"
-                    :options="currencyOpts"
+                    allow-clear
+                    placeholder="请选择订单类型"
+                    :options="orderTypeOpts"
                   />
-                </a-form-item>
-              </a-col>
-              <a-col :span="6">
-                <a-form-item label="订单类型" required>
-                  <a-select v-model:value="form.orderType" size="small" :options="orderTypeOpts" />
                 </a-form-item>
               </a-col>
               <a-col :span="6">
@@ -130,15 +127,6 @@
                 </a-form-item>
               </a-col>
               <a-col :span="6">
-                <a-form-item label="技术规范编码">
-                  <a-input
-                    v-model:value="form.techSpecCode"
-                    size="small"
-                    placeholder="请输入 技术规范编码"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="6">
                 <a-form-item label="交货日期">
                   <a-date-picker
                     v-model:value="form.reminderDate"
@@ -156,40 +144,6 @@
                     size="small"
                     :options="salespersonOpts"
                     show-search
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="6">
-                <a-form-item label="结算类型">
-                  <a-select
-                    v-model:value="form.settlementType"
-                    size="small"
-                    allow-clear
-                    placeholder="请选择 结算类型"
-                    :options="settlementTypeOpts"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="6">
-                <a-form-item label="付款比例">
-                  <a-select
-                    v-model:value="form.paymentRatio"
-                    size="small"
-                    allow-clear
-                    placeholder="请选择 付款比例"
-                    :options="paymentRatioOpts"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="6">
-                <a-form-item label="首付/定金金额">
-                  <a-input-number
-                    v-model:value="form.downPaymentAmount"
-                    size="small"
-                    :min="0"
-                    :precision="2"
-                    style="width: 100%"
-                    placeholder="请输入 首付/定金金额"
                   />
                 </a-form-item>
               </a-col>
@@ -493,17 +447,26 @@
                   />
                 </template>
 
-                <template v-else-if="column.key === 'needIndustrialLabel'">
-                  <a-checkbox v-model:checked="record.needIndustrialLabel" />
+                <template v-else-if="column.key === 'unit'">
+                  <a-input v-model:value="record.unit" size="small" />
                 </template>
 
-                <template v-else-if="column.key === 'deliveryMode'">
+                <template v-else-if="column.key === 'packSpec'">
                   <a-select
-                    v-model:value="record.deliveryMode"
+                    v-if="linePackOptions(record).length"
+                    v-model:value="record.packSpecId"
                     size="small"
+                    allow-clear
+                    placeholder="请选择包装规格"
                     style="width: 100%"
-                    :options="deliveryModeOpts"
+                    :options="linePackOptions(record)"
+                    @change="() => onPackSpecChange(record)"
                   />
+                  <span v-else class="readonly-cell">—</span>
+                </template>
+
+                <template v-else-if="column.key === 'needIndustrialLabel'">
+                  <a-checkbox v-model:checked="record.needIndustrialLabel" />
                 </template>
 
                 <template v-else-if="column.key === 'stockFulfillmentMode'">
@@ -547,10 +510,6 @@
                   <span class="readonly-cell">{{ record.bomVersion || '—' }}</span>
                 </template>
 
-                <template v-else-if="column.key === 'unit'">
-                  <a-input v-model:value="record.unit" size="small" />
-                </template>
-
                 <template v-else-if="column.key === 'externalJobNo'">
                   <SalesLineLongTextCell
                     :value="record.externalJobNo"
@@ -588,6 +547,25 @@
                     style="width: 100%"
                     @change="onLineFieldChange(record)"
                   />
+                </template>
+
+                <template v-else-if="column.key === 'pricingRule'">
+                  <div class="pricing-cell">
+                    <a-select
+                      :value="record.pricingMode || 'flat'"
+                      size="small"
+                      style="width: 100%"
+                      :options="pricingModeOptions"
+                      @change="(mode) => onLinePricingModeChange(record, mode)"
+                    />
+                    <a
+                      v-if="isContentPricing(record)"
+                      class="pricing-rule-link"
+                      @click.prevent="openLineEdit(record)"
+                    >
+                      {{ formatPricingRule(record) }}
+                    </a>
+                  </div>
                 </template>
 
                 <template v-else-if="column.key === 'unitPriceExTax'">
@@ -930,18 +908,15 @@ import {
 import { formatQty, inputNumberFormatter, inputNumberParser } from '@/utils/numberFormat'
 import {
   contractTypeOptions,
-  settlementCurrencyOptions,
   orderTypeOptions,
   deliveryMethodOptions,
-  deliveryModeOptions,
-  settlementTypeOptions,
-  paymentRatioOptions,
   salespersonOptions,
 } from '@/mock/salesOrderOptions'
 import { getUrgencyOptions } from '@/constants/urgency'
 import { createLineItem } from '@/mock/salesOrders'
 import { productInfoState } from '@/store/productInfoStore'
 import { materialInfoState } from '@/store/materialInfoStore'
+import { resolveSalesListPrice } from '@/utils/tradePrice'
 import { getOwnActiveBomForItem } from '@/store/productBomStore'
 import { BOM_FULFILLMENT_PATH } from '@/constants/salesOrderFulfillment'
 import {
@@ -968,6 +943,13 @@ import { getCustomerOptions, getCustomerByName } from '@/store/customerStore'
 import { CONTRACT_CASH_DIRECTION } from '@/constants/salesContract'
 import { checkContractQuotaWarning, getSalesContractByNo } from '@/store/salesContractStore'
 import { resolveSalesLinePrice } from '@/utils/customerPrice'
+import {
+  SALES_PRICING_MODE,
+  SALES_PRICING_MODE_OPTIONS,
+  formatPricingRule,
+  isContentPricing,
+} from '@/utils/salesContentPricing'
+import { defaultPackSpec, listEnabledPackSpecs, packSpecOptionLabel } from '@/utils/packSpec'
 import {
   DISCOUNT_STRATEGIES,
   DISCOUNT_STRATEGY_LABELS,
@@ -1118,8 +1100,7 @@ const columnDefs = [
     fixed: 'left',
   },
   { key: 'businessType', title: '业务类型', width: 130 },
-  { key: 'specModel', title: '规格型号', dataIndex: 'specModel', width: 120 },
-  { key: 'material', title: '材质', dataIndex: 'material', width: 100 },
+  { key: 'specModel', title: '规格', dataIndex: 'specModel', width: 120 },
   {
     key: 'variantAttr',
     title: '变体属性',
@@ -1127,15 +1108,12 @@ const columnDefs = [
     width: 160,
     ellipsis: true,
   },
-  { key: 'drawingNo', title: '图号', dataIndex: 'drawingNo', width: 100, ellipsis: true },
-  { key: 'techParams', title: '技术参数', width: 120, ellipsis: true },
-  { key: 'matchingRequirements', title: '配套要求', width: 120, ellipsis: true },
   { key: 'salesQty', title: '销售数量', width: 90 },
-  { key: 'deliveryMode', title: '交付方式', width: 100 },
+  { key: 'unit', title: '单位', width: 70 },
+  { key: 'packSpec', title: '包装规格', width: 200 },
   { key: 'stockFulfillmentMode', title: '库存履约', width: 168 },
   { key: 'preferStockTakeQty', title: '占用现货数', width: 118 },
   { key: 'deliveryDate', title: '交货日期', width: 120 },
-  { key: 'unit', title: '单位', width: 70 },
   {
     key: 'externalJobNo',
     title: '外部工号',
@@ -1143,8 +1121,7 @@ const columnDefs = [
     width: 130,
     ellipsis: true,
   },
-  { key: 'bomName', title: 'Bom名称', dataIndex: 'bomName', width: 100, ellipsis: true },
-  { key: 'bomVersion', title: 'Bom版本', dataIndex: 'bomVersion', width: 90 },
+  { key: 'pricingRule', title: '计价方式', width: 220 },
   { key: 'unitPriceExTax', title: '单价（不含税）', width: 120 },
   { key: 'unitPriceInTax', title: '单价（含税）', width: 110 },
   { key: 'taxRate', title: '税率(%)', width: 80 },
@@ -1152,8 +1129,6 @@ const columnDefs = [
   { key: 'totalPriceInTax', title: '总价（含税）', width: 100 },
   { key: 'lineDiscountPercent', title: '行折扣(%)', width: 90 },
   { key: 'lineDiscountAmount', title: '行优惠金额', width: 100 },
-  { key: 'packagingForm', title: '包装形式', width: 90 },
-  { key: 'needIndustrialLabel', title: '工业标识', width: 90 },
   { key: 'supplementDesc', title: '补充说明', width: 90 },
   { key: 'lineAttachment', title: '上传附件', width: 120 },
   { key: 'action', title: '操作', width: 150, fixed: 'right' },
@@ -1521,14 +1496,11 @@ watch(
     }
   },
 )
-const currencyOpts = settlementCurrencyOptions.map((v) => ({ label: v, value: v }))
 const orderTypeOpts = orderTypeOptions.map((v) => ({ label: v, value: v }))
 const deliveryMethodOpts = deliveryMethodOptions.map((v) => ({ label: v, value: v }))
-const deliveryModeOpts = deliveryModeOptions.map((v) => ({ label: v, value: v }))
 const stockFulfillmentModeOpts = STOCK_FULFILLMENT_MODE_OPTIONS
-const settlementTypeOpts = settlementTypeOptions.map((v) => ({ label: v, value: v }))
-const paymentRatioOpts = paymentRatioOptions.map((v) => ({ label: v, value: v }))
 const salespersonOpts = salespersonOptions.map((v) => ({ label: v, value: v }))
+const pricingModeOptions = SALES_PRICING_MODE_OPTIONS
 
 const orderPricing = computed(() =>
   calcOrderAmounts(
@@ -1931,7 +1903,9 @@ function repriceLinesForCustomer() {
       ? productInfoState.products.find((p) => p.id === line.productId)
       : null
     const listPrice =
-      Number(master?.unitPrice ?? line.listUnitPriceExTax ?? line.unitPriceExTax) || 0
+      resolveSalesListPrice(master, { packSpecId: line.packSpecId }).price ||
+      Number(line.listUnitPriceExTax ?? line.unitPriceExTax) ||
+      0
     const pricing = resolveSalesLinePrice({
       customer,
       contract,
@@ -2058,7 +2032,7 @@ function onSpuDraftSelected(rows) {
     message.info('所选产品族已在明细中（待配置变体），未重复添加')
     return
   }
-  message.success(`已添加 ${added} 个产品族，请点击规格型号 / 材质 / 变体属性完成配置`)
+  message.success(`已添加 ${added} 个产品族，请点击规格 / 变体属性完成配置`)
 }
 
 function resolveMasterRecord(payload) {
@@ -2072,7 +2046,10 @@ function mapPickerToSalesLine(payload) {
   const bomItemType = payload.itemType === '产品' ? 'product' : 'material'
   const bom = getOwnActiveBomForItem(bomItemType, payload.id)
   const master = resolveMasterRecord(payload)
-  const listPrice = master?.unitPrice ?? payload.unitPrice ?? 0
+  const pack = defaultPackSpec(master)
+  const inventoryUnit = payload.inventoryUnit || master?.inventoryUnit || '件'
+  const listPrice =
+    resolveSalesListPrice(master, { packSpecId: pack?.id }).price || Number(payload.unitPrice) || 0
   const customer = getCustomerByName(form.customerName)
   const contract = form.contractNo ? getSalesContractByNo(form.contractNo) : null
   const contractPriceHit = (contract?.priceItems || []).find(
@@ -2112,7 +2089,10 @@ function mapPickerToSalesLine(payload) {
     techParams: master?.techParams || '',
     matchingRequirements: master?.matchingRequirements || master?.remark || '',
     category: payload.categoryName || master?.categoryName || '',
-    unit: payload.inventoryUnit || master?.inventoryUnit || '件',
+    unit: inventoryUnit,
+    packSpecId: pack?.id || '',
+    packSpecName: pack?.name || '',
+    packSpecText: pack ? packSpecOptionLabel(pack, inventoryUnit) : '',
     bomName: bom?.bomName || '',
     bomVersion: bom?.version || '',
     bomFulfillmentPath: bom
@@ -2183,6 +2163,58 @@ function cloneLine(index) {
   recalcLine(cloned)
   form.lineItems.push(cloned)
   recalcAll()
+}
+
+function lineMaster(record) {
+  const id = record?.productId
+  if (!id) return null
+  return (
+    productInfoState.products.find((item) => item.id === id) ||
+    materialInfoState.materials.find((item) => item.id === id) ||
+    null
+  )
+}
+
+function linePackOptions(record) {
+  const master = lineMaster(record)
+  const unit = record?.unit || master?.inventoryUnit || ''
+  return listEnabledPackSpecs(master).map((row) => ({
+    value: row.id,
+    label: packSpecOptionLabel(row, unit),
+  }))
+}
+
+function applyPackSpec(record, spec, inventoryUnit) {
+  record.packSpecId = spec?.id || ''
+  record.packSpecName = spec?.name || ''
+  record.packSpecText = spec ? packSpecOptionLabel(spec, inventoryUnit) : ''
+}
+
+function onPackSpecChange(record) {
+  const master = lineMaster(record)
+  const unit = record.unit || master?.inventoryUnit || ''
+  const spec = listEnabledPackSpecs(master).find((row) => row.id === record.packSpecId) || null
+  applyPackSpec(record, spec, unit)
+  if (record.priceSource === 'contract') return
+  const listPrice = resolveSalesListPrice(master, { packSpecId: record.packSpecId }).price
+  if (listPrice > 0) {
+    record.listUnitPriceExTax = listPrice
+    recalcLine(record, 'discount', true)
+  }
+  recalcAll()
+}
+
+function onLinePricingModeChange(record, mode) {
+  record.pricingMode = mode || SALES_PRICING_MODE.FLAT
+  if (record.pricingMode === SALES_PRICING_MODE.CONTENT) {
+    if (!(Number(record.contentStep) > 0)) record.contentStep = 0.1
+    openLineEdit(record)
+    return
+  }
+  record.baseContent = null
+  record.contentStep = null
+  record.priceStepUp = null
+  record.priceStepDown = null
 }
 
 function openLineEdit(record) {
@@ -2413,8 +2445,8 @@ function persistOrder() {
   margin: 4px 0 8px;
   padding: 6px 10px;
   font-size: 12px;
-  color: #1677ff;
-  background: #e6f4ff;
+  color: #307068;
+  background: #e7f2f0;
   border-radius: 4px;
 }
 
@@ -2576,9 +2608,9 @@ function persistOrder() {
     gap: 8px;
 
     .tax-toggle-btn {
-      color: #1677ff;
-      border-color: #91caff;
-      background: #e6f4ff;
+      color: #307068;
+      border-color: #a9c6c2;
+      background: #e7f2f0;
     }
 
     .tax-hint {
@@ -2621,7 +2653,7 @@ function persistOrder() {
     cursor: col-resize;
 
     &:hover {
-      background: rgba(22, 119, 255, 0.25);
+      background: rgba(48, 112, 104, 0.25);
     }
   }
 }
@@ -2717,7 +2749,7 @@ function persistOrder() {
   margin: 8px 16px 12px;
   font-size: 12px;
   line-height: 1.6;
-  color: #1677ff;
+  color: #307068;
 }
 
 .ship-accessory-section {
@@ -2788,17 +2820,28 @@ function persistOrder() {
   color: rgba(0, 0, 0, 0.65);
 }
 
+.pricing-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pricing-rule-link {
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .variant-field-link {
   display: inline-block;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 
   &:hover {
-    color: #4096ff;
+    color: #4e8a82;
   }
 }
 

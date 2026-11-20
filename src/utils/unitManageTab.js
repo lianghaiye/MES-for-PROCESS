@@ -58,7 +58,6 @@ export function resolveAuxConvertType(roles = [], convertType) {
   return convertType === UNIT_CONVERT.FIXED ? UNIT_CONVERT.FIXED : UNIT_CONVERT.BATCH
 }
 
-/** 辅助单位与主单位换算说明文案 */
 export function formatAuxConvertText(row, baseUnit) {
   const unit = normalizeUnit(row?.unit)
   const base = normalizeUnit(baseUnit) || '主单位'

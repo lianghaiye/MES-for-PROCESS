@@ -181,7 +181,7 @@ function seedInbox() {
       typeCode: 'ECN_TODO',
       title: 'ECN 待处理 · ECN-2024001',
       body: '变更单 ECN-2024001 需要你处理。',
-      linkPath: '/engineering-change/ecn/ecn-001/detail',
+      linkPath: '',
       bizNo: 'ECN-2024001',
       createdAt: at(3, 'hour'),
     }),

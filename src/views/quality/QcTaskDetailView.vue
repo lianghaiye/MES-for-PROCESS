@@ -937,7 +937,7 @@ function onOutsourcingInboundSaved() {
 }
 
 .line-expand-btn:hover {
-  color: #1677ff;
-  background: #e6f4ff;
+  color: #307068;
+  background: #e7f2f0;
 }
 </style>

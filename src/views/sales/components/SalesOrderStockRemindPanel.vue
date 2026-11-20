@@ -73,7 +73,6 @@ const columns = [
   { title: '编码', dataIndex: 'itemCode', width: 110 },
   { title: '名称', dataIndex: 'productName', ellipsis: true, width: 140 },
   { title: '规格型号', key: 'specModel', dataIndex: 'specModel', ellipsis: true, width: 100 },
-  { title: '材质', key: 'material', dataIndex: 'material', ellipsis: true, width: 80 },
   { title: '自由备货量', dataIndex: 'freeQty', width: 96, align: 'right' },
   { title: '他单占用', key: 'otherQty', dataIndex: 'otherQty', width: 88, align: 'right' },
   { title: '现存总量', dataIndex: 'onHand', width: 88, align: 'right' },
@@ -166,7 +165,7 @@ function rowClassName(record) {
   }
 
   :deep(.stock-remind-row-focus) > td {
-    background: #e6f4ff !important;
+    background: #e7f2f0 !important;
   }
 }
 

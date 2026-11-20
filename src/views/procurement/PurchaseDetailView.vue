@@ -395,7 +395,6 @@ const baseColumns = [
   { title: '入库数量', key: 'receivedQty', width: 96, align: 'right' },
   { title: '交货日期', key: 'deliveryDate', width: 110 },
   { title: '入库日期', key: 'inboundDate', width: 110 },
-  { title: '关联工单号', dataIndex: 'workOrderNo', width: 130, ellipsis: true },
   { title: '关联销售单号', dataIndex: 'salesOrderNo', width: 130, ellipsis: true },
   { title: '采购员', key: 'purchaser', dataIndex: 'purchaser', width: 88 },
   { title: '创建人', key: 'creator', dataIndex: 'creator', width: 90 },

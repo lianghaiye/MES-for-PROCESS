@@ -456,7 +456,7 @@ function onFormSaved() {
 
   :deep(.row-active) {
     td {
-      background: #e6f4ff !important;
+      background: #e7f2f0 !important;
     }
   }
 }

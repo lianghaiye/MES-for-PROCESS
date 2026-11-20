@@ -651,7 +651,7 @@ function judgeHint(field) {
 .line-sheet-title {
   margin-bottom: 12px;
   padding-left: 8px;
-  border-left: 3px solid #1677ff;
+  border-left: 3px solid #307068;
   font-size: 14px;
   font-weight: 600;
   color: rgba(0, 0, 0, 0.88);

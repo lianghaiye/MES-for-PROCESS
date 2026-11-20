@@ -876,7 +876,7 @@ function handleBatchPush() {
   }
 
   .index-branch {
-    color: #69b1ff;
+    color: #6a9e98;
     font-size: 12px;
     line-height: 1;
     flex-shrink: 0;
@@ -887,12 +887,12 @@ function handleBatchPush() {
   }
 
   :deep(.row-collab-parent) > td {
-    background: #e6f4ff !important;
+    background: #e7f2f0 !important;
     font-weight: 500;
   }
 
   :deep(.row-collab-parent) > td:first-child {
-    box-shadow: inset 4px 0 0 #1677ff;
+    box-shadow: inset 4px 0 0 #307068;
   }
 
   :deep(.row-collab-child) > td {
@@ -901,7 +901,7 @@ function handleBatchPush() {
   }
 
   :deep(.row-collab-child) > td:first-child {
-    box-shadow: inset 4px 0 0 #91caff;
+    box-shadow: inset 4px 0 0 #a9c6c2;
   }
 
   /* 子行取消树形缩进占位，避免「3.1」被挤出列外 */
@@ -923,7 +923,7 @@ function handleBatchPush() {
   }
 
   :deep(.row-active) > td {
-    background: #bae0ff !important;
+    background: #d7e8e5 !important;
   }
 }
 </style>

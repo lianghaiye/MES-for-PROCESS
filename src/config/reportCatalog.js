@@ -64,20 +64,22 @@ export const REPORT_CATALOG = [
     title: '工单进度表',
     group: 'production',
     groupLabel: '生产报表',
-    path: '/report/work-order-progress',
+    path: '',
     question: '工单做到哪、是否超期？',
     timeFieldLabel: '计划开工/完工日',
     desc: '生产/总装等工单计划数、完工进度与状态（关联销售金额参考）。',
+    hidden: true,
   },
   {
     key: 'work-order-cost',
     title: '生产工单成本表',
     group: 'production',
     groupLabel: '生产报表',
-    path: '/report/work-order-cost',
+    path: '',
     question: '一单消耗多少料、多少人、总成本多少？',
     timeFieldLabel: '计划开工日',
     desc: '按工单汇总物料消耗（库存扣减）与物料成本、参与工人数与人工成本（工时工资），并给出成本合计。',
+    hidden: true,
   },
   {
     key: 'purchase-order-exec',
@@ -140,6 +142,6 @@ export function getReportDefByPath(path) {
 export function groupReportCatalog() {
   return REPORT_GROUP_ORDER.map((g) => ({
     ...g,
-    items: REPORT_CATALOG.filter((r) => r.group === g.key),
+    items: REPORT_CATALOG.filter((r) => r.group === g.key && r.path),
   })).filter((g) => g.items.length)
 }

@@ -21,7 +21,7 @@
           <a-list-item-meta>
             <template #avatar>
               <a-badge :dot="!item.readAt">
-                <a-avatar style="background: #1677ff">{{ typeInitial(item) }}</a-avatar>
+                <a-avatar style="background: #307068">{{ typeInitial(item) }}</a-avatar>
               </a-badge>
             </template>
             <template #title>

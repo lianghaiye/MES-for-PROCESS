@@ -413,13 +413,13 @@ onBeforeUnmount(() => {
 
 <style lang="less" scoped>
 .bxz-root {
-  --bxz-primary: #1677ff;
-  --bxz-primary-hover: #4096ff;
+  --bxz-primary: #307068;
+  --bxz-primary-hover: #4e8a82;
   --bxz-text: rgba(0, 0, 0, 0.88);
   --bxz-text-secondary: rgba(0, 0, 0, 0.45);
   --bxz-border: #f0f0f0;
   --bxz-bubble-bg: #fff;
-  --bxz-user-bg: #e6f4ff;
+  --bxz-user-bg: #e7f2f0;
   --bxz-tip-bg: rgba(255, 255, 255, 0.92);
   --bxz-panel-bg: #ffffff;
   --bxz-header-bg: #ffffff;
@@ -427,13 +427,13 @@ onBeforeUnmount(() => {
   --bxz-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
 
   &[data-theme='dark'] {
-    --bxz-primary: #4096ff;
-    --bxz-primary-hover: #69b1ff;
+    --bxz-primary: #4e8a82;
+    --bxz-primary-hover: #6a9e98;
     --bxz-text: rgba(255, 255, 255, 0.88);
     --bxz-text-secondary: rgba(255, 255, 255, 0.45);
     --bxz-border: #303030;
     --bxz-bubble-bg: #1f1f1f;
-    --bxz-user-bg: rgba(22, 119, 255, 0.28);
+    --bxz-user-bg: rgba(48, 112, 104, 0.28);
     --bxz-tip-bg: #2a2a2a;
     --bxz-panel-bg: #141414;
     --bxz-header-bg: #141414;

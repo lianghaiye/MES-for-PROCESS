@@ -135,6 +135,12 @@
               {{ record.type || '—' }}
             </a-tag>
           </template>
+          <template v-else-if="column.key === 'bizScope'">
+            {{ qcBizScopeLabel(record.bizScope) }}
+          </template>
+          <template v-else-if="column.key === 'assayType'">
+            {{ assayTypeText(record) }}
+          </template>
           <template v-else-if="column.key === 'scopeType'">
             {{ qcTemplateScopeTypeLabel(record.scopeType) }}
           </template>
@@ -249,6 +255,9 @@ onMounted(() => {
 import { findCreatePageByListPath } from '@/config/createPages'
 import { openCreateTab } from '@/utils/openCreateTab'
 import { useTabs } from '@/composables/useTabs'
+import { qcBizScopeLabel } from '@/constants/qcBizScopeLabel'
+import { assayTypeLabel } from '@/utils/qcProcessConfig'
+import { isProcessInspectBizScope } from '@/utils/qcTemplateProcessLink'
 
 const router = useRouter()
 const { openTab } = useTabs()
@@ -289,7 +298,10 @@ function isTemplateReferenced(template) {
 
 const statusOpts = qcTemplateStatusOptions.map((v) => ({ label: v, value: v }))
 const typeOpts = qcTemplateTypeOptions.map((v) => ({ label: v, value: v }))
-const bizScopeOpts = qcTemplateBizScopeOptions.map((v) => ({ label: v, value: v }))
+const bizScopeOpts = qcTemplateBizScopeOptions.map((v) => ({
+  label: qcBizScopeLabel(v),
+  value: v,
+}))
 const scopeTypeOpts = qcTemplateScopeTypeOptions
 
 const baseColumns = [
@@ -299,6 +311,7 @@ const baseColumns = [
   { title: '模板名称', dataIndex: 'name', width: 160, ellipsis: true },
   { title: '类型', key: 'type', width: 100 },
   { title: '业务类型', key: 'bizScope', dataIndex: 'bizScope', width: 110 },
+  { title: '化验类型', key: 'assayType', width: 110 },
   { title: '适用范围', key: 'scopeType', width: 90 },
   { title: '适用对象', key: 'objects', width: 160, ellipsis: true },
   { title: '关联工序', key: 'processLinks', width: 140, ellipsis: true },
@@ -311,7 +324,13 @@ const baseColumns = [
 ]
 
 const { columnSettings, columnDrawerOpen, displayColumns, tableScrollX, defaultColumnSettings } =
-  useTableColumnSettings('qc-template-list-v6', baseColumns)
+  useTableColumnSettings('qc-template-list-v7', baseColumns)
+
+function assayTypeText(record) {
+  if (!isProcessInspectBizScope(record?.bizScope)) return '—'
+  const type = String(record?.assayType || '').trim()
+  return type ? assayTypeLabel(type, record.bizScope) : '—'
+}
 
 const filteredList = computed(() => {
   const base = filterQcTemplates(qcTemplateState.templates, appliedFilters.value)
@@ -367,7 +386,7 @@ function handleCreate() {
 function openDetail(record) {
   if (!record?.id) return
   const path = `/quality/qc-template/${record.id}`
-  openTab(path, record.code || '质检模板详情')
+  openTab(path, record.code || '化验模板详情')
   router.push({ name: 'quality-qc-template-detail', params: { id: record.id } })
 }
 
@@ -520,7 +539,7 @@ function onConflictConfirm(resolution) {
 }
 
 .link-code {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 

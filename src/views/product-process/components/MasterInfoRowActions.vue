@@ -2,7 +2,7 @@
   <div class="master-info-row-actions" @click.stop>
     <a class="action-link" @click="emit('edit')">编辑</a>
     <a class="action-link" @click="emit('clone')">克隆</a>
-    <a class="action-link" @click="emit('bom')">BOM维护</a>
+    <a class="action-link" @click="emit('bom')">配方</a>
     <a-dropdown :trigger="['click']">
       <a class="action-link" @click.prevent>操作</a>
       <template #overlay>
@@ -57,12 +57,12 @@ function onMenuClick({ key }) {
 }
 
 .action-link {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
   user-select: none;
 
   &:hover {
-    color: #4096ff;
+    color: #4e8a82;
   }
 }
 

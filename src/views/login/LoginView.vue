@@ -1,7 +1,7 @@
 <template>
   <div class="login-page">
     <div class="login-card">
-      <h1 class="title">I-DOMS</h1>
+      <h1 class="title">流程MES</h1>
       <p class="subtitle">制造执行管理系统</p>
       <a-form :model="form" layout="vertical" @finish="onSubmit">
         <a-form-item
@@ -75,7 +75,7 @@ async function onSubmit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #e6f4ff 0%, #f0f2f5 50%, #fff 100%);
+  background: linear-gradient(135deg, #e7f2f0 0%, #f0f2f5 50%, #fff 100%);
 }
 
 .login-card {
@@ -89,7 +89,7 @@ async function onSubmit() {
 
 .title {
   text-align: center;
-  color: #1677ff;
+  color: #307068;
   font-size: 28px;
   margin: 0 0 4px;
 }

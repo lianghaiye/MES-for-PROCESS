@@ -11,9 +11,33 @@ import {
 } from '@/utils/qcFieldStandard'
 import { isComplexField, pickComplexFieldProps } from '@/utils/qcComplexField'
 
+export { QC_UNIT_POSITION }
+
 export const qcFieldLibraryStatusOptions = ['启用', '停用']
 
-export const qcFieldLibraryCategoryOptions = ['外观', '尺寸', '性能', '材料', '功能', '其他']
+export const qcFieldLibraryCategoryOptions = [
+  '外观',
+  '尺寸',
+  '性能',
+  '材料',
+  '功能',
+  '执行',
+  '其他',
+]
+
+/** 字段取值来源：手工录入 | 系统带出 */
+export const QC_FIELD_VALUE_SOURCE = {
+  MANUAL: 'manual',
+  SYSTEM: 'system',
+}
+
+/** 工序执行用系统指标键 */
+export const PROCESS_FORM_SYSTEM_KEYS = {
+  OPERATOR: 'operator',
+  OPERATED_AT: 'operatedAt',
+  EQUIPMENT: 'equipment',
+  BATCH_NO: 'batchNo',
+}
 
 export const qcFieldLibraryTypeOptions = [
   { value: 'text', label: '文本框' },
@@ -103,6 +127,15 @@ export function createQcLibraryField(partial = {}) {
     format: partial.format || '',
     charLimit: partial.charLimit ?? null,
     isSystem: Boolean(partial.isSystem),
+    valueSource:
+      partial.valueSource === QC_FIELD_VALUE_SOURCE.SYSTEM
+        ? QC_FIELD_VALUE_SOURCE.SYSTEM
+        : QC_FIELD_VALUE_SOURCE.MANUAL,
+    systemKey: String(partial.systemKey || '').trim(),
+    /** 适用场景：qc / process；空视为两者都可用 */
+    bizScopes: Array.isArray(partial.bizScopes)
+      ? [...new Set(partial.bizScopes.map((s) => String(s || '').trim()).filter(Boolean))]
+      : [],
     ...standard,
     ...complex,
     creator: partial.creator || 'admin1',
@@ -130,6 +163,7 @@ export const mockQcLibraryFields = [
     category: '其他',
     required: true,
     isSystem: true,
+    bizScopes: ['qc'],
     options: ['抽检', '全检'],
     defaultValue: '抽检',
     judgeRule: QC_FIELD_JUDGE_RULE.NONE,
@@ -148,6 +182,7 @@ export const mockQcLibraryFields = [
     category: '其他',
     required: true,
     isSystem: true,
+    bizScopes: ['qc'],
     allowDecimal: true,
     judgeRule: QC_FIELD_JUDGE_RULE.NONE,
     placeholder: '请输入质检数量',
@@ -165,6 +200,7 @@ export const mockQcLibraryFields = [
     category: '其他',
     required: false,
     isSystem: true,
+    bizScopes: ['qc'],
     judgeRule: QC_FIELD_JUDGE_RULE.NONE,
     placeholder: '请输入检验备注',
     creator: '系统管理员',
@@ -172,84 +208,111 @@ export const mockQcLibraryFields = [
     updater: '系统管理员',
     updatedAt: '2026-01-01 00:00:00',
   }),
+
   createQcLibraryField({
-    id: 'qcf-hardness',
-    code: 'QC_HARDNESS',
-    name: '硬度(HRC)',
+    id: 'qcf-ph',
+    code: 'QC_PH',
+    name: 'pH值',
+    type: 'number',
+    status: '启用',
+    category: '性能',
+    required: true,
+    allowDecimal: true,
+    bizScopes: ['qc'],
+    judgeRule: QC_FIELD_JUDGE_RULE.RANGE,
+    standardMin: 6.5,
+    standardMax: 8.5,
+    placeholder: '请输入pH',
+    creator: '质检员A',
+    createdAt: '2026-11-01 10:00:00',
+    updater: '质检员A',
+    updatedAt: '2026-11-01 10:00:00',
+  }),
+  createQcLibraryField({
+    id: 'qcf-solid',
+    code: 'QC_SOLID_CONTENT',
+    name: '固含量',
     type: 'number',
     status: '启用',
     category: '材料',
     required: true,
     allowDecimal: true,
     withUnit: true,
-    unit: 'HRC',
+    unit: '%',
     unitPosition: QC_UNIT_POSITION.SUFFIX,
+    bizScopes: ['qc'],
     judgeRule: QC_FIELD_JUDGE_RULE.RANGE,
-    standardMin: 58,
-    standardMax: 62,
-    placeholder: '请输入硬度',
+    standardMin: 20,
+    standardMax: 35,
+    placeholder: '请输入固含量',
     creator: '质检员A',
-    createdAt: '2026-07-01 10:00:00',
+    createdAt: '2026-11-01 10:05:00',
     updater: '质检员A',
-    updatedAt: '2026-08-01 10:00:00',
+    updatedAt: '2026-11-01 10:05:00',
   }),
   createQcLibraryField({
-    id: 'qcf-seal-face',
-    code: 'QC_SEAL_FACE',
-    name: '密封面外观',
+    id: 'qcf-density',
+    code: 'QC_DENSITY',
+    name: '密度',
+    type: 'number',
+    status: '启用',
+    category: '性能',
+    required: true,
+    allowDecimal: true,
+    withUnit: true,
+    unit: 'g/cm³',
+    unitPosition: QC_UNIT_POSITION.SUFFIX,
+    bizScopes: ['qc'],
+    judgeRule: QC_FIELD_JUDGE_RULE.RANGE,
+    standardMin: 1.0,
+    standardMax: 1.3,
+    placeholder: '请输入密度',
+    creator: '质检员B',
+    createdAt: '2026-11-01 10:10:00',
+    updater: '质检员B',
+    updatedAt: '2026-11-01 10:10:00',
+  }),
+  createQcLibraryField({
+    id: 'qcf-filtrate',
+    code: 'QC_FILTRATE_CLARITY',
+    name: '滤液清澈度',
     type: 'radio',
     status: '启用',
     category: '外观',
     required: true,
-    options: ['完好', '划伤', '破损'],
+    options: ['清澈', '微浊', '浑浊'],
+    bizScopes: ['qc'],
     judgeRule: QC_FIELD_JUDGE_RULE.OPTION_PASS,
-    passOptions: ['完好'],
-    placeholder: '请选择密封面外观',
+    passOptions: ['清澈'],
+    placeholder: '请选择滤液清澈度',
     creator: '质检员A',
-    createdAt: '2026-07-01 10:00:00',
+    createdAt: '2026-11-01 10:15:00',
     updater: '质检员A',
-    updatedAt: '2026-08-01 10:00:00',
+    updatedAt: '2026-11-01 10:15:00',
   }),
   createQcLibraryField({
-    id: 'qcf-noise',
-    code: 'QC_NOISE',
-    name: '异响检查',
-    type: 'radio',
-    status: '启用',
-    category: '功能',
-    required: true,
-    options: ['无异响', '有异响'],
-    judgeRule: QC_FIELD_JUDGE_RULE.OPTION_PASS,
-    passOptions: ['无异响'],
-    placeholder: '请选择异响检查结果',
-    creator: '质检员B',
-    createdAt: '2026-07-02 10:00:00',
-    updater: '质检员B',
-    updatedAt: '2026-08-02 10:00:00',
-  }),
-  createQcLibraryField({
-    id: 'qcf-clearance',
-    code: 'QC_CLEARANCE',
-    name: '游隙(mm)',
+    id: 'qcf-moisture',
+    code: 'QC_MOISTURE',
+    name: '水分',
     type: 'number',
     status: '启用',
-    category: '尺寸',
+    category: '材料',
     required: true,
     allowDecimal: true,
     withUnit: true,
-    unit: 'mm',
+    unit: '%',
     unitPosition: QC_UNIT_POSITION.SUFFIX,
+    bizScopes: ['qc'],
     judgeRule: QC_FIELD_JUDGE_RULE.RANGE,
-    standardMin: 0.01,
-    standardMax: 0.03,
-    placeholder: '请输入游隙',
+    standardMax: 0.5,
+    placeholder: '请输入水分',
     creator: '质检员B',
-    createdAt: '2026-07-02 10:00:00',
+    createdAt: '2026-11-01 10:20:00',
     updater: '质检员B',
-    updatedAt: '2026-08-02 10:00:00',
+    updatedAt: '2026-11-01 10:20:00',
   }),
   createQcLibraryField({
-    id: 'qcf-appearance',
+    id: 'qcf-appearance-liq',
     code: 'QC_APPEARANCE',
     name: '外观检查',
     type: 'radio',
@@ -257,92 +320,14 @@ export const mockQcLibraryFields = [
     category: '外观',
     required: true,
     options: ['合格', '不合格'],
+    bizScopes: ['qc'],
     judgeRule: QC_FIELD_JUDGE_RULE.OPTION_PASS,
     passOptions: ['合格'],
-    placeholder: '请选择外观检查结果',
+    placeholder: '请选择外观',
     creator: '系统管理员',
-    createdAt: '2026-06-01 09:00:00',
+    createdAt: '2026-11-01 10:25:00',
     updater: '系统管理员',
-    updatedAt: '2026-06-01 09:00:00',
-  }),
-  createQcLibraryField({
-    id: 'qcf-dim-od',
-    code: 'QC_DIM_OD',
-    name: '外径尺寸',
-    type: 'number',
-    status: '启用',
-    category: '尺寸',
-    required: true,
-    allowDecimal: true,
-    withUnit: true,
-    unit: 'mm',
-    unitPosition: QC_UNIT_POSITION.SUFFIX,
-    judgeRule: QC_FIELD_JUDGE_RULE.RANGE,
-    standardMin: 49.9,
-    standardMax: 50.1,
-    placeholder: '请输入外径',
-    creator: '系统管理员',
-    createdAt: '2026-06-01 09:10:00',
-    updater: '系统管理员',
-    updatedAt: '2026-06-01 09:10:00',
-  }),
-  createQcLibraryField({
-    id: 'qcf-run-test',
-    code: 'QC_RUN_TEST',
-    name: '出厂试验-运转',
-    type: 'composite',
-    status: '启用',
-    category: '性能',
-    required: true,
-    description: '演示：同一复合项内可混用数字区间、单选合格项、文本等于、人工判定',
-    children: [
-      {
-        code: 'bearing_temp',
-        name: '轴承温升（滚动）',
-        type: 'number',
-        withUnit: true,
-        unit: '°C',
-        judgeRule: QC_FIELD_JUDGE_RULE.RANGE,
-        standardMax: 80,
-        allowDecimal: true,
-      },
-      {
-        code: 'seal_leak',
-        name: '机封泄漏',
-        type: 'number',
-        withUnit: true,
-        unit: 'ml/h',
-        judgeRule: QC_FIELD_JUDGE_RULE.RANGE,
-        standardMax: 5,
-        allowDecimal: true,
-      },
-      {
-        code: 'surface_state',
-        name: '表面状态',
-        type: 'radio',
-        options: ['完好', '轻微划伤', '破损'],
-        judgeRule: QC_FIELD_JUDGE_RULE.OPTION_PASS,
-        passOptions: ['完好'],
-      },
-      {
-        code: 'batch_mark',
-        name: '批次标识',
-        type: 'text',
-        judgeRule: QC_FIELD_JUDGE_RULE.EQUALS,
-        standardValue: 'A1',
-      },
-      {
-        code: 'remark',
-        name: '备注说明',
-        type: 'textarea',
-        required: false,
-        judgeRule: QC_FIELD_JUDGE_RULE.MANUAL,
-      },
-    ],
-    creator: '质检员A',
-    createdAt: '2026-07-10 10:00:00',
-    updater: '质检员A',
-    updatedAt: '2026-08-01 10:00:00',
+    updatedAt: '2026-11-01 10:25:00',
   }),
 ]
 
@@ -358,6 +343,14 @@ export function cloneQcLibraryFields() {
   )
 }
 
+/** 按业务场景过滤检验项库（空 bizScopes = 通用） */
+export function matchLibraryBizScope(field, scope) {
+  if (!scope) return true
+  const scopes = Array.isArray(field?.bizScopes) ? field.bizScopes : []
+  if (!scopes.length) return true
+  return scopes.includes(scope)
+}
+
 export function filterQcLibraryFields(list = [], filters = {}) {
   return (list || []).filter((row) => {
     if (filters.status && row.status !== filters.status) return false
@@ -368,6 +361,7 @@ export function filterQcLibraryFields(list = [], filters = {}) {
     if (filters.creator && !(row.creator || '').includes(String(filters.creator).trim())) {
       return false
     }
+    if (filters.bizScope && !matchLibraryBizScope(row, filters.bizScope)) return false
     if (filters.keyword) {
       const kw = String(filters.keyword).trim().toLowerCase()
       const hay = `${row.code || ''} ${row.name || ''}`.toLowerCase()
@@ -460,6 +454,12 @@ export function libraryFieldToTemplateField(lib = {}) {
     charLimit: lib.charLimit ?? null,
     category: lib.category || '',
     isSystem: Boolean(lib.isSystem),
+    valueSource:
+      lib.valueSource === QC_FIELD_VALUE_SOURCE.SYSTEM
+        ? QC_FIELD_VALUE_SOURCE.SYSTEM
+        : QC_FIELD_VALUE_SOURCE.MANUAL,
+    systemKey: String(lib.systemKey || '').trim(),
+    bizScopes: Array.isArray(lib.bizScopes) ? [...lib.bizScopes] : [],
     ...standard,
     ...complex,
     standardText:

@@ -1,7 +1,7 @@
 <template>
   <a-layout-header class="app-header">
     <div class="header-left">
-      <div class="logo">I-DOMS</div>
+      <div class="logo">流程MES</div>
       <a-menu
         v-model:selectedKeys="selectedTopKeys"
         mode="horizontal"
@@ -52,7 +52,7 @@
       </a-popover>
       <a-dropdown>
         <div class="user-info">
-          <a-avatar size="small" :style="{ backgroundColor: '#1677ff' }">
+          <a-avatar size="small" :style="{ backgroundColor: '#307068' }">
             {{ avatarText }}
           </a-avatar>
           <span class="username">{{ displayName }}</span>
@@ -212,7 +212,7 @@ async function handleLogout() {
 .logo {
   font-size: 20px;
   font-weight: 700;
-  color: var(--primary, #1677ff);
+  color: var(--primary, #307068);
   margin-right: 16px;
   white-space: nowrap;
   flex-shrink: 0;
@@ -242,7 +242,7 @@ async function handleLogout() {
 
 .header-icon {
   font-size: 18px;
-  color: var(--primary, #1677ff);
+  color: var(--primary, #307068);
   cursor: pointer;
 }
 

@@ -456,7 +456,7 @@ export default { name: 'SelectCustomerModal' }
 
   .selected-code {
     font-size: 12px;
-    color: #1677ff;
+    color: #307068;
     font-weight: 500;
   }
 

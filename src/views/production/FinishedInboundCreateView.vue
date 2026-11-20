@@ -135,17 +135,12 @@
           <template #bodyCell="{ column, record, index }">
             <template v-if="column.key === 'index'">{{ index + 1 }}</template>
             <template v-else-if="column.key === 'itemCode'">
-              <a-select
+              <MasterItemSelect
                 v-if="mode === FINISHED_INBOUND_MODES.QUICK"
-                v-model:value="record.itemCode"
-                show-search
-                allow-clear
-                size="small"
-                style="width: 100%"
+                catalog="product"
+                :model-value="productIdByCode(record.itemCode)"
                 placeholder="选择产品"
-                :options="productOptions"
-                :filter-option="filterProductOption"
-                @change="(code) => onProductChange(index, code)"
+                @select="(item) => applyInboundProduct(record, item)"
               />
               <span v-else>{{ record.itemCode || '—' }}</span>
             </template>
@@ -208,6 +203,7 @@ import { message } from 'ant-design-vue'
 import WorkOrderSearchSelect from '@/views/procurement/components/WorkOrderSearchSelect.vue'
 import { workOrderState } from '@/store/workOrderStore'
 import { getSelectableProducts } from '@/store/productInfoStore'
+import MasterItemSelect from '@/views/product-process/components/MasterItemSelect.vue'
 import { warehouseState } from '@/store/warehouseStore'
 import { workCenterOptions } from '@/mock/workOrderOptions'
 import {
@@ -257,13 +253,30 @@ const lineColumns = [
 
 const totalQty = computed(() => lines.value.reduce((sum, line) => sum + (Number(line.qty) || 0), 0))
 
-const productOptions = computed(() =>
-  getSelectableProducts().map((p) => ({
-    value: p.code,
-    label: `${p.code} ${p.name || ''}`.trim(),
-    raw: p,
-  })),
-)
+function productIdByCode(code) {
+  if (!code) return ''
+  return getSelectableProducts().find((item) => item.code === code)?.id || ''
+}
+
+function applyInboundProduct(line, item) {
+  if (!line) return
+  if (!item) {
+    line.itemCode = ''
+    line.itemName = ''
+    line.specModel = ''
+    line.material = ''
+    line.drawingNo = ''
+    line.variantSummary = ''
+    return
+  }
+  line.itemCode = item.code || ''
+  line.itemName = item.name || ''
+  line.specModel = item.specModel || ''
+  line.material = item.material || ''
+  line.drawingNo = item.drawingNo || ''
+  line.variantSummary = item.variantSummary || ''
+  line.unit = item.inventoryUnit || line.unit || '台'
+}
 
 function emptyWoRow() {
   return {
@@ -376,38 +389,6 @@ function addQuickLine() {
 
 function removeLine(index) {
   lines.value.splice(index, 1)
-}
-
-function onProductChange(index, code) {
-  const line = lines.value[index]
-  if (!line) return
-  const hit = productOptions.value.find((o) => o.value === code)
-  const p = hit?.raw
-  if (!p) {
-    line.itemName = ''
-    line.specModel = ''
-    line.material = ''
-    line.drawingNo = ''
-    line.variantSummary = ''
-    return
-  }
-  line.itemCode = p.code
-  line.itemName = p.name || ''
-  line.specModel = p.specModel || ''
-  line.material = p.material || ''
-  line.drawingNo = p.drawingNo || ''
-  line.variantSummary = p.variantSummary || ''
-  line.unit = p.inventoryUnit || p.stockUnit || '台'
-}
-
-function filterProductOption(input, option) {
-  const kw = String(input || '')
-    .trim()
-    .toLowerCase()
-  if (!kw) return true
-  return String(option?.label || '')
-    .toLowerCase()
-    .includes(kw)
 }
 
 function syncLineWarehouses() {

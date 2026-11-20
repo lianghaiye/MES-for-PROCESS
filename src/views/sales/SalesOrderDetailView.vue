@@ -77,7 +77,6 @@
               <a-tab-pane key="shipping" :tab="`发货信息 (${shippingTabCount})`" />
               <a-tab-pane key="inbound" :tab="`入库信息 (${inboundRows.length})`" />
               <a-tab-pane key="purchase" :tab="`采购 (${purchaseTabCount})`" />
-              <a-tab-pane key="production" :tab="`生产 (${productionTabCount})`" />
               <a-tab-pane key="outsourcing" :tab="`外协 (${relations.outsourcingOrders.length})`" />
               <a-tab-pane key="attachments" :tab="`附件 (${relations.attachments.length})`" />
               <a-tab-pane
@@ -217,6 +216,12 @@
                 </a-col>
               </a-row>
 
+              <div v-if="hasContentPricing" class="discount-reason-row">
+                <span class="reason-label">金额口径</span>
+                <span class="reason-text">
+                  含按含量计价的行。订单金额按基准含量估算，结算单价在发货时按批次含量计算。
+                </span>
+              </div>
               <div v-if="order.orderDiscountReason" class="discount-reason-row">
                 <span class="reason-label">优惠原因</span>
                 <span class="reason-text">{{ order.orderDiscountReason }}</span>
@@ -254,6 +259,9 @@
                   </template>
                   <template v-else-if="column.key === 'businessType'">
                     {{ resolveLineBusinessType(line, order) }}
+                  </template>
+                  <template v-else-if="column.key === 'pricingRule'">
+                    {{ formatPricingRule(line) }}
                   </template>
                   <template v-else-if="column.key === 'shipAccessories'">
                     <a-tooltip
@@ -350,14 +358,7 @@
                     <a-tag :color="row.ebomStatusColor">{{ row.ebomStatus }}</a-tag>
                   </template>
                   <template v-else-if="column.key === 'bomName'">
-                    <a
-                      v-if="row.bomId"
-                      class="link-code"
-                      @click.prevent="openBomDetail(row.bomId, row.bomName)"
-                    >
-                      {{ row.bomName }}
-                    </a>
-                    <span v-else>{{ row.bomName }}</span>
+                    <span>{{ row.bomName || '—' }}</span>
                   </template>
                   <template v-else-if="column.key === 'boundVersion'">
                     <span>{{ row.boundVersion }}</span>
@@ -607,7 +608,7 @@
             </DetailSectionCard>
           </template>
 
-          <template v-else-if="activeTab === 'production'">
+          <template v-else-if="false">
             <DetailSectionCard title="生产计划">
               <a-table
                 :columns="planColumns"
@@ -1351,6 +1352,7 @@ import {
 } from '@/utils/salesOrderShipAccessories'
 import IndustrialLabelQrMock from './components/IndustrialLabelQrMock.vue'
 import { salesOrderDetailLineColumns } from '@/utils/salesOrderLineColumns'
+import { formatPricingRule } from '@/utils/salesContentPricing'
 import { getUser } from '@/utils/auth'
 import {
   industrialLabelState,
@@ -1607,6 +1609,10 @@ const orderPricing = computed(() => {
   return calcOrderAmounts(order.value)
 })
 
+const hasContentPricing = computed(() =>
+  (order.value?.lineItems || []).some((line) => line?.pricingMode === 'content'),
+)
+
 const discountStrategyLabel = computed(() => {
   const strategy = order.value?.discountStrategy || DISCOUNT_STRATEGIES.LINE
   return DISCOUNT_STRATEGY_LABELS[strategy] || DISCOUNT_STRATEGY_LABELS[DISCOUNT_STRATEGIES.LINE]
@@ -1638,13 +1644,6 @@ const finalAmountExTaxTooltip =
 
 const purchaseTabCount = computed(
   () => relations.value.purchaseRequisitions.length + relations.value.purchaseOrders.length,
-)
-
-const productionTabCount = computed(
-  () =>
-    relations.value.productionPlans.length +
-    relations.value.workOrders.length +
-    relations.value.assemblyWorkOrders.length,
 )
 
 const bomChangedLines = computed(() =>
@@ -2559,13 +2558,6 @@ function goWorkOrderDetail(row) {
   openTab(path, `工单 ${code}`)
   router.push({ path: basePath, query: { code } })
 }
-
-function openBomDetail(bomId, bomName) {
-  if (!bomId) return
-  const path = `/product-process/bom/${bomId}`
-  openTab(path, bomName || 'BOM详情')
-  router.push(path)
-}
 </script>
 
 <style lang="less" scoped>
@@ -2575,7 +2567,7 @@ function openBomDetail(bomId, bomName) {
 }
 
 .link-code {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 
@@ -2751,7 +2743,7 @@ function openBomDetail(bomId, bomName) {
     &.price-value-final {
       font-size: 16px;
       font-weight: 600;
-      color: #1677ff;
+      color: #307068;
     }
   }
 }
@@ -2764,7 +2756,7 @@ function openBomDetail(bomId, bomName) {
 }
 
 .ship-acc-link {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 

@@ -306,7 +306,7 @@ export const MESSAGE_NOTIFY_CATALOG = [
     trigger: 'ECN 进入待审/审批中/执行中',
     titleTemplate: 'ECN 待处理 · {bizNo}',
     bodyTemplate: '变更单 {bizNo} 需要你处理。',
-    linkPath: '/engineering-change/ecn-list',
+    linkPath: '',
     defaults: def({ roles: ['ecn_handler'], docRelations: ['assignee', 'currentApprover'] }),
   },
 

@@ -21,13 +21,11 @@ import { urgencyRank, URGENCY } from '@/constants/urgency'
 const STOCK_ALERT_THRESHOLD = 10
 const PLAN_RISK_DAYS = 7
 
-const ECN_TODO_STATUSES = [ECN_STATUS.PENDING, ECN_STATUS.APPROVING, ECN_STATUS.EXECUTING]
-
 const INBOUND_PENDING = ['待审批', '待处理']
 const OUTBOUND_PENDING = ['待处理', '待出库']
 
 export const DIRECTOR_SHORTCUTS = [
-  { key: 'work-orders', label: '生产工单', path: '/production/work-orders', color: '#1677ff' },
+  { key: 'work-orders', label: '批次指令', path: '/production/work-orders', color: '#307068' },
   {
     key: 'process-report',
     label: '工序报工',
@@ -38,7 +36,7 @@ export const DIRECTOR_SHORTCUTS = [
     key: 'report-work',
     label: '报工确认',
     path: '/report-management/report-work',
-    color: '#13c2c2',
+    color: '#307068',
   },
   {
     key: 'production-plan',
@@ -89,16 +87,6 @@ function isDateInPeriod(dateStr, period) {
 
 function collectAllWorkOrders() {
   return [
-    ...workOrderState.orders.map((o) => ({
-      ...o,
-      woType: '生产工单',
-      listPath: '/production/work-orders',
-    })),
-    ...assemblyWorkOrderState.orders.map((o) => ({
-      ...o,
-      woType: '总装工单',
-      listPath: '/production/assembly-work-orders',
-    })),
     ...disassemblyWorkOrderState.orders.map((o) => ({
       ...o,
       woType: '拆解工单',
@@ -312,7 +300,7 @@ function buildTodos(workshop, workOrders) {
     })
 
   ecnState.items
-    .filter((row) => ECN_TODO_STATUSES.includes(row.status))
+    .filter(() => false)
     .forEach((row) => {
       todos.push(
         buildTodoItem({

@@ -216,4 +216,17 @@ export const workCenterOptions = [
   '装配车间',
   '总装车间',
 ]
-export const positionOptions = ['泵装配调试', '质检', '车间工人', '班组长', '操作工']
+/** 基础配置「岗位」主数据；工序「默认执行」从此取数 */
+export const positionOptions = [
+  '配料岗',
+  '反应岗',
+  '分离岗',
+  '灌装岗',
+  '储运岗',
+  '质检岗',
+  '泵装配调试',
+  '质检',
+  '车间工人',
+  '班组长',
+  '操作工',
+]

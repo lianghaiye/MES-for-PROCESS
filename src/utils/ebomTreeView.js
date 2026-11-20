@@ -36,8 +36,9 @@ export function enrichTreeTitles(node) {
 }
 
 export function supplyTypeColor(type) {
-  if (type === '自制件') return 'blue'
-  if (type === '外购件') return 'default'
+  if (type === '自制件' || type === '自制') return 'blue'
+  if (type === '外协件' || type === '外协') return 'purple'
+  if (type === '外购件' || type === '外购' || type === '客供') return 'default'
   if (type === '组装') return 'orange'
   return 'default'
 }

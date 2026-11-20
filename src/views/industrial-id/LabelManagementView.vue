@@ -942,7 +942,7 @@ export default {
 }
 .selected-count {
   font-size: 13px;
-  color: #1890ff;
+  color: #307068;
   font-weight: 500;
 }
 
@@ -956,12 +956,12 @@ export default {
   border: 1px solid transparent;
 }
 .btn-primary {
-  background: #1890ff;
+  background: #307068;
   color: #fff;
-  border-color: #1890ff;
+  border-color: #307068;
 }
 .btn-primary:hover {
-  background: #096dd9;
+  background: #245850;
 }
 .btn-default {
   background: #fff;
@@ -969,8 +969,8 @@ export default {
   border-color: #d1d5db;
 }
 .btn-default:hover {
-  border-color: #1890ff;
-  color: #1890ff;
+  border-color: #307068;
+  color: #307068;
 }
 .btn-default:disabled {
   color: #d1d5db;
@@ -1051,22 +1051,22 @@ export default {
   white-space: nowrap;
 }
 .action-link {
-  color: #1890ff;
+  color: #307068;
   cursor: pointer;
   margin-right: 8px;
   font-size: 13px;
   text-decoration: none;
 }
 .action-link:hover {
-  color: #096dd9;
+  color: #245850;
 }
 .code-link {
-  color: #1890ff;
+  color: #307068;
   cursor: pointer;
   text-decoration: underline;
 }
 .code-link:hover {
-  color: #096dd9;
+  color: #245850;
 }
 
 /* ---- sticky ---- */
@@ -1213,11 +1213,11 @@ export default {
   background: #e5e7eb;
 }
 .btn-primary.btn-pill {
-  background: #1890ff;
+  background: #307068;
   color: #fff;
 }
 .btn-primary.btn-pill:hover {
-  background: #096dd9;
+  background: #245850;
 }
 
 /* ---- 成功弹窗 ---- */
@@ -1276,7 +1276,7 @@ export default {
 }
 .form-input:focus {
   outline: none;
-  border-color: #1890ff;
+  border-color: #307068;
   box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
 }
 .form-textarea {
@@ -1329,7 +1329,7 @@ export default {
   color: #1f2937;
 }
 .export-value strong {
-  color: #1890ff;
+  color: #307068;
 }
 .export-fields-section {
   margin-bottom: 16px;
@@ -1348,7 +1348,7 @@ export default {
 }
 .export-check input {
   margin-right: 6px;
-  accent-color: #1890ff;
+  accent-color: #307068;
 }
 .export-name-hint {
   font-size: 12px;
@@ -1399,7 +1399,7 @@ export default {
   color: #1f2937;
   margin: 0 0 12px;
   padding-left: 10px;
-  border-left: 3px solid #1890ff;
+  border-left: 3px solid #307068;
 }
 
 /* ---- 标签页 ---- */
@@ -1421,11 +1421,11 @@ export default {
   transition: all 0.2s;
 }
 .detail-tab:hover {
-  color: #1890ff;
+  color: #307068;
 }
 .detail-tab.active {
-  color: #1890ff;
-  border-bottom-color: #1890ff;
+  color: #307068;
+  border-bottom-color: #307068;
   font-weight: 500;
 }
 .tab-content {
@@ -1482,8 +1482,8 @@ export default {
   padding: 2px 8px;
   border-radius: 3px;
   font-size: 12px;
-  background: #f0f5ff;
-  color: #2f54eb;
+  background: #e7f2f0;
+  color: #307068;
 }
 
 @keyframes fadeIn {

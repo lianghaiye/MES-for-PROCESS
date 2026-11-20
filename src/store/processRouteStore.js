@@ -4,14 +4,26 @@ import { createProcessRouteSeed } from '@/mock/processRouteSeed'
 import { ensureSerialRouteDemo } from '@/mock/serialRouteDispatchDemoSeed'
 import { ensureParallelRouteDemo } from '@/mock/parallelRouteDispatchDemoSeed'
 import { processConfigState } from '@/store/processConfigStore'
-import { normalizeGrid, syncStepPolicies, validateProcessRouteGrid } from '@/utils/processRouteGrid'
+import {
+  createEmptyGrid,
+  normalizeGrid,
+  syncStepPolicies,
+  unitsFromGrid,
+  validateCellReturns,
+  validateProcessRouteGrid,
+} from '@/utils/processRouteGrid'
 import { defaultQcConfigsFromOperations } from '@/utils/qcProcessConfig'
 import { persistJson, safeSetItem } from '@/utils/safeStorage'
 import { getUser } from '@/utils/auth'
+import {
+  ROUTE_MODE_EQUIPMENT,
+  ROUTE_MODE_PROCESS,
+  normalizeRouteMode,
+} from '@/constants/processRouteMode'
 
-/** 演示：保证「粗车」已配质检，路线侧可出现「本路线质检」覆盖项 */
-function ensureRoughTurningHasQc() {
-  const proc = processConfigState.processes.find((p) => p.name === '粗车')
+/** 演示：保证「过滤」已配质检，路线侧可出现「本路线质检」覆盖项 */
+function ensureFiltrationHasQc() {
+  const proc = processConfigState.processes.find((p) => p.name === '过滤')
   if (!proc) return
   const hasQc =
     Boolean(proc.operations?.opQc) ||
@@ -26,16 +38,40 @@ function resolveOperatorName() {
   return user?.name || user?.username || user?.realName || 'admin1'
 }
 
+/** 设备顺序：一台设备只保留第一次出现 */
+export function normalizeRouteUnits(units) {
+  const seen = new Set()
+  const rows = []
+  for (const item of units || []) {
+    const equipmentId = String(item?.equipmentId || '').trim()
+    if (!equipmentId || seen.has(equipmentId)) continue
+    seen.add(equipmentId)
+    rows.push({ equipmentId })
+  }
+  return rows
+}
+
 function normalizeRouteRow(row) {
   if (!row) return row
   if (!row.creator) row.creator = 'admin1'
   if (!row.updater) row.updater = row.creator || 'admin1'
+  row.units = normalizeRouteUnits(row.units)
+  if (Array.isArray(row.grid)) row.grid = normalizeGrid(row.grid)
+  if (row.routeMode) row.routeMode = normalizeRouteMode(row.routeMode)
+  else if (
+    (row.units || []).length &&
+    !(row.grid || []).some((step) => (step || []).some((c) => c?.processId))
+  ) {
+    row.routeMode = ROUTE_MODE_EQUIPMENT
+  } else {
+    row.routeMode = ROUTE_MODE_PROCESS
+  }
   return row
 }
 
 const STORAGE_KEY = 'i_doms_process_routes'
 const SEED_VERSION_KEY = 'i_doms_process_routes_seed_v'
-const CURRENT_SEED_VERSION = '1'
+const CURRENT_SEED_VERSION = '2'
 
 function getProcessIdByName(name) {
   const proc = processConfigState.processes.find((p) => p.name === name)
@@ -88,7 +124,7 @@ export const processRouteState = reactive({
 
 // 本地已有路线缓存时，仍补齐串行/并行演示路线
 try {
-  ensureRoughTurningHasQc()
+  ensureFiltrationHasQc()
   ensureSerialRouteDemo()
   ensureParallelRouteDemo()
 } catch (e) {
@@ -112,6 +148,14 @@ export function getProcessRouteByCode(code) {
 
 export function getProcessRouteByName(name) {
   return processRouteState.routes.find((r) => r.name === name) || null
+}
+
+/** 一条路线里出现多次仍算 1 */
+export function countRoutesReferencingProcess(processId) {
+  if (!processId) return 0
+  return processRouteState.routes.filter((route) =>
+    (route.grid || []).some((step) => (step || []).some((cell) => cell?.processId === processId)),
+  ).length
 }
 
 export function resolveRouteProductDisplay(route) {
@@ -138,9 +182,21 @@ function validateRouteForm(payload) {
   if (payload.applyScope === '物品类别') {
     if (!payload.categoryKey) return { ok: false, message: '请选择适用对象' }
   }
+  const routeMode = normalizeRouteMode(payload.routeMode)
+  if (routeMode === ROUTE_MODE_EQUIPMENT) {
+    const units = normalizeRouteUnits(payload.units)
+    if (!units.length) return { ok: false, message: '请至少添加一台设备' }
+    return { ok: true, routeMode, units }
+  }
   const gridCheck = validateProcessRouteGrid(payload.grid)
   if (!gridCheck.ok) return gridCheck
-  return { ok: true }
+  const returnCheck = validateCellReturns(payload.grid)
+  if (!returnCheck.ok) return returnCheck
+  return {
+    ok: true,
+    routeMode: ROUTE_MODE_PROCESS,
+    units: normalizeRouteUnits(unitsFromGrid(payload.grid)),
+  }
 }
 
 export function addProcessRoute(payload) {
@@ -165,8 +221,16 @@ export function addProcessRoute(payload) {
     categoryName: payload.categoryName || '',
     productDisplay: payload.productDisplay || '',
     remark: payload.remark || '',
-    grid: normalizeGrid(payload.grid),
-    stepPolicies: syncStepPolicies(payload.grid, payload.stepPolicies),
+    routeMode: check.routeMode,
+    units: check.units,
+    grid:
+      check.routeMode === ROUTE_MODE_PROCESS && payload.grid
+        ? normalizeGrid(payload.grid)
+        : createEmptyGrid(),
+    stepPolicies:
+      check.routeMode === ROUTE_MODE_PROCESS
+        ? syncStepPolicies(payload.grid, payload.stepPolicies)
+        : [],
     creator: operator,
     updater: operator,
     createdAt: now,
@@ -195,13 +259,24 @@ export function updateProcessRoute(id, payload) {
     categoryName: payload.categoryName || '',
     productDisplay: payload.productDisplay || '',
     remark: payload.remark || '',
-    grid: normalizeGrid(payload.grid),
-    stepPolicies: syncStepPolicies(payload.grid, payload.stepPolicies),
+    routeMode: check.routeMode,
+    units: check.units,
+    grid:
+      check.routeMode === ROUTE_MODE_PROCESS && payload.grid
+        ? normalizeGrid(payload.grid)
+        : processRouteState.routes[idx].grid,
+    stepPolicies:
+      check.routeMode === ROUTE_MODE_PROCESS && payload.grid
+        ? syncStepPolicies(payload.grid, payload.stepPolicies)
+        : processRouteState.routes[idx].stepPolicies,
     updater: resolveOperatorName(),
     updatedAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
   })
   const row = processRouteState.routes[idx]
   row.productDisplay = resolveRouteProductDisplay(row) || row.productDisplay
+  if (check.routeMode === ROUTE_MODE_EQUIPMENT) {
+    row.units = check.units
+  }
   return { ok: true, route: row }
 }
 

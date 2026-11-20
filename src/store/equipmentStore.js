@@ -16,7 +16,7 @@ import {
 
 const STORAGE_KEY = 'i_doms_equipment_v1'
 const SEED_VERSION_KEY = 'i_doms_equipment_seed_v'
-const CURRENT_SEED_VERSION = '1'
+const CURRENT_SEED_VERSION = '2'
 
 function nowText() {
   return dayjs().format('YYYY-MM-DD HH:mm:ss')
@@ -125,6 +125,18 @@ export function listDevices(filters = {}) {
 
 export function getDeviceById(id) {
   return equipmentState.devices.find((d) => d.id === id) || null
+}
+
+export function formatDeviceLabel(device) {
+  if (!device) return ''
+  const code = String(device.code || '').trim()
+  const name = String(device.name || '').trim()
+  return [code, name].filter(Boolean).join(' ')
+}
+
+export function deviceLabelById(id) {
+  if (!id) return ''
+  return formatDeviceLabel(getDeviceById(id))
 }
 
 export function addDevice(payload = {}, operator = 'admin1') {

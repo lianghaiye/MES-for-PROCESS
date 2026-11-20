@@ -139,7 +139,7 @@ export default { name: 'WorkbenchReleaseMessageModal' }
     bottom: 3px;
     width: 3px;
     border-radius: 2px;
-    background: #1677ff;
+    background: #307068;
   }
 }
 
@@ -173,7 +173,7 @@ export default { name: 'WorkbenchReleaseMessageModal' }
   }
 
   :deep(a) {
-    color: #1677ff;
+    color: #307068;
   }
 }
 
@@ -210,8 +210,8 @@ export default { name: 'WorkbenchReleaseMessageModal' }
 
   &:hover,
   &.active {
-    border-color: #91caff;
-    color: #1677ff;
+    border-color: #a9c6c2;
+    color: #307068;
     background: #f0f7ff;
   }
 }

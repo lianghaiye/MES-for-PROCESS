@@ -1177,7 +1177,7 @@ export default { name: 'InboundOrderDetailPanel' }
   color: rgba(0, 0, 0, 0.65);
 
   &:hover {
-    color: #1677ff;
+    color: #307068;
   }
 }
 
@@ -1249,7 +1249,7 @@ export default { name: 'InboundOrderDetailPanel' }
 }
 
 .link-code {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 

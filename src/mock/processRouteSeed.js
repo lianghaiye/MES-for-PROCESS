@@ -1,21 +1,50 @@
 import dayjs from 'dayjs'
 import { createEmptyGrid } from '@/utils/processRouteGrid'
 
-function cell(processId, processFileId = '') {
-  return processFileId ? { processId, processFileId } : { processId }
+/** 与 equipmentSeed 对齐的稳定设备 id */
+const EQ = {
+  R101: 'eq-d-1',
+  R201: 'eq-d-2',
+  F301: 'eq-d-3',
+  C401: 'eq-d-4',
+  T501: 'eq-d-5',
+  T601: 'eq-d-6',
+  P701: 'eq-d-7',
+}
+
+function cell(processId, extra = {}) {
+  if (!processId) return null
+  const row = { processId }
+  if (typeof extra === 'string') {
+    if (extra) row.processFileId = extra
+    return row
+  }
+  if (extra.processFileId) row.processFileId = extra.processFileId
+  const equipmentIds = Array.isArray(extra.equipmentIds)
+    ? extra.equipmentIds.filter(Boolean)
+    : extra.equipmentId
+      ? [extra.equipmentId]
+      : []
+  if (equipmentIds.length) row.equipmentIds = equipmentIds
+  if (extra.equipmentCategory) row.equipmentCategory = extra.equipmentCategory
+  if (Array.isArray(extra.returns) && extra.returns.length) {
+    row.returns = extra.returns.map((item) => ({ ...item }))
+  }
+  if (extra.qcOverride) row.qcOverride = extra.qcOverride
+  return row
 }
 
 function buildGrid(pairs) {
   const maxStep = Math.max(...pairs.map(([s]) => s), 0)
   const maxRow = Math.max(...pairs.map(([, r]) => r), 0)
   const grid = createEmptyGrid(maxStep, maxRow)
-  pairs.forEach(([step, row, processId, fileId]) => {
-    grid[step - 1][row - 1] = cell(processId, fileId)
+  pairs.forEach(([step, row, processId, extra]) => {
+    grid[step - 1][row - 1] = cell(processId, extra || {})
   })
   return grid
 }
 
-/** 机泵行业常用工艺路线种子 */
+/** 流程行业工艺路线种子 */
 export function createProcessRouteSeed(getProcessIdByName) {
   const p = getProcessIdByName
   const now = dayjs().format('YYYY-MM-DD HH:mm:ss')
@@ -24,150 +53,144 @@ export function createProcessRouteSeed(getProcessIdByName) {
     {
       id: 'route-001',
       code: 'GYLX0001',
-      name: '离心泵标准装配路线',
+      name: '标准湿法主线',
       status: '使用中',
       applyScope: '全部产品',
       productDisplay: '',
-      remark: '机泵行业通用离心泵装配',
+      remark: '投料→升温→保温→过滤→灌装，通用湿法主线',
       grid: buildGrid([
-        [1, 1, p('领料'), 'pdoc-001'],
-        [2, 1, p('叶轮装配'), 'pdoc-003'],
-        [3, 1, p('密封装配')],
-        [4, 1, p('轴承装配')],
-        [5, 1, p('总装'), 'pdoc-001'],
-        [6, 1, p('调试'), 'pdoc-002'],
-        [7, 1, p('试压')],
-        [8, 1, p('质检'), 'pdoc-005'],
-        [9, 1, p('入库'), 'pdoc-006'],
+        [1, 1, p('投料'), { processFileId: 'pdoc-001', equipmentId: EQ.R101 }],
+        [2, 1, p('升温'), { processFileId: 'pdoc-002', equipmentId: EQ.R201 }],
+        [3, 1, p('保温'), { processFileId: 'pdoc-002', equipmentId: EQ.R201 }],
+        [4, 1, p('过滤'), { processFileId: 'pdoc-003', equipmentId: EQ.F301 }],
+        [5, 1, p('灌装'), { processFileId: 'pdoc-005', equipmentId: EQ.P701 }],
       ]),
     },
     {
       id: 'route-002',
       code: 'GYLX0002',
-      name: '潜水泵组装路线',
+      name: '离心分离主线',
       status: '使用中',
-      applyScope: '物品类别',
-      categoryType: '产品',
-      categoryKey: 'pcat-004-003',
-      categoryName: '电机泵',
-      productDisplay: '电机泵',
-      remark: '',
+      applyScope: '全部产品',
+      productDisplay: '',
+      remark: '反应后走离心，转入中间罐',
       grid: buildGrid([
-        [1, 1, p('领料')],
-        [2, 1, p('总装')],
-        [3, 1, p('灌胶')],
-        [4, 1, p('调试'), 'pdoc-002'],
-        [5, 1, p('质检'), 'pdoc-005'],
-        [6, 1, p('入库')],
+        [1, 1, p('投料'), { equipmentId: EQ.R101 }],
+        [2, 1, p('保温'), { equipmentId: EQ.R201 }],
+        [3, 1, p('离心'), { processFileId: 'pdoc-004', equipmentId: EQ.C401 }],
+        [4, 1, p('转罐'), { processFileId: 'pdoc-006', equipmentId: EQ.T501 }],
       ]),
     },
     {
       id: 'route-003',
       code: 'GYLX0003',
-      name: '泵体机加路线',
+      name: '带回流过滤主线',
       status: '使用中',
-      applyScope: '物品类别',
-      categoryType: '物料',
-      categoryKey: 'cat-005',
-      categoryName: '零件',
-      productDisplay: '零件',
+      applyScope: '全部产品',
+      productDisplay: '',
+      remark: '过滤母液回流至升温格，再转罐灌装',
       grid: buildGrid([
-        [1, 1, p('下料'), 'pdoc-004'],
-        [2, 1, p('车加工')],
-        [3, 1, p('钻孔')],
-        [4, 1, p('铣削')],
-        [5, 1, p('质检')],
-        [6, 1, p('入库')],
+        [1, 1, p('投料'), { equipmentId: EQ.R101 }],
+        [2, 1, p('升温'), { equipmentId: EQ.R201 }],
+        [3, 1, p('保温'), { equipmentId: EQ.R201 }],
+        [
+          4,
+          1,
+          p('过滤'),
+          {
+            processFileId: 'pdoc-003',
+            equipmentId: EQ.F301,
+            returns: [{ stream: '母液', toStep: 2, toRow: 1 }],
+          },
+        ],
+        [5, 1, p('转罐'), { equipmentId: EQ.T501 }],
+        [6, 1, p('灌装'), { equipmentId: EQ.P701 }],
       ]),
     },
     {
       id: 'route-004',
       code: 'GYLX0004',
-      name: '多级泵装配路线',
+      name: '灌装成品线',
       status: '使用中',
       applyScope: '全部产品',
       productDisplay: '',
+      remark: '中间罐转入成品罐后灌装',
       grid: buildGrid([
-        [1, 1, p('领料')],
-        [2, 1, p('叶轮装配')],
-        [3, 1, p('总装')],
-        [4, 1, p('动平衡')],
-        [5, 1, p('试压')],
-        [6, 1, p('质检')],
-        [7, 1, p('入库')],
+        [1, 1, p('转罐'), { equipmentId: EQ.T601 }],
+        [2, 1, p('灌装'), { processFileId: 'pdoc-005', equipmentId: EQ.P701 }],
       ]),
     },
     {
       id: 'route-005',
       code: 'GYLX0005',
-      name: '深井泵调试入库路线',
+      name: '单品湿法定制线',
       status: '使用中',
       applyScope: '单个物品',
       itemType: '产品',
-      itemId: 'prod-00001',
-      itemName: '深井潜水泵',
-      itemCode: 'CP2610004',
-      productDisplay: '深井潜水泵',
+      itemId: 'prod-process-demo-001',
+      itemName: '示范湿法成品',
+      itemCode: 'CP-PROC-001',
+      productDisplay: '示范湿法成品',
+      remark: '按单品绑定的精简主线',
       grid: buildGrid([
-        [1, 1, p('调试'), 'pdoc-002'],
-        [2, 1, p('试压')],
-        [3, 1, p('质检'), 'pdoc-005'],
-        [4, 1, p('入库')],
+        [1, 1, p('投料'), { equipmentId: EQ.R201 }],
+        [2, 1, p('保温'), { equipmentId: EQ.R201 }],
+        [3, 1, p('过滤'), { equipmentId: EQ.F301 }],
+        [4, 1, p('灌装'), { equipmentId: EQ.P701 }],
       ]),
     },
     {
       id: 'route-006',
       code: 'GYLX0006',
-      name: '拆解返修路线',
+      name: '转罐暂存线',
       status: '使用中',
       applyScope: '全部产品',
       productDisplay: '',
+      remark: '仅做罐间转移',
       grid: buildGrid([
-        [1, 1, p('拆解')],
-        [2, 1, p('拆解质检')],
-        [3, 1, p('入库')],
+        [1, 1, p('转罐'), { equipmentId: EQ.T501 }],
+        [2, 1, p('转罐'), { equipmentId: EQ.T601 }],
       ]),
     },
     {
       id: 'route-007',
       code: 'GYLX0007',
-      name: '打孔质检入库888',
+      name: '过滤灌装短线',
       status: '使用中',
       applyScope: '全部产品',
       productDisplay: '',
       grid: buildGrid([
-        [1, 1, p('打孔')],
-        [2, 1, p('质检')],
-        [3, 1, p('入库')],
+        [1, 1, p('过滤'), { equipmentId: EQ.F301 }],
+        [2, 1, p('灌装'), { equipmentId: EQ.P701 }],
       ]),
     },
     {
       id: 'route-008',
       code: 'GYLX0008',
-      name: '测试质检',
+      name: '历史离心测试线',
       status: '已归档',
       applyScope: '全部产品',
       productDisplay: '',
       remark: '历史测试路线',
       grid: buildGrid([
-        [1, 1, p('试压')],
-        [2, 1, p('质检')],
+        [1, 1, p('离心'), { equipmentId: EQ.C401 }],
+        [2, 1, p('转罐'), { equipmentId: EQ.T501 }],
       ]),
     },
     {
       id: 'route-009',
       code: 'GYLX0009',
-      name: '表面处理选做演示路线',
+      name: '分离方式选做演示路线',
       status: '使用中',
       applyScope: '全部产品',
       productDisplay: '',
-      remark: '第2步喷漆/包装为选做完成，下发时可勾选（可多选）',
+      remark: '第2步过滤/离心为选做完成，下发时可勾选',
       grid: buildGrid([
-        [1, 1, p('下料')],
-        [2, 1, p('喷漆')],
-        [2, 2, p('包装')],
-        [3, 1, p('质检')],
-        [4, 1, p('入库')],
+        [1, 1, p('投料'), { equipmentId: EQ.R101 }],
+        [2, 1, p('过滤'), { equipmentId: EQ.F301 }],
+        [2, 2, p('离心'), { equipmentId: EQ.C401 }],
+        [3, 1, p('转罐'), { equipmentId: EQ.T501 }],
+        [4, 1, p('灌装'), { equipmentId: EQ.P701 }],
       ]),
       stepPolicies: [
         { stepNo: 1, completionMode: 'all' },
@@ -179,18 +202,18 @@ export function createProcessRouteSeed(getProcessIdByName) {
     {
       id: 'route-010',
       code: 'GYLX0010',
-      name: '机加串行演示路线',
+      name: '湿法串行演示路线',
       status: '使用中',
       applyScope: '全部产品',
       productDisplay: '',
-      remark: '纯串行：下料→粗车→钻孔→铣削→质检→入库；下发页「步骤」列为 1～6',
+      remark: '纯串行：投料→升温→保温→过滤→转罐→灌装',
       grid: buildGrid([
-        [1, 1, p('下料'), 'pdoc-004'],
-        [2, 1, p('粗车')],
-        [3, 1, p('钻孔')],
-        [4, 1, p('铣削')],
-        [5, 1, p('质检'), 'pdoc-005'],
-        [6, 1, p('入库'), 'pdoc-006'],
+        [1, 1, p('投料'), { processFileId: 'pdoc-001', equipmentId: EQ.R101 }],
+        [2, 1, p('升温'), { processFileId: 'pdoc-002', equipmentId: EQ.R201 }],
+        [3, 1, p('保温'), { equipmentId: EQ.R201 }],
+        [4, 1, p('过滤'), { processFileId: 'pdoc-003', equipmentId: EQ.F301 }],
+        [5, 1, p('转罐'), { processFileId: 'pdoc-006', equipmentId: EQ.T501 }],
+        [6, 1, p('灌装'), { processFileId: 'pdoc-005', equipmentId: EQ.P701 }],
       ]),
       stepPolicies: [
         { stepNo: 1, completionMode: 'all' },
@@ -204,25 +227,23 @@ export function createProcessRouteSeed(getProcessIdByName) {
     {
       id: 'route-011',
       code: 'GYLX0011',
-      name: '机加并行演示路线',
+      name: '湿法并行演示路线',
       status: '使用中',
       applyScope: '全部产品',
       productDisplay: '',
-      remark: '第2步粗车/钻孔并行且全部完成；下发页两行步骤号均为 2，完成方式均为「全部完成」',
+      remark: '第2步过滤/离心并行且全部完成；过滤可「本路线不检」对照串行',
       grid: buildGrid([
-        [1, 1, p('下料'), 'pdoc-004'],
-        [2, 1, p('粗车')],
-        [2, 2, p('钻孔')],
-        [3, 1, p('铣削')],
-        [4, 1, p('质检'), 'pdoc-005'],
-        [5, 1, p('入库'), 'pdoc-006'],
+        [1, 1, p('投料'), { processFileId: 'pdoc-001', equipmentId: EQ.R101 }],
+        [2, 1, p('过滤'), { processFileId: 'pdoc-003', equipmentId: EQ.F301, qcOverride: 'off' }],
+        [2, 2, p('离心'), { processFileId: 'pdoc-004', equipmentId: EQ.C401 }],
+        [3, 1, p('转罐'), { equipmentId: EQ.T501 }],
+        [4, 1, p('灌装'), { processFileId: 'pdoc-005', equipmentId: EQ.P701 }],
       ]),
       stepPolicies: [
         { stepNo: 1, completionMode: 'all' },
         { stepNo: 2, completionMode: 'all' },
         { stepNo: 3, completionMode: 'all' },
         { stepNo: 4, completionMode: 'all' },
-        { stepNo: 5, completionMode: 'all' },
       ],
     },
   ]

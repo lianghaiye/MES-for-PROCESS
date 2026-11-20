@@ -89,13 +89,13 @@
                 </a-form-item>
               </a-col>
               <a-col :xs="24" :sm="12" :md="8" :lg="4">
-                <a-form-item label="产品类型">
+                <a-form-item label="类型">
                   <a-select
-                    v-model:value="filters.itemKind"
+                    v-model:value="filters.materialType"
                     allow-clear
                     size="small"
-                    placeholder="请选择 产品类型"
-                    :options="itemKindFilterOpts"
+                    placeholder="请选择 类型"
+                    :options="materialTypeFilterOpts"
                   />
                 </a-form-item>
               </a-col>
@@ -109,7 +109,7 @@
                   />
                 </a-form-item>
               </a-col>
-              <a-col :xs="24" :sm="12" :md="8" :lg="4">
+              <a-col v-if="false" :xs="24" :sm="12" :md="8" :lg="4">
                 <a-form-item label="材质">
                   <a-input
                     v-model:value="filters.material"
@@ -119,7 +119,7 @@
                   />
                 </a-form-item>
               </a-col>
-              <a-col :xs="24" :sm="12" :md="8" :lg="4">
+              <a-col v-if="false" :xs="24" :sm="12" :md="8" :lg="4">
                 <a-form-item label="图号">
                   <a-input
                     v-model:value="filters.drawingNo"
@@ -250,9 +250,6 @@
                 <template v-if="column.key === 'index'">
                   {{ rowIndex(index) }}
                 </template>
-                <template v-else-if="column.key === 'itemKind'">
-                  <a-tag>{{ record.itemKindLabel || '—' }}</a-tag>
-                </template>
                 <template v-else-if="column.key === 'businessType'">
                   <span class="attr-ellipsis">{{ formatProductBusinessType(record) }}</span>
                 </template>
@@ -264,6 +261,9 @@
                 </template>
                 <template v-else-if="column.key === 'materialType'">
                   {{ record.materialType || '—' }}
+                </template>
+                <template v-else-if="column.key === 'storageCondition'">
+                  {{ displayCell(formatStorageConditions(record.storageCondition)) }}
                 </template>
                 <template v-else-if="column.key === 'supplyForm'">
                   {{ record.supplyForm || '—' }}
@@ -297,11 +297,6 @@
                 </template>
                 <template v-else-if="column.key === 'defaultOutsourceSupplier'">
                   {{ record.production?.defaultOutsourceSupplier || '—' }}
-                </template>
-                <template v-else-if="column.key === 'isProductMaterial'">
-                  <a-tag :color="record.isProductMaterial ? 'success' : 'error'">
-                    {{ record.isProductMaterial ? '是' : '否' }}
-                  </a-tag>
                 </template>
                 <template v-else-if="column.key === 'creator'">
                   {{ record.creator || '—' }}
@@ -359,7 +354,7 @@
                       >变体矩阵</a-button
                     >
                     <a-button type="link" size="small" @click="openTemplateBom(record)"
-                      >模板 BOM</a-button
+                      >配方维护</a-button
                     >
                   </a-space>
                 </template>
@@ -483,7 +478,7 @@ import {
   moveMaterialCategory,
 } from '@/store/materialCategoryStore'
 import { buildCategoryItemCountMap, sortCategoryTreeForDisplay } from '@/utils/categoryTreeSort'
-import { barcodeTypeOptions, workCenterOpts } from '@/mock/materialInfoOptions'
+import { barcodeTypeOptions, materialTypeOptions, workCenterOpts } from '@/mock/materialInfoOptions'
 import { productInfoState, archiveProduct, unarchiveProduct } from '@/store/productInfoStore'
 import {
   findDirectBomRefsForItem,
@@ -510,15 +505,14 @@ import { openCreateTab } from '@/utils/openCreateTab'
 import { resolveItemBomNavigation } from '@/utils/itemBomNavigation'
 import { formatPurchaseSuppliersSummary } from '@/utils/purchaseSuppliers'
 import { formatBusinessTypeLabels, MASTER_BUSINESS_TYPE_OPTIONS } from '@/utils/businessTypeLabel'
+import { formatStorageConditions } from '@/mock/productInfoOptions'
 import { productBomState, getBomInfoLabelForItem, getBomsForItem } from '@/store/productBomStore'
 import { buildUnifiedListRows, filterUnifiedListRows } from '@/utils/masterItemList'
 import {
   CATEGORY_TREE_ALL_ROOT,
   CATEGORY_TREE_MODE,
-  ITEM_KIND,
   decodeCategoryTreeKey,
   encodeCategoryTreeKey,
-  itemKindLabel,
   resolveBomItemTypeForKind,
 } from '@/utils/masterItemKind'
 import { saveMasterItem, deleteMasterItem, cloneMasterItem } from '@/utils/masterItemSave'
@@ -598,7 +592,7 @@ const filters = reactive({
   drawingNo: '',
   businessType: undefined,
   workCenter: undefined,
-  itemKind: undefined,
+  materialType: undefined,
 })
 const appliedFilters = ref({ ...filters })
 const selectedRowKeys = ref([])
@@ -624,15 +618,11 @@ const tableScrollY = ref(420)
 let tableResizeObserver = null
 
 const barcodeOpts = barcodeTypeOptions.map((v) => ({ label: v, value: v }))
+const materialTypeFilterOpts = materialTypeOptions.map((v) => ({ label: v, value: v }))
 const businessTypeFilterOpts = MASTER_BUSINESS_TYPE_OPTIONS.map((o) => ({
   label: o.label,
   value: o.key,
 }))
-const itemKindFilterOpts = [
-  { label: itemKindLabel(ITEM_KIND.PRODUCT), value: ITEM_KIND.PRODUCT },
-  { label: itemKindLabel(ITEM_KIND.MATERIAL), value: ITEM_KIND.MATERIAL },
-  { label: itemKindLabel(ITEM_KIND.PRODUCT_MATERIAL), value: ITEM_KIND.PRODUCT_MATERIAL },
-]
 const workCenterFilterOpts = workCenterOpts
 
 const productCategoryCountMap = computed(() => {
@@ -986,27 +976,20 @@ const baseColumns = [
     customRender: renderProductCodeLink,
   },
   { title: '名称', dataIndex: 'name', width: 200, fixed: 'left', ellipsis: true },
-  { title: '产品族', dataIndex: 'spuName', width: 100, ellipsis: true },
-  { title: '产品类型', key: 'itemKind', width: 96, align: 'center' },
   { title: '规格型号', dataIndex: 'specModel', width: 100 },
-  { title: '材质', dataIndex: 'material', width: 80 },
-  { title: '图号', dataIndex: 'drawingNo', width: 100, ellipsis: true },
-  { title: '业务类型', key: 'businessType', width: 140, ellipsis: true },
+  { title: '储存条件', key: 'storageCondition', width: 140, ellipsis: true },
+  { title: '类型', key: 'materialType', width: 90 },
   { title: '类别', dataIndex: 'categoryName', width: 88 },
-  { title: '产品属性', key: 'productAttribute', width: 110, ellipsis: true },
   { title: '标准规范', dataIndex: 'standardSpec', width: 100, ellipsis: true },
-  { title: '物料类型', key: 'materialType', width: 90 },
   { title: '供应型态', key: 'supplyForm', width: 90 },
   { title: '技术参数', dataIndex: 'techParams', width: 120, ellipsis: true },
-  { title: '配套要求', key: 'matchingRequirements', width: 120, ellipsis: true },
-  { title: '重量', key: 'weight', width: 88, align: 'right' },
+  { title: '保质期(天)', dataIndex: 'shelfLifeDays', width: 100, align: 'right' },
   { title: '库存单位', key: 'inventoryUnit', width: 88, align: 'center' },
   { title: '标准单价(不含税)', key: 'unitPrice', width: 120, align: 'right' },
-  { title: 'BOM信息', key: 'bomInfo', width: 200, ellipsis: true },
   { title: '默认工作中心', key: 'defaultWorkCenter', width: 110 },
   { title: '默认采购供应商', key: 'defaultSupplier', width: 120, ellipsis: true },
-  { title: '默认外协供应商', key: 'defaultOutsourceSupplier', width: 120, ellipsis: true },
-  { title: '产品物料', key: 'isProductMaterial', width: 90, align: 'center' },
+  { title: '业务类型', key: 'businessType', width: 140, ellipsis: true },
+  { title: '产品属性', key: 'productAttribute', width: 110, ellipsis: true },
   { title: '创建日期', dataIndex: 'createdAt', width: 110 },
   { title: '更新日期', dataIndex: 'updatedAt', width: 110 },
   { title: '创建人', key: 'creator', width: 88 },
@@ -1015,7 +998,7 @@ const baseColumns = [
 ]
 
 const { columnSettings, columnDrawerOpen, displayColumns, tableScrollX, defaultColumnSettings } =
-  useTableColumnSettings('master-item-list-v3', baseColumns, { minScrollX: 2920 })
+  useTableColumnSettings('master-item-list-v4', baseColumns, { minScrollX: 2920 })
 
 const tableColumns = computed(() =>
   displayColumns.value.map((col) => {
@@ -1036,6 +1019,11 @@ function onTableChange(_pagination, _filters, sorter) {
     codeSortOrder.value = active.order || undefined
     pagination.current = 1
   }
+}
+
+function displayCell(value) {
+  if (value == null || value === '') return '—'
+  return String(value)
 }
 
 function formatProductBusinessType(record) {
@@ -1091,7 +1079,7 @@ function handleReset() {
   filters.drawingNo = ''
   filters.businessType = undefined
   filters.workCenter = undefined
-  filters.itemKind = undefined
+  filters.materialType = undefined
   appliedFilters.value = { ...filters }
   pagination.current = 1
 }
@@ -1518,7 +1506,7 @@ onBeforeUnmount(() => {
 
   &:hover,
   &:active {
-    background: rgba(22, 119, 255, 0.12);
+    background: rgba(48, 112, 104, 0.12);
   }
 
   &::after {
@@ -1649,7 +1637,7 @@ onBeforeUnmount(() => {
   }
 
   .link-code {
-    color: #1677ff;
+    color: #307068;
     cursor: pointer;
   }
 }

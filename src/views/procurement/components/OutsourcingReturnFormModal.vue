@@ -551,7 +551,7 @@ export default { name: 'OutsourcingReturnFormModal' }
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: #1677ff;
+  color: #307068;
   max-width: 100%;
 
   .remark-text {

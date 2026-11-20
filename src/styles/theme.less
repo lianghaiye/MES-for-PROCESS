@@ -13,7 +13,9 @@ html[data-theme='light'] {
   --text-3: #86909c;
   --border: #d9d9d9;
   --divider: #e5e6eb;
-  --primary: #1677ff;
+  --primary: #307068;
+  --primary-bg: #e7f3f1;
+  --primary-border: #b7d4cf;
   --header-bg: #ffffff;
   --sidebar-bg: #001529;
 }
@@ -27,7 +29,9 @@ html[data-theme='dark'] {
   --text-3: #8c8c8c;
   --border: #303030;
   --divider: #424242;
-  --primary: #4096ff;
+  --primary: #8fbfb8;
+  --primary-bg: #1a3330;
+  --primary-border: #3d6b64;
   --header-bg: #1f1f1f;
   --sidebar-bg: #000000;
 }
@@ -37,6 +41,23 @@ body,
 #app {
   background: var(--page-bg);
   color: var(--text-1);
+}
+
+/* 信息提示条跟随主题色，正文仍用系统文字色 */
+.ant-alert-info {
+  background: var(--primary-bg, #e7f3f1);
+  border: 1px solid var(--primary-border, #b7d4cf);
+}
+
+.ant-alert-info .ant-alert-icon,
+.ant-alert-info .ant-alert-message a,
+.ant-alert-info .ant-btn-link {
+  color: var(--primary, #307068);
+}
+
+.ant-alert-info .ant-alert-message,
+.ant-alert-info .ant-alert-description {
+  color: var(--text-1, #1f2329);
 }
 
 html[data-theme='dark'] {

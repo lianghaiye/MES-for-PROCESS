@@ -47,7 +47,7 @@
             </a-col>
             <a-col v-if="isProductionScope" :span="12">
               <span class="info-label">工单号：</span>
-              <span class="info-value">{{ task.workOrderNo || '—' }}</span>
+              <span class="info-value">—</span>
             </a-col>
             <a-col v-if="isProductionScope" :span="12">
               <span class="info-label">工序：</span>
@@ -235,7 +235,7 @@ function resultColor(result) {
 }
 
 .line-expand-btn:hover {
-  color: #1677ff;
-  background: #e6f4ff;
+  color: #307068;
+  background: #e7f2f0;
 }
 </style>

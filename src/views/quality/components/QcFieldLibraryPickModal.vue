@@ -154,6 +154,8 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   /** 当前模板已有字段，用于标记/去重提示 */
   existingFields: { type: Array, default: () => [] },
+  /** 业务场景：qc | process，过滤检验项库适用场景 */
+  bizScope: { type: String, default: '' },
 })
 
 const emit = defineEmits(['update:open', 'confirm'])
@@ -214,6 +216,7 @@ const filteredList = computed(() =>
     status: '启用',
     keyword: applied.value.keyword,
     type: applied.value.type,
+    bizScope: props.bizScope || undefined,
   }),
 )
 

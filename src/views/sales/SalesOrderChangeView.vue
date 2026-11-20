@@ -399,7 +399,7 @@ function openInitiateChange() {
 <style lang="less" scoped>
 .order-change-page {
   .link-code {
-    color: #1677ff;
+    color: #307068;
     cursor: pointer;
   }
 

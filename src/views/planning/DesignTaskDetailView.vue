@@ -484,7 +484,7 @@ onUnmounted(() => {
 
   &:hover,
   &:active {
-    background: rgba(22, 119, 255, 0.12);
+    background: rgba(48, 112, 104, 0.12);
   }
 
   &::after {
@@ -619,7 +619,7 @@ onUnmounted(() => {
 }
 
 .attachment-link {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 

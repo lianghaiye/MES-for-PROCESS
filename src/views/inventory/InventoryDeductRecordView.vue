@@ -105,9 +105,14 @@
             </a>
           </template>
           <template v-else-if="column.key === 'workOrderNo'">
-            <a class="wo-link" @click.prevent="openSourceDoc(record)">
+            <a
+              v-if="isQuickMaterialDeduct(record)"
+              class="wo-link"
+              @click.prevent="openSourceDoc(record)"
+            >
               {{ resolveDocNo(record) }}
             </a>
+            <span v-else>—</span>
           </template>
           <template v-else-if="column.key === 'product'">
             <span>{{ record.productName || '—' }}</span>
@@ -547,7 +552,7 @@ function onRetry(record) {
 
 <style lang="less" scoped>
 .wo-link {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 

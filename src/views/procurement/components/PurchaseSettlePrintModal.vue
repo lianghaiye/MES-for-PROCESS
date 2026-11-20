@@ -149,15 +149,15 @@ function openPreview(autoPrint) {
       box-shadow 0.2s;
 
     &:hover {
-      border-color: #91caff;
-      box-shadow: 0 2px 8px rgba(22, 119, 255, 0.12);
+      border-color: #a9c6c2;
+      box-shadow: 0 2px 8px rgba(48, 112, 104, 0.12);
       background: #fff;
     }
   }
 
   .action-icon {
     font-size: 20px;
-    color: #1677ff;
+    color: #307068;
     margin-bottom: 4px;
   }
 

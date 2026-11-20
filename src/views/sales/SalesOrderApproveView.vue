@@ -45,6 +45,9 @@
                 <template v-else-if="column.key === 'businessType'">
                   {{ line.businessType || '—' }}
                 </template>
+                <template v-else-if="column.key === 'pricingRule'">
+                  {{ formatPricingRule(line) }}
+                </template>
                 <template v-else-if="column.key === 'deliveryMode'">
                   {{ line.deliveryMode || '—' }}
                 </template>
@@ -185,6 +188,7 @@ import {
   buildSalesOrderApprovalTimeline,
 } from '@/utils/salesApprovalDisplay'
 import { salesOrderDetailLineColumns } from '@/utils/salesOrderLineColumns'
+import { formatPricingRule } from '@/utils/salesContentPricing'
 import {
   functionParamState,
   isSalesOrderDiscountEnabled,

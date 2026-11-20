@@ -248,7 +248,7 @@ function removeRow(batchId) {
 .piece-tag {
   margin-left: 6px;
   font-size: 11px;
-  color: #1677ff;
+  color: #307068;
 }
 
 .piece-pick {

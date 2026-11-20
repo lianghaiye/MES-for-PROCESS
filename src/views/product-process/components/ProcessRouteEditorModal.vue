@@ -87,11 +87,62 @@
       </div>
 
       <ProcessRouteGridEditor
+        v-if="editMode === ROUTE_MODE_PROCESS"
         v-model:grid="form.grid"
         v-model:step-policies="form.stepPolicies"
         v-model:selected-step="selectedStep"
         v-model:selected-row="selectedRow"
       />
+
+      <div v-else class="form-section-box modal-basic-card">
+        <div class="section-head">
+          <div class="section-label">设备顺序</div>
+          <a-button size="small" @click="addUnit">添加设备</a-button>
+        </div>
+        <p class="block-hint">
+          按生产经过的设备排列，同一台只出现一次。配方里的多个阶段可以都选同一台设备。
+        </p>
+        <a-table
+          :columns="unitColumns"
+          :data-source="form.units"
+          :pagination="false"
+          size="small"
+          row-key="key"
+          :locale="{ emptyText: '还没有设备' }"
+        >
+          <template #bodyCell="{ column, record, index }">
+            <template v-if="column.key === 'seq'">{{ index + 1 }}</template>
+            <template v-else-if="column.key === 'equipment'">
+              <EquipmentSearchSelect
+                v-model="record.equipmentId"
+                :multiple="false"
+                :options="unitOptions(record)"
+                :allow-ids="unitAllowIds(record)"
+                placeholder="请选择设备"
+              />
+            </template>
+            <template v-else-if="column.key === 'action'">
+              <a-button
+                type="link"
+                size="small"
+                :disabled="index === 0"
+                @click="moveUnit(index, -1)"
+                >上移</a-button
+              >
+              <a-button
+                type="link"
+                size="small"
+                :disabled="index === form.units.length - 1"
+                @click="moveUnit(index, 1)"
+                >下移</a-button
+              >
+              <a-button type="link" size="small" danger @click="removeUnit(record.key)"
+                >删除</a-button
+              >
+            </template>
+          </template>
+        </a-table>
+      </div>
     </div>
 
     <SelectProductMaterialModal
@@ -119,7 +170,12 @@ import { addProcessRoute, updateProcessRoute } from '@/store/processRouteStore'
 import { productCategoryState } from '@/store/productCategoryStore'
 import { materialCategoryState } from '@/store/materialCategoryStore'
 import { productInfoState } from '@/store/productInfoStore'
+import { ROUTE_MODE_EQUIPMENT, ROUTE_MODE_PROCESS } from '@/constants/processRouteMode'
+import { resolveRouteEditMode } from '@/store/processMesSettingsStore'
+import { EQUIPMENT_STATUS } from '@/mock/equipmentSeed'
+import { equipmentState, formatDeviceLabel } from '@/store/equipmentStore'
 import ProcessRouteGridEditor from './ProcessRouteGridEditor.vue'
+import EquipmentSearchSelect from './EquipmentSearchSelect.vue'
 import SelectProductMaterialModal from './SelectProductMaterialModal.vue'
 
 const props = defineProps({
@@ -140,6 +196,18 @@ const { isActive, shellTitle, handleCancel, closeAfterSave } = useFormCreateModa
 const itemPickerOpen = ref(false)
 const selectedStep = ref(-1)
 const selectedRow = ref(-1)
+const editMode = ref(ROUTE_MODE_PROCESS)
+let unitSeq = 1
+function nextUnitKey() {
+  unitSeq += 1
+  return `unit-${unitSeq}`
+}
+
+const unitColumns = [
+  { title: '顺序', key: 'seq', width: 70, align: 'center' },
+  { title: '设备', key: 'equipment' },
+  { title: '操作', key: 'action', width: 180 },
+]
 
 const form = reactive({
   name: '',
@@ -155,7 +223,58 @@ const form = reactive({
   remark: '',
   grid: createEmptyGrid(9, 2),
   stepPolicies: syncStepPolicies(createEmptyGrid(9, 2), []),
+  units: [],
 })
+
+const deviceOptions = computed(() => {
+  void equipmentState.devices
+  return (equipmentState.devices || []).filter(
+    (device) => device.status !== EQUIPMENT_STATUS.SCRAPPED,
+  )
+})
+
+function unitAllowIds(record) {
+  const used = new Set(
+    form.units
+      .filter((unit) => unit.key !== record.key && unit.equipmentId)
+      .map((unit) => unit.equipmentId),
+  )
+  return deviceOptions.value
+    .filter((device) => !used.has(device.id) || device.id === record.equipmentId)
+    .map((device) => device.id)
+}
+
+function unitOptions(record) {
+  const allow = new Set(unitAllowIds(record))
+  const options = deviceOptions.value
+    .filter((device) => allow.has(device.id))
+    .map((device) => ({ value: device.id, label: formatDeviceLabel(device) }))
+  if (record.equipmentId && !options.some((item) => item.value === record.equipmentId)) {
+    const current = (equipmentState.devices || []).find(
+      (device) => device.id === record.equipmentId,
+    )
+    options.unshift({
+      value: record.equipmentId,
+      label: current ? formatDeviceLabel(current) : record.equipmentId,
+    })
+  }
+  return options
+}
+
+function addUnit() {
+  form.units.push({ key: nextUnitKey(), equipmentId: undefined })
+}
+
+function removeUnit(key) {
+  form.units = form.units.filter((unit) => unit.key !== key)
+}
+
+function moveUnit(index, delta) {
+  const next = index + delta
+  if (next < 0 || next >= form.units.length) return
+  const [row] = form.units.splice(index, 1)
+  form.units.splice(next, 0, row)
+}
 
 const productOpts = computed(() =>
   (productInfoState.products || [])
@@ -203,6 +322,7 @@ function onProductSelect(id) {
 
 function resetForm() {
   const r = props.editRecord
+  editMode.value = resolveRouteEditMode(r)
   if (r) {
     const grid = r.grid?.length ? r.grid : createEmptyGrid(9, 2)
     Object.assign(form, {
@@ -219,7 +339,14 @@ function resetForm() {
       remark: r.remark || '',
       grid,
       stepPolicies: syncStepPolicies(grid, r.stepPolicies),
+      units: (r.units || []).map((unit) => ({
+        key: nextUnitKey(),
+        equipmentId: unit.equipmentId,
+      })),
     })
+    if (editMode.value === ROUTE_MODE_EQUIPMENT && !form.units.length) {
+      form.units = [{ key: nextUnitKey(), equipmentId: undefined }]
+    }
   } else {
     const grid = createEmptyGrid(9, 2)
     Object.assign(form, {
@@ -236,6 +363,10 @@ function resetForm() {
       remark: '',
       grid,
       stepPolicies: syncStepPolicies(grid, []),
+      units:
+        editMode.value === ROUTE_MODE_EQUIPMENT
+          ? [{ key: nextUnitKey(), equipmentId: undefined }]
+          : [],
     })
   }
   selectedStep.value = -1
@@ -278,8 +409,24 @@ function onItemSelected(row) {
 
 function handleSave() {
   const payload = {
-    ...form,
+    name: form.name,
+    applyScope: form.applyScope,
+    itemType: form.itemType,
+    itemId: form.itemId,
+    itemName: form.itemName,
+    itemCode: form.itemCode,
+    categoryType: form.categoryType,
+    categoryKey: form.categoryKey,
+    categoryName: form.categoryName,
     productDisplay: form.productDisplay || form.itemName || form.categoryName,
+    remark: form.remark,
+    routeMode: editMode.value,
+  }
+  if (editMode.value === ROUTE_MODE_EQUIPMENT) {
+    payload.units = form.units.map((unit) => ({ equipmentId: unit.equipmentId || '' }))
+  } else {
+    payload.grid = form.grid
+    payload.stepPolicies = form.stepPolicies
   }
   const res = isEdit.value
     ? updateProcessRoute(props.editRecord.id, payload)
@@ -306,23 +453,41 @@ watch(
 .route-editor-page {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .form-section-box {
   width: 100%;
   margin-bottom: 0;
-  padding: 12px 14px;
+  padding: 14px 16px;
   background: #fff;
-  border: 1px solid #f0f0f0;
-  border-radius: 6px;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
 }
 
 .section-label {
   margin-bottom: 10px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  color: rgba(0, 0, 0, 0.88);
+  color: #1f2329;
+}
+
+.section-head .section-label {
+  margin-bottom: 0;
+}
+
+.block-hint {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 22px;
+  color: #4e5969;
 }
 
 .route-basic-form :deep(.ant-form-item) {
@@ -341,7 +506,7 @@ watch(
 }
 
 .link-more {
-  color: #1677ff;
+  color: #307068;
   white-space: nowrap;
   cursor: pointer;
   flex-shrink: 0;

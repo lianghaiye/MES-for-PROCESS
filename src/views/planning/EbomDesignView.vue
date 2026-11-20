@@ -983,7 +983,7 @@ onMounted(() => {
 
   &:hover,
   &:active {
-    background: rgba(22, 119, 255, 0.12);
+    background: rgba(48, 112, 104, 0.12);
   }
 
   &::after {

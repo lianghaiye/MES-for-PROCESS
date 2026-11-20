@@ -457,7 +457,7 @@ function handleOk() {
   word-break: break-all;
 
   &.remain {
-    color: #1677ff;
+    color: #307068;
   }
 }
 </style>

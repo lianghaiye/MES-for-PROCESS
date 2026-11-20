@@ -29,7 +29,11 @@
           </a-col>
           <a-col :span="6">
             <span class="info-label">业务类型：</span>
-            <span class="info-value">{{ record.bizScope || '—' }}</span>
+            <span class="info-value">{{ qcBizScopeLabel(record.bizScope) || '—' }}</span>
+          </a-col>
+          <a-col v-if="assayTypeText" :span="6">
+            <span class="info-label">化验类型：</span>
+            <span class="info-value">{{ assayTypeText }}</span>
           </a-col>
           <a-col :span="6">
             <span class="info-label">适用范围：</span>
@@ -195,6 +199,8 @@ import {
   formatQcTemplateProcessLinks,
   isProcessInspectBizScope,
 } from '@/utils/qcTemplateProcessLink'
+import { qcBizScopeLabel } from '@/constants/qcBizScopeLabel'
+import { assayTypeLabel } from '@/utils/qcProcessConfig'
 import { fieldTypeTagColor } from '@/mock/qcFieldLibrary'
 import { buildStandardText } from '@/utils/qcFieldStandard'
 import {
@@ -270,6 +276,13 @@ const processLinksText = computed(() => {
   const record = props.record
   if (!record || !isProcessInspectBizScope(record.bizScope)) return ''
   return formatQcTemplateProcessLinks(record)
+})
+
+const assayTypeText = computed(() => {
+  const record = props.record
+  if (!record || !isProcessInspectBizScope(record.bizScope)) return ''
+  const type = String(record.assayType || '').trim()
+  return type ? assayTypeLabel(type, record.bizScope) : ''
 })
 
 const scopeObjectsText = computed(() => {

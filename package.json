@@ -4,9 +4,10 @@
   "private": true,
   "description": "I-DOMS MES 前端框架",
   "scripts": {
-    "serve": "vue-cli-service serve",
-    "build": "vue-cli-service build && cp dist/index.html dist/404.html",
+    "serve": "node --max-old-space-size=8192 ./node_modules/@vue/cli-service/bin/vue-cli-service.js serve",
+    "build": "node --max-old-space-size=8192 ./node_modules/@vue/cli-service/bin/vue-cli-service.js build && cp dist/index.html dist/404.html",
     "lint": "vue-cli-service lint",
+    "clean:cache": "rm -rf node_modules/.cache",
     "format": "prettier --write \"src/**/*.{js,vue,less,css}\"",
     "prepare": "husky",
     "agent:proxy": "npm --prefix agent-proxy start",

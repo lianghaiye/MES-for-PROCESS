@@ -404,7 +404,7 @@
                 </a-form-item>
               </a-col>
               <a-col :span="8">
-                <a-form-item label="关键件标识">
+                <a-form-item label="关键物料">
                   <a-switch v-model:checked="form.production.isKeyPart" />
                 </a-form-item>
               </a-col>
@@ -615,6 +615,19 @@
                   <a-switch v-model:checked="form.alert.expiryAlertEnabled" />
                 </a-form-item>
               </a-col>
+              <a-col v-if="form.alert.expiryAlertEnabled" :span="8">
+                <a-form-item label="提前天数" required>
+                  <a-input-number
+                    v-model:value="form.alert.expiryAlertDays"
+                    size="small"
+                    :min="1"
+                    :precision="0"
+                    placeholder="到期前几天预警"
+                    style="width: 100%"
+                    addon-after="天"
+                  />
+                </a-form-item>
+              </a-col>
               <a-col :span="8">
                 <a-form-item label="不良率预警阈值">
                   <a-input-number
@@ -700,6 +713,7 @@ import {
   hydrateUnitManageFromSource,
   validateUnitManage,
 } from '@/utils/unitManageTab'
+import { validateExpiryAlert } from '@/utils/expiryAlert'
 import UnitManageTab from '@/views/product-process/components/UnitManageTab.vue'
 import {
   normalizeSalaryMethodForReportType,
@@ -1064,6 +1078,12 @@ function validate() {
     if (!unitCheck.ok) {
       message.warning(unitCheck.message)
       activeTabKey.value = 'units'
+      return false
+    }
+    const expiryCheck = validateExpiryAlert(form.alert)
+    if (!expiryCheck.ok) {
+      message.warning(expiryCheck.message)
+      activeTabKey.value = 'alert'
       return false
     }
   }
@@ -1444,8 +1464,8 @@ function handleOk() {
 
 .add-labor-row-btn {
   margin-top: 4px;
-  color: #1677ff;
-  border-color: #91caff;
+  color: #307068;
+  border-color: #a9c6c2;
 }
 
 .row-remove-col {

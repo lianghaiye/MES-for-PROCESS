@@ -302,7 +302,7 @@ function handleDelete(record) {
   }
 
   .link-name {
-    color: #1677ff;
+    color: #307068;
   }
 
   .danger-link {

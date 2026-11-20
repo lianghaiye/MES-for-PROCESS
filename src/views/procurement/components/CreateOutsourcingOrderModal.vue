@@ -1252,7 +1252,7 @@ export default { name: 'CreateOutsourcingOrderModal' }
   align-items: center;
   gap: 4px;
   max-width: 100%;
-  color: #1677ff;
+  color: #307068;
 }
 
 .remark-text {

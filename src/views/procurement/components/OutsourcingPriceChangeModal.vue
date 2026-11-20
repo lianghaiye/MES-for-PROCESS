@@ -470,9 +470,9 @@ function handleReject() {
 }
 
 .tax-toggle-btn {
-  color: #1677ff;
-  border-color: #91caff;
-  background: #e6f4ff;
+  color: #307068;
+  border-color: #a9c6c2;
+  background: #e7f2f0;
 }
 
 .tax-hint {

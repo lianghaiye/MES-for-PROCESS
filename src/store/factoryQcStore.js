@@ -13,7 +13,7 @@ import { ensureQcTemplateDemoSeed } from '@/store/qcTemplateStore'
 import { persistJson } from '@/utils/safeStorage'
 
 const STORAGE_KEY = 'i_doms_factory_qc'
-const STORAGE_VERSION = 6
+const STORAGE_VERSION = 7
 const QC_NO_PREFIX = 'CCZJ'
 export const FACTORY_QC_BIZ_SCOPE = '出厂质检'
 

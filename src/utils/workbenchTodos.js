@@ -106,7 +106,7 @@ export const WORKBENCH_TODO_ITEMS = [
     key: 'ecn-todo',
     label: 'ECN待办',
     tone: 'geekblue',
-    path: '/engineering-change/ecn-list',
+    path: '',
     query: { todo: '1' },
     title: 'ECN列表',
   },

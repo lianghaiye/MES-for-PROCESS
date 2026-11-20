@@ -10,8 +10,9 @@ function nextMaterialId() {
 }
 
 function mapSupplyType(supplyForm) {
-  if (supplyForm === '自制件') return '自制件'
-  if (supplyForm === '外购件') return '外购件'
+  if (supplyForm === '自制' || supplyForm === '自制件') return '自制'
+  if (supplyForm === '外购' || supplyForm === '外购件') return '外购'
+  if (supplyForm === '客供') return '客供'
   if (supplyForm === '外协件') return '外协件'
   if (supplyForm === '组装' || supplyForm === '组装件') return '组装'
   if (supplyForm === '其他') return '其他'
@@ -103,7 +104,7 @@ function lineToMaterial(line, flatNodes, lineItems, demandQty) {
     planQty: demandQty,
     bom: line.childBom || '',
     processRoute: line.processRoute || '',
-    joinPlan: supplyType === '自制件' ? '是' : '否',
+    joinPlan: supplyType === '自制' || supplyType === '自制件' ? '是' : '否',
     remark: line.remark || '',
     releaseStatus: line.releaseStatus || 'releasable',
     children,

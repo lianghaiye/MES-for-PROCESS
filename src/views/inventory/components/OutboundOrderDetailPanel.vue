@@ -1226,7 +1226,7 @@ export default { name: 'OutboundOrderDetailPanel' }
   color: rgba(0, 0, 0, 0.65);
 
   &:hover {
-    color: #1677ff;
+    color: #307068;
   }
 }
 
@@ -1323,7 +1323,7 @@ export default { name: 'OutboundOrderDetailPanel' }
 }
 
 .link-code {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 
@@ -1353,7 +1353,7 @@ export default { name: 'OutboundOrderDetailPanel' }
 
 .manual-pick-tag {
   font-size: 12px;
-  color: #1677ff;
+  color: #307068;
   margin-bottom: 2px;
 }
 

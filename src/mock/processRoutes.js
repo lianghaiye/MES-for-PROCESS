@@ -17,115 +17,35 @@ function getActiveRouteOptionsLazy(filters) {
   return require('@/store/processRouteStore').getActiveRouteOptions(filters)
 }
 
-/** @deprecated 兼容旧工单种子数据 */
+/** @deprecated 兼容旧工单种子；优先走 processRouteStore 网格路线 */
 export const processRouteMaster = {
-  机加标准路线: {
-    id: 'route-machining',
-    name: '机加标准路线',
+  标准湿法主线: {
+    id: 'route-wet-standard',
+    name: '标准湿法主线',
     steps: [
-      {
-        name: '裁板',
-        code: 'OP-CB-01',
-        icon: 'ScissorOutlined',
-        hasFeeding: false,
-        resourceType: '工人',
-      },
-      {
-        name: '卷制',
-        code: 'OP-JZ-02',
-        icon: 'SyncOutlined',
-        hasFeeding: false,
-        resourceType: '工人',
-      },
-      {
-        name: '机加工',
-        code: 'OP-JG-03',
-        icon: 'ToolOutlined',
-        hasFeeding: false,
-        resourceType: '工人',
-      },
-      {
-        name: '配比',
-        code: 'OP-PB-04',
-        icon: 'ExperimentOutlined',
-        hasFeeding: true,
-        resourceType: '工人小组',
-      },
-      {
-        name: '入库',
-        code: 'OP-RK-05',
-        icon: 'InboxOutlined',
-        hasFeeding: false,
-        resourceType: '工人',
-      },
+      { name: '投料', code: 'GX00000001', hasFeeding: true, resourceType: '工人小组' },
+      { name: '升温', code: 'GX00000002', hasFeeding: false, resourceType: '工人' },
+      { name: '保温', code: 'GX00000003', hasFeeding: false, resourceType: '工人' },
+      { name: '过滤', code: 'GX00000004', hasFeeding: false, resourceType: '工人小组' },
+      { name: '灌装', code: 'GX00000006', hasFeeding: false, resourceType: '工人小组' },
     ],
   },
-  装配标准路线: {
-    id: 'route-assembly',
-    name: '装配标准路线',
+  离心分离主线: {
+    id: 'route-centrifuge',
+    name: '离心分离主线',
     steps: [
-      {
-        name: '领料',
-        code: 'OP-LL-01',
-        icon: 'ShoppingOutlined',
-        hasFeeding: true,
-        resourceType: '工人小组',
-      },
-      {
-        name: '预装',
-        code: 'OP-YZ-02',
-        icon: 'BuildOutlined',
-        hasFeeding: false,
-        resourceType: '工人',
-      },
-      {
-        name: '总装',
-        code: 'OP-ZZ-03',
-        icon: 'ClusterOutlined',
-        hasFeeding: false,
-        resourceType: '工人小组',
-      },
-      {
-        name: '调试',
-        code: 'OP-TS-04',
-        icon: 'SettingOutlined',
-        hasFeeding: false,
-        resourceType: '工人',
-      },
-      {
-        name: '入库',
-        code: 'OP-RK-05',
-        icon: 'InboxOutlined',
-        hasFeeding: false,
-        resourceType: '工人',
-      },
+      { name: '投料', code: 'GX00000001', hasFeeding: true, resourceType: '工人小组' },
+      { name: '保温', code: 'GX00000003', hasFeeding: false, resourceType: '工人' },
+      { name: '离心', code: 'GX00000005', hasFeeding: false, resourceType: '工人小组' },
+      { name: '转罐', code: 'GX00000007', hasFeeding: false, resourceType: '工人小组' },
     ],
   },
 }
 
-/** 拆解工单工序（与小程序待办流程对齐） */
+/** 兼容旧拆解演示（流程侧保留转罐收尾） */
 export const disassemblyProcessDefs = [
-  {
-    name: '拆解',
-    code: 'OP-CJ-01',
-    icon: 'ToolOutlined',
-    hasFeeding: false,
-    resourceType: '工人小组',
-  },
-  {
-    name: '拆解质检',
-    code: 'OP-CJ-ZJ',
-    icon: 'AuditOutlined',
-    hasFeeding: false,
-    resourceType: '工人',
-  },
-  {
-    name: '入库',
-    code: 'OP-CJ-RK',
-    icon: 'InboxOutlined',
-    hasFeeding: false,
-    resourceType: '工人',
-  },
+  { name: '转罐', code: 'GX00000007', hasFeeding: false, resourceType: '工人小组' },
+  { name: '灌装', code: 'GX00000006', hasFeeding: false, resourceType: '工人小组' },
 ]
 
 /** 从工艺路线生成工单工序 + 步骤完成方式快照 */
@@ -139,7 +59,7 @@ export function buildRouteDispatchSnapshot(routeName) {
     }
   }
 
-  const legacy = processRouteMaster[routeName] || processRouteMaster['机加标准路线']
+  const legacy = processRouteMaster[routeName] || processRouteMaster['标准湿法主线']
   const processes = legacy.steps.map((step, index) => {
     const proc = getProcessByName(step.name)
     return {
@@ -153,22 +73,23 @@ export function buildRouteDispatchSnapshot(routeName) {
       processCode: proc?.code || step.code,
       processId: proc?.id,
       icon: step.icon,
-      hasFeeding: step.hasFeeding,
+      hasFeeding: step.hasFeeding || Boolean(proc?.operations?.opFeeding),
       isBlanking: Boolean(proc?.isBlanking),
       resourceType: proc?.resourceType || step.resourceType || '工人',
       executors: resolveDefaultExecutors(proc),
       ...createEmptyWorkOrderProcessExtras(),
-      opOutsource: Boolean(proc?.operations?.opOutsource) || step.name === '机加工',
-      feedingMaterials: step.hasFeeding
-        ? [
-            {
-              id: `feed-${Date.now()}-${index}`,
-              materialId: undefined,
-              materialName: '',
-              qty: null,
-            },
-          ]
-        : [],
+      opOutsource: Boolean(proc?.operations?.opOutsource),
+      feedingMaterials:
+        step.hasFeeding || proc?.operations?.opFeeding
+          ? [
+              {
+                id: `feed-${Date.now()}-${index}`,
+                materialId: undefined,
+                materialName: '',
+                qty: null,
+              },
+            ]
+          : [],
     }
   })
   return {
@@ -216,10 +137,10 @@ export function buildDisassemblyProcesses() {
 }
 
 export function getDefaultProductRoute(productName) {
-  if (productName?.includes('电机') || productName?.includes('装配')) return '离心泵标准装配路线'
-  if (productName?.includes('泵体') || productName?.includes('机加')) return '泵体机加路线'
+  if (productName?.includes('离心')) return '离心分离主线'
+  if (productName?.includes('回流') || productName?.includes('过滤')) return '带回流过滤主线'
   const opts = getActiveRouteOptionsLazy({ productName })
-  return opts[0] || '离心泵标准装配路线'
+  return opts[0] || '标准湿法主线'
 }
 
 /** 兼容旧引用：转发到 processRouteStore（惰性加载防循环依赖） */

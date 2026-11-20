@@ -182,17 +182,8 @@
               <a-descriptions-item label="适用范围">
                 {{ productResult.kit.scopeTypeLabel || '—' }}
               </a-descriptions-item>
-              <a-descriptions-item label="物料数">
+              <a-descriptions-item label="物料数" :span="2">
                 {{ productResult.kit.materialCount }}
-              </a-descriptions-item>
-              <a-descriptions-item label="操作" :span="2">
-                <a-button
-                  type="link"
-                  size="small"
-                  @click="openShipAttachment(productResult.kit.id)"
-                >
-                  查看随货配件
-                </a-button>
               </a-descriptions-item>
             </a-descriptions>
             <a-table
@@ -283,7 +274,6 @@ import {
   listDeliveryShipQueryRows,
   queryShipAttachmentByProduct,
 } from '@/utils/shipAttachmentQuery'
-import { shipAttachmentDetailPath } from '@/utils/shipAttachmentNav'
 import { buildBomSubItemPickerRows, filterBomSubItemPickerRows } from '@/utils/bomSubItemPicker'
 import SelectBomMaterialModal from '@/views/product-process/components/SelectBomMaterialModal.vue'
 import ShipAttachmentMaintainDrawer from './components/ShipAttachmentMaintainDrawer.vue'
@@ -516,13 +506,6 @@ function onMaintainSaved() {
     runProductQuery()
   }
 }
-
-function openShipAttachment(id) {
-  if (!id) return
-  const path = shipAttachmentDetailPath(id)
-  openTab(path, '随货配件详情')
-  router.push(path)
-}
 </script>
 
 <style lang="less" scoped>
@@ -594,10 +577,10 @@ function openShipAttachment(id) {
 }
 
 .link-name {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
   &:hover {
-    color: #4096ff;
+    color: #4e8a82;
   }
 }
 </style>

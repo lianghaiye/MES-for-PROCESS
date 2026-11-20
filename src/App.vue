@@ -35,7 +35,16 @@ const antdTheme = computed(() => ({
       ? antdThemeToken.darkAlgorithm
       : antdThemeToken.defaultAlgorithm,
   token: {
-    colorPrimary: effectiveTheme.value === 'dark' ? '#4096ff' : '#1677ff',
+    colorPrimary: effectiveTheme.value === 'dark' ? '#8FBFB8' : '#307068',
+    colorInfo: effectiveTheme.value === 'dark' ? '#8FBFB8' : '#307068',
+    colorInfoBg: effectiveTheme.value === 'dark' ? '#1A3330' : '#E7F3F1',
+    colorInfoBorder: effectiveTheme.value === 'dark' ? '#3D6B64' : '#B7D4CF',
+    /* 深青算出的浅底会发灰，选中和浅底改用干净的浅青绿 */
+    colorPrimaryBg: effectiveTheme.value === 'dark' ? '#1A3330' : '#E7F3F1',
+    colorPrimaryBgHover: effectiveTheme.value === 'dark' ? '#234540' : '#D4E8E4',
+    colorPrimaryBorder: effectiveTheme.value === 'dark' ? '#3D6B64' : '#B7D4CF',
+    controlItemBgActive: effectiveTheme.value === 'dark' ? '#1A3330' : '#E7F3F1',
+    controlItemBgActiveHover: effectiveTheme.value === 'dark' ? '#234540' : '#D4E8E4',
     /* 表单控件统一 32px（含 size="small"，对齐 form-fields.mdc） */
     controlHeight: 32,
     controlHeightSM: 32,

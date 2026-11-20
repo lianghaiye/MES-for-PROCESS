@@ -448,7 +448,7 @@ export default {
   border-radius: 8px;
 }
 .banner {
-  background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
+  background: linear-gradient(135deg, #307068 0%, #245850 100%);
   margin: 0 24px;
   border-radius: 8px;
   margin-top: 20px;
@@ -485,7 +485,7 @@ export default {
   color: #1f2937;
   margin-bottom: 16px;
   padding-left: 12px;
-  border-left: 3px solid #1890ff;
+  border-left: 3px solid #307068;
 }
 
 .form-grid {
@@ -523,7 +523,7 @@ export default {
 .form-item input:focus,
 .form-item select:focus {
   outline: none;
-  border-color: #1890ff;
+  border-color: #307068;
   box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
 }
 .form-item input::placeholder,
@@ -576,8 +576,8 @@ export default {
   background: #fafafa;
 }
 .upload-area:hover {
-  border-color: #1890ff;
-  background: #f0f7ff;
+  border-color: #307068;
+  background: #e7f2f0;
 }
 .upload-placeholder {
   display: flex;
@@ -587,7 +587,7 @@ export default {
 }
 .upload-icon {
   font-size: 28px;
-  color: #1890ff;
+  color: #307068;
   line-height: 1;
 }
 .upload-text {
@@ -601,7 +601,7 @@ export default {
 }
 .file-name {
   font-size: 13px;
-  color: #1890ff;
+  color: #307068;
 }
 .file-remove {
   cursor: pointer;
@@ -622,13 +622,13 @@ export default {
 }
 .intro-textarea:focus {
   outline: none;
-  border-color: #1890ff;
+  border-color: #307068;
   box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
 }
 
 .notice-box {
-  background: #e6f7ff;
-  border: 1px solid #91d5ff;
+  background: #e7f2f0;
+  border: 1px solid #a9c6c2;
   border-radius: 6px;
   padding: 16px 20px;
   margin-bottom: 20px;
@@ -636,12 +636,12 @@ export default {
 .notice-header {
   font-size: 15px;
   font-weight: 600;
-  color: #0050b3;
+  color: #1a403c;
   margin-bottom: 10px;
 }
 .notice-content p {
   font-size: 13px;
-  color: #003a8c;
+  color: #102824;
   line-height: 1.8;
   margin: 0;
 }
@@ -660,7 +660,7 @@ export default {
   width: 16px;
   height: 16px;
   cursor: pointer;
-  accent-color: #1890ff;
+  accent-color: #307068;
 }
 .check-text {
   color: #374151;
@@ -683,13 +683,13 @@ export default {
   transition: all 0.2s;
 }
 .btn-secondary:hover {
-  border-color: #1890ff;
-  color: #1890ff;
+  border-color: #307068;
+  color: #307068;
 }
 .btn-primary {
   padding: 10px 32px;
   border: none;
-  background: #1890ff;
+  background: #307068;
   color: #fff;
   border-radius: 4px;
   font-size: 14px;
@@ -697,7 +697,7 @@ export default {
   transition: all 0.2s;
 }
 .btn-primary:hover {
-  background: #096dd9;
+  background: #245850;
 }
 .btn-primary:disabled {
   background: #d1d5db;
@@ -768,7 +768,7 @@ export default {
   color: #1f2937;
   margin: 0 0 12px;
   padding-left: 10px;
-  border-left: 3px solid #1890ff;
+  border-left: 3px solid #307068;
 }
 
 .info-table {
@@ -886,7 +886,7 @@ textarea:disabled {
 }
 .modal-btn {
   padding: 10px 40px;
-  background: #1890ff;
+  background: #307068;
   color: #fff;
   border: none;
   border-radius: 6px;
@@ -895,7 +895,7 @@ textarea:disabled {
   transition: background 0.2s;
 }
 .modal-btn:hover {
-  background: #096dd9;
+  background: #245850;
 }
 
 @keyframes fadeIn {

@@ -8,6 +8,11 @@ import { formatVariantSummary } from '@/utils/spuVariant'
 import { formatNumber, roundNumber } from '@/utils/numberFormat'
 import { pickLatestApprovedLinePrices } from '@/utils/salesPriceChange'
 import { listPriceChangesByOrderId } from '@/store/salesPriceChangeStore'
+import {
+  contentSettlementReady,
+  isContentPricing,
+  settleContentLots,
+} from '@/utils/salesContentPricing'
 
 export { roundNumber as roundDeliveryDecimal, formatNumber as formatDeliveryDecimal }
 
@@ -144,6 +149,16 @@ function buildDeliveryLineBase(line, order) {
     lineShipStatus: calcLineShipStatus(confirmedOutboundQty, orderQty, appliedShipQty),
     unitPriceExTax,
     unitPriceInTax,
+    pricingMode: line.pricingMode || 'flat',
+    baseContent: line.baseContent ?? null,
+    contentStep: line.contentStep ?? null,
+    priceStepUp: line.priceStepUp ?? null,
+    priceStepDown: line.priceStepDown ?? null,
+    taxRate: line.taxRate ?? 0,
+    baseUnitPriceExTax: unitPriceExTax,
+    baseUnitPriceInTax: unitPriceInTax,
+    settlementLots: Array.isArray(line.settlementLots) ? line.settlementLots : [],
+    settlementText: line.settlementText || '',
     drawingNo: line.drawingNo || '',
     shipQty,
     shipWeight,
@@ -202,6 +217,28 @@ export function resolveDeliveryUnitPriceInTax(line) {
 
 export function recalcDeliveryLine(line) {
   line.shipQty = roundDeliveryDecimal(line.shipQty, 4)
+  if (isContentPricing(line)) {
+    if (line.baseUnitPriceExTax == null || line.baseUnitPriceExTax === '') {
+      line.baseUnitPriceExTax = roundDeliveryDecimal(line.unitPriceExTax, 4)
+      line.baseUnitPriceInTax = roundDeliveryDecimal(line.unitPriceInTax, 4)
+    }
+    if (contentSettlementReady(line)) {
+      const settled = settleContentLots(line)
+      line.settlementLots = settled.rows
+      line.settlementText = settled.text
+      line.shipWeight = settled.weighSum
+      line.unitPriceExTax = settled.unitEx
+      line.unitPriceInTax = settled.unitIn
+      line.deliveryUnitPriceExTax = settled.unitEx
+      line.deliveryUnitPriceInTax = settled.unitIn
+      line.deliveryAmountExTax = settled.amountEx
+      line.deliveryAmountInTax = settled.amountIn
+      return
+    }
+    line.unitPriceExTax = roundDeliveryDecimal(line.baseUnitPriceExTax, 4)
+    line.unitPriceInTax = roundDeliveryDecimal(line.baseUnitPriceInTax, 4)
+    line.settlementText = ''
+  }
   line.shipWeight = roundDeliveryDecimal(line.shipWeight, 4)
   line.unitPriceExTax = roundDeliveryDecimal(line.unitPriceExTax, 4)
   line.unitPriceInTax = roundDeliveryDecimal(line.unitPriceInTax, 4)

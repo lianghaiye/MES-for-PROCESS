@@ -371,7 +371,7 @@ function handleClose() {
     transition: all 0.2s;
 
     &:hover {
-      border-color: #1677ff;
+      border-color: #307068;
       background: #f0f7ff;
     }
   }
@@ -387,7 +387,7 @@ function handleClose() {
 
   .action-icon {
     font-size: 20px;
-    color: #1677ff;
+    color: #307068;
     flex-shrink: 0;
   }
 

@@ -1,13 +1,14 @@
 import { reactive, watch } from 'vue'
 import dayjs from 'dayjs'
-import { mockProducts } from '@/mock/productInfo'
 import { migrateProductList } from '@/utils/masterDataMigrate'
+import { dropLegacyPumpMasters } from '@/utils/legacyPumpMaster'
 import {
   generateSharedItemId,
   syncAfterProductSave,
   removeLinkedMaterial,
 } from '@/utils/productMaterialSync'
 import { applyLaborConfigSeed } from '@/mock/laborConfigSeed'
+import { PROCESS_PRODUCTS } from '@/mock/processMasterSeed'
 import { persistJson } from '@/utils/safeStorage'
 import {
   PRODUCT_STATUS,
@@ -17,76 +18,20 @@ import {
 } from '@/utils/productStatus'
 
 const STORAGE_KEY = 'i_doms_product_info'
-/** v13：产品信息启用/已归档状态 */
-const DATA_VERSION = 13
+/** v20：过期预警提前天数 */
+const DATA_VERSION = 20
 
 export { PRODUCT_STATUS, isProductActive, isProductArchived, normalizeProductStatus }
 let codeSeq = 20000
 
-/** 内联注入，避免 import blankSizeBomDemoSeed 在启动早期拉起 BOM 循环依赖 */
-const BLANK_SIZE_DEMO_PRODUCT = {
-  id: 'prod-blank-size-demo',
-  code: 'CP-BLANK-DEMO',
-  name: '下料尺寸演示泵体组件',
-  specModel: 'DEMO-BLANK',
-  material: '组合',
-  drawingNo: 'DWG-BLANK-DEMO',
-  inventoryUnit: '台',
-  productAttribute: '标准产品',
-  canProduce: true,
-  canSell: true,
-}
-
-function ensureBlankSizeDemoProducts(products) {
-  const list = Array.isArray(products) ? [...products] : []
-  const idx = list.findIndex(
-    (p) => p.id === BLANK_SIZE_DEMO_PRODUCT.id || p.code === BLANK_SIZE_DEMO_PRODUCT.code,
-  )
-  if (idx === -1) list.unshift({ ...BLANK_SIZE_DEMO_PRODUCT })
-  else list[idx] = { ...list[idx], ...BLANK_SIZE_DEMO_PRODUCT, id: BLANK_SIZE_DEMO_PRODUCT.id }
-  return ensureMtsDemoProduct(list)
-}
-
-/** 演示：首个标准产品改为以库存生产且低于最低库存，便于补货建议验收 */
-function ensureMtsDemoProduct(products) {
-  const list = Array.isArray(products) ? [...products] : []
-  const idx = list.findIndex((p) => p.id === 'prod-00001' || p.code === 'CP2610001')
-  if (idx === -1) return ensureIndustrialLabelDemoProduct(list)
-  const row = list[idx]
-  list[idx] = {
-    ...row,
-    stockQty: 8,
-    production: {
-      ...(row.production || {}),
-      planStrategy: 'mts',
-      replenishQty: row.production?.replenishQty ?? 20,
-      defaultWarehouse: row.production?.defaultWarehouse || '成品仓',
-      needIndustrialLabel: true,
-    },
-    alert: {
-      ...(row.alert || {}),
-      stockAlertEnabled: true,
-      minStockQty: 10,
-      maxStockQty: 50,
-    },
-  }
-  return ensureIndustrialLabelDemoProduct(list)
-}
-
-/** 演示：再勾选一个标准产品需要工业标识 */
-function ensureIndustrialLabelDemoProduct(products) {
-  const list = Array.isArray(products) ? [...products] : []
-  const idx = list.findIndex((p) => p.id === 'prod-00002' || p.code === 'CP2610002')
-  if (idx === -1) return list
-  const row = list[idx]
-  list[idx] = {
-    ...row,
-    production: {
-      ...(row.production || {}),
-      needIndustrialLabel: true,
-    },
-  }
-  return list
+function mergeMasterRows(list, rows, overwrite) {
+  const next = Array.isArray(list) ? [...list] : []
+  rows.forEach((demo) => {
+    const idx = next.findIndex((row) => row.id === demo.id || row.code === demo.code)
+    if (idx === -1) next.unshift({ ...demo })
+    else if (overwrite) next[idx] = { ...demo, id: demo.id }
+  })
+  return next
 }
 
 function loadFromStorage() {
@@ -96,8 +41,12 @@ function loadFromStorage() {
       const parsed = JSON.parse(raw)
       if (Array.isArray(parsed.products)) {
         const force = parsed.version !== DATA_VERSION
-        return ensureBlankSizeDemoProducts(
-          applyLaborConfigSeed(migrateProductList(parsed.products), { force }),
+        return mergeMasterRows(
+          dropLegacyPumpMasters(
+            applyLaborConfigSeed(migrateProductList(parsed.products), { force }),
+          ),
+          PROCESS_PRODUCTS,
+          force,
         )
       }
     }
@@ -112,8 +61,7 @@ function persist() {
 }
 
 export const productInfoState = reactive({
-  products:
-    loadFromStorage() || ensureBlankSizeDemoProducts(JSON.parse(JSON.stringify(mockProducts))),
+  products: loadFromStorage() || dropLegacyPumpMasters(PROCESS_PRODUCTS.map((row) => ({ ...row }))),
 })
 
 watch(

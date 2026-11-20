@@ -67,6 +67,16 @@ function createLineItem(partial = {}) {
     variantValues: {},
     variantSummary: '',
     materialGradeId: '',
+    /** flat 按档次一口价；content 按含量计价，单价是基准价 */
+    pricingMode: 'flat',
+    baseContent: null,
+    contentStep: null,
+    priceStepUp: null,
+    priceStepDown: null,
+    /** 主数据包装规格：销售数量仍按库存单位，这里只记装运形态 */
+    packSpecId: '',
+    packSpecName: '',
+    packSpecText: '',
     ...partial,
     salesQty,
     qty: salesQty,

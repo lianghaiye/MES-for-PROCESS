@@ -5,11 +5,12 @@ import { moveCategoryInList } from '@/utils/categoryTreeSort'
 
 const STORAGE_KEY = 'i_doms_product_categories'
 const SEED_VERSION_KEY = 'i_doms_product_categories_seed_v'
-/** bump 时仅触发 ensure，不整库重种，保留租户已改名称/自建类别 */
-const CURRENT_SEED_VERSION = '1'
+/** v2：流程型产品分类（面漆 / 中间体 / 回收溶剂等），版本不一致时重种演示树 */
+const CURRENT_SEED_VERSION = '2'
 
 function loadFromStorage() {
   try {
+    if (localStorage.getItem(SEED_VERSION_KEY) !== CURRENT_SEED_VERSION) return null
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
       const parsed = JSON.parse(raw)

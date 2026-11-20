@@ -513,7 +513,7 @@ function handleSave() {
     cursor: col-resize;
 
     &:hover {
-      background: rgba(22, 119, 255, 0.25);
+      background: rgba(48, 112, 104, 0.25);
     }
   }
 }

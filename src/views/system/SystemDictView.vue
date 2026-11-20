@@ -369,7 +369,7 @@ function handleItemsSave(items) {
   margin-top: 12px;
 }
 .link-code {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 .builtin-tag {

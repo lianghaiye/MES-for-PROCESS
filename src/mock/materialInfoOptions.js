@@ -10,7 +10,22 @@ export {
   SUPPLY_FORM_OPTIONS as supplyFormOptions,
 } from '@/utils/masterDataMigrate'
 
-const FALLBACK_INVENTORY_UNITS = ['个', '件', '套', 'kg', 'm', '米', '台', '根']
+const FALLBACK_INVENTORY_UNITS = [
+  'kg',
+  '升',
+  '吨',
+  'g',
+  'mL',
+  'm³',
+  '桶',
+  '袋',
+  '瓶',
+  '罐',
+  '吨桶',
+  '吨袋',
+  '件',
+  'mg',
+]
 
 /** 库存单位名称（读单位管理） */
 export function getInventoryUnitOptionsList() {
@@ -117,6 +132,7 @@ export function createDefaultAlertConfig() {
     maxStockQty: undefined,
     minStockQty: undefined,
     expiryAlertEnabled: false,
+    expiryAlertDays: undefined,
     defectRateThreshold: undefined,
   }
 }

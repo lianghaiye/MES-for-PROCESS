@@ -921,7 +921,7 @@ function handleSubmit() {
   .date-selected {
     margin-top: 8px;
     font-size: 13px;
-    color: #1677ff;
+    color: #307068;
     font-weight: 500;
   }
 
@@ -1050,7 +1050,7 @@ function handleSubmit() {
   .qty-total {
     margin: 0 4px;
     font-weight: 600;
-    color: #1677ff;
+    color: #307068;
   }
 }
 </style>

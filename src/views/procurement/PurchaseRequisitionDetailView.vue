@@ -489,8 +489,8 @@ function openGenerateModal() {
 }
 
 .btn-void {
-  color: #1677ff;
-  border-color: #1677ff;
+  color: #307068;
+  border-color: #307068;
 }
 
 .section-title {
@@ -519,7 +519,7 @@ function openGenerateModal() {
 }
 
 .link-code {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 </style>

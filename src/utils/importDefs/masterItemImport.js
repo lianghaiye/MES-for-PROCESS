@@ -8,6 +8,7 @@ import {
   pickSheet,
 } from '@/utils/excelImport'
 import { addImportExportHistory } from '@/store/importExportHistoryStore'
+import { normalizeSupplyForm } from '@/utils/masterDataMigrate'
 import { addProduct, generateProductCode, productInfoState } from '@/store/productInfoStore'
 import { addMaterial, generateMaterialCode, materialInfoState } from '@/store/materialInfoStore'
 
@@ -114,7 +115,9 @@ function buildRecord(row, kind) {
     productAttribute: cellOf(row, '产品属性', 'productAttribute') || '标准产品',
     materialType: cellOf(row, '物料类型', 'materialType') || '零部件',
     supplyForm:
-      cellOf(row, '供应型态', 'supplyForm') || (kind === 'material' ? '外购件' : '自制件'),
+      normalizeSupplyForm(
+        cellOf(row, '供应型态', 'supplyForm') || (kind === 'material' ? '外购' : '自制'),
+      ) || (kind === 'material' ? '外购' : '自制'),
     inventoryUnit: cellOf(row, '库存单位', 'inventoryUnit') || '件',
     unitPrice: toNumber(cellOf(row, '标准单价', 'unitPrice')),
     weight: toNumber(cellOf(row, '重量', 'weight')),

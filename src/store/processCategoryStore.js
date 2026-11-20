@@ -4,7 +4,7 @@ import { createProcessCategorySeed } from '@/mock/processCategorySeed'
 
 const STORAGE_KEY = 'i_doms_process_categories'
 const SEED_VERSION_KEY = 'i_doms_process_categories_seed_v'
-const CURRENT_SEED_VERSION = '1'
+const CURRENT_SEED_VERSION = '2'
 
 export const CATEGORY_STATUS = ['新建', '使用中', '已归档']
 

@@ -8,15 +8,12 @@
             <span class="order-no">{{ display(record.code) }}</span>
             <span v-if="record.name" class="product-name">{{ record.name }}</span>
             <a-tag :color="productStatusColor(record.status)">{{ productStatusLabel }}</a-tag>
-            <a-tag v-if="kindLabel">{{ kindLabel }}</a-tag>
             <a-tag v-if="record.supplyForm">{{ record.supplyForm }}</a-tag>
             <a-tag v-if="record.materialType">{{ record.materialType }}</a-tag>
           </div>
           <a-space :size="8">
             <a-button size="small" @click="handleEdit">编辑</a-button>
-            <a-button v-if="showBomAction" size="small" @click="handleMaintainBom"
-              >BOM维护</a-button
-            >
+            <a-button size="small" @click="handleMaintainFormula">配方维护</a-button>
             <a-button size="small" @click="handleBack">返回列表</a-button>
           </a-space>
         </div>
@@ -26,8 +23,6 @@
             class="detail-tabs detail-tabs-pill detail-tabs-pill--nav-only"
           >
             <a-tab-pane key="basic" tab="基本信息" />
-            <a-tab-pane key="labor" tab="工时配置" />
-            <a-tab-pane key="bom" tab="BOM信息" />
           </a-tabs>
         </div>
       </div>
@@ -75,6 +70,39 @@
                 </template>
                 <template v-else-if="column.key === 'status'">
                   {{ row.enabled === false ? '停用' : '启用' }}
+                </template>
+              </template>
+            </a-table>
+          </DetailSectionCard>
+          <DetailSectionCard title="包装规格">
+            <a-table
+              class="detail-sub-table"
+              :columns="packSpecColumns"
+              :data-source="packSpecs"
+              row-key="id"
+              size="small"
+              bordered
+              :pagination="false"
+              :locale="{ emptyText: '暂无包装规格' }"
+            >
+              <template #bodyCell="{ column, record: row }">
+                <template v-if="column.key === 'name'">
+                  <span>{{ row.name || '—' }}</span>
+                  <a-tag v-if="row.isDefault" color="blue" class="default-tag">默认</a-tag>
+                </template>
+                <template v-else-if="column.key === 'convert'">
+                  {{ formatPackSpecText(row, record.inventoryUnit) }}
+                </template>
+                <template v-else-if="column.key === 'salesPrice'">
+                  {{ formatPackPrice(row.salesPrice, record.inventoryUnit) }}
+                </template>
+                <template v-else-if="column.key === 'purchasePrice'">
+                  {{ formatPackPrice(row.purchasePrice, record.inventoryUnit) }}
+                </template>
+                <template v-else-if="column.key === 'status'">
+                  <a-tag :color="row.enabled === false ? 'default' : 'success'">
+                    {{ row.enabled === false ? '停用' : '启用' }}
+                  </a-tag>
                 </template>
               </template>
             </a-table>
@@ -181,7 +209,7 @@
         >
           <template #bodyCell="{ column, record: row }">
             <template v-if="column.key === 'bomNo'">
-              <a class="bom-ref-link" @click.prevent="openBomDetail(row)">{{ row.bomNo }}</a>
+              <a class="bom-ref-link">{{ row.bomNo || '—' }}</a>
             </template>
             <template v-else-if="column.key === 'bomStatus'">
               <a-tag :color="bomStatusColor(row.bomStatus)">{{ row.bomStatus }}</a-tag>
@@ -202,15 +230,20 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { InfoCircleOutlined } from '@ant-design/icons-vue'
 import { productInfoState } from '@/store/productInfoStore'
+import { findMaintainFormula } from '@/store/processFormulaStore'
 import { materialInfoState } from '@/store/materialInfoStore'
 import { productCategoryState } from '@/store/productCategoryStore'
 import { materialCategoryState } from '@/store/materialCategoryStore'
-import { getMaterialGradeById } from '@/store/materialGradeStore'
 import { resolveMasterItemEditRecord } from '@/utils/masterItemSave'
-import { ITEM_KIND, itemKindLabel, resolveItemKind } from '@/utils/masterItemKind'
+import { ITEM_KIND, resolveItemKind } from '@/utils/masterItemKind'
 import { normalizeProductStatus, productStatusColor } from '@/utils/productStatus'
 import { flattenCategoryNodes } from '@/mock/materialCategories'
-import { PLAN_STRATEGY_OPTIONS, isPlanStrategyMts } from '@/mock/productInfoOptions'
+import {
+  PLAN_STRATEGY_OPTIONS,
+  isPlanStrategyMts,
+  formatStorageConditions,
+} from '@/mock/productInfoOptions'
+import { formatPackPrice, formatPackSpecText, normalizePackSpecs } from '@/utils/packSpec'
 import { inboundQcOptions } from '@/mock/materialInfoOptions'
 import { hydratePurchaseSuppliers, calcPurchasePriceInclTax } from '@/utils/purchaseSuppliers'
 import {
@@ -218,7 +251,6 @@ import {
   formatAuxConvertText,
   roleLabels,
 } from '@/utils/unitManageTab'
-import { resolveItemBomNavigation } from '@/utils/itemBomNavigation'
 import { openCreateTab } from '@/utils/openCreateTab'
 import { useTabs, tabStore } from '@/composables/useTabs'
 import DetailInfoGrid from './components/DetailInfoGrid.vue'
@@ -260,11 +292,7 @@ const record = computed(() => {
 const kind = computed(() =>
   resolveItemKind({ canSell: record.value?.canSell, canProduce: record.value?.canProduce }),
 )
-const kindLabel = computed(() => (kind.value ? itemKindLabel(kind.value) : ''))
 const productStatusLabel = computed(() => normalizeProductStatus(record.value?.status))
-const showBomAction = computed(
-  () => kind.value === ITEM_KIND.PRODUCT || kind.value === ITEM_KIND.PRODUCT_MATERIAL,
-)
 const bomItemType = computed(() => (kind.value === ITEM_KIND.MATERIAL ? 'material' : 'product'))
 const bomRefModalOpen = ref(false)
 
@@ -298,14 +326,6 @@ const overviewCards = computed(() => {
   const unit = o.unit || '件'
   const monthTip = '当月'
   return [
-    {
-      key: 'bomRef',
-      label: 'BOM引用',
-      value: `${o.bomRefCount} 个`,
-      tone: 'orange',
-      tip: '作为子件被其他 BOM 引用的数量，多个时可查看明细',
-      clickable: o.bomRefCount > 0,
-    },
     {
       key: 'stock',
       label: '库存量',
@@ -360,12 +380,8 @@ const bomRefColumns = [
   { title: '单位用量', dataIndex: 'unitQty', key: 'unitQty', width: 90, align: 'right' },
 ]
 
-function openBomDetail(row) {
-  if (!row?.bomId && !row?.detailPath) return
-  const path = row.detailPath || `/product-process/bom/${row.bomId}`
-  openTab(path, row.bomName || 'BOM详情')
-  router.push(path)
-  bomRefModalOpen.value = false
+function openBomDetail() {
+  return
 }
 
 function onOverviewCardClick(card) {
@@ -411,6 +427,18 @@ const alert = computed(() => record.value?.alert || {})
 
 const unitHydrated = computed(() => hydrateUnitManageFromSource(record.value || {}))
 const auxUnits = computed(() => unitHydrated.value.auxUnits || [])
+const packSpecs = computed(() => {
+  const r = record.value || {}
+  return normalizePackSpecs(r.packSpecs, r.packSpec, r.inventoryUnit)
+})
+
+const packSpecColumns = [
+  { title: '规格名称', key: 'name', dataIndex: 'name' },
+  { title: '换算说明', key: 'convert' },
+  { title: '销售单价', key: 'salesPrice', width: 140, align: 'right' },
+  { title: '采购单价', key: 'purchasePrice', width: 140, align: 'right' },
+  { title: '状态', key: 'status', width: 88 },
+]
 
 const purchaseSuppliers = computed(() => hydratePurchaseSuppliers(record.value || {}))
 const laborRows = computed(() =>
@@ -422,22 +450,13 @@ const capabilityMeta = computed(() => {
   return [
     { key: 'canSell', label: '可销售', value: yesNo(r.canSell) },
     { key: 'canProduce', label: '可生产', value: yesNo(r.canProduce) },
-    { key: 'isWholeMachine', label: '整机', value: yesNo(r.isWholeMachine) },
-    { key: 'isPart', label: '零部件', value: yesNo(r.isPart) },
     { key: 'canPurchase', label: '可采购', value: yesNo(r.canPurchase) },
-    { key: 'canOutsource', label: '可外协', value: yesNo(r.canOutsource) },
-    {
-      key: 'needIndustrialLabel',
-      label: '工业标识',
-      value: yesNo(production.value.needIndustrialLabel),
-    },
   ]
 })
 
 const basicFields = computed(() => {
   const r = record.value || {}
   const p = production.value
-  const grade = getMaterialGradeById(r.materialGradeId)
   const fields = [
     { key: 'code', label: '编号', value: display(r.code) },
     { key: 'status', label: '状态', value: productStatusLabel.value },
@@ -445,13 +464,22 @@ const basicFields = computed(() => {
     { key: 'materialType', label: '类型', value: display(r.materialType) },
     { key: 'supplyForm', label: '供应型态', value: display(r.supplyForm) },
     { key: 'specModel', label: '规格型号', value: display(r.specModel) },
-    {
-      key: 'material',
-      label: '材质',
-      value: display(grade?.name || r.material),
-    },
-    { key: 'drawingNo', label: '图号', value: display(r.drawingNo) },
     { key: 'inventoryUnit', label: '库存单位', value: display(r.inventoryUnit) },
+    {
+      key: 'shelfLifeDays',
+      label: '保质期',
+      value: r.shelfLifeDays == null || r.shelfLifeDays === '' ? '—' : `${r.shelfLifeDays} 天`,
+    },
+    {
+      key: 'recheckDays',
+      label: '复验期',
+      value: r.recheckDays == null || r.recheckDays === '' ? '—' : `${r.recheckDays} 天`,
+    },
+    {
+      key: 'storageCondition',
+      label: '储存条件',
+      value: display(formatStorageConditions(r.storageCondition)),
+    },
     {
       key: 'productCategory',
       label: '产品类别',
@@ -464,7 +492,6 @@ const basicFields = computed(() => {
     },
     { key: 'productAttribute', label: '产品属性', value: display(r.productAttribute) },
     { key: 'standardSpec', label: '标准规范', value: display(r.standardSpec) },
-    { key: 'isAssemblyPart', label: '是否需要组装', value: yesNo(r.isAssemblyPart) },
     {
       key: 'planStrategy',
       label: '计划策略',
@@ -479,12 +506,7 @@ const basicFields = computed(() => {
     { key: 'defaultProcessRoute', label: '默认工艺路线', value: display(p.defaultProcessRoute) },
     { key: 'defaultWorkCenter', label: '默认工作中心', value: display(p.defaultWorkCenter) },
     { key: 'techParams', label: '技术参数', value: display(r.techParams), fullRow: true },
-    {
-      key: 'matchingRequirements',
-      label: '配置要求',
-      value: display(r.matchingRequirements || r.remark),
-      fullRow: true,
-    },
+    { key: 'remark', label: '备注', value: display(r.remark), fullRow: true },
   )
   return fields
 })
@@ -548,7 +570,6 @@ const supplierColumns = [
 ]
 
 const productionFields = computed(() => {
-  const r = record.value || {}
   const p = production.value
   return [
     {
@@ -566,9 +587,7 @@ const productionFields = computed(() => {
         ? p.inboundQcRequirement
         : display(p.inboundQcRequirement),
     },
-    { key: 'requisitionEnabled', label: '领料属性', value: yesNo(p.requisitionEnabled) },
-    { key: 'needsBlankingSettle', label: '需要下料结算', value: yesNo(r.needsBlankingSettle) },
-    { key: 'isKeyPart', label: '关键件标识', value: yesNo(p.isKeyPart) },
+    { key: 'isKeyPart', label: '关键物料', value: yesNo(p.isKeyPart) },
     { key: 'isAuxiliary', label: '辅料标识', value: yesNo(p.isAuxiliary) },
     { key: 'isHazardous', label: '危险品标识', value: yesNo(p.isHazardous) },
   ]
@@ -609,17 +628,23 @@ const alertFields = computed(() => {
       { key: 'minStockQty', label: '最低库存', value: display(a.minStockQty) },
     )
   }
-  fields.push(
-    { key: 'expiryAlertEnabled', label: '过期预警', value: yesNo(a.expiryAlertEnabled) },
-    {
-      key: 'defectRateThreshold',
-      label: '不良率预警阈值',
-      value:
-        a.defectRateThreshold == null || a.defectRateThreshold === ''
-          ? '—'
-          : `${a.defectRateThreshold}%`,
-    },
-  )
+  fields.push({ key: 'expiryAlertEnabled', label: '过期预警', value: yesNo(a.expiryAlertEnabled) })
+  if (a.expiryAlertEnabled) {
+    const days = Number(a.expiryAlertDays)
+    fields.push({
+      key: 'expiryAlertDays',
+      label: '提前天数',
+      value: Number.isFinite(days) && days > 0 ? `${days} 天` : '—',
+    })
+  }
+  fields.push({
+    key: 'defectRateThreshold',
+    label: '不良率预警阈值',
+    value:
+      a.defectRateThreshold == null || a.defectRateThreshold === ''
+        ? '—'
+        : `${a.defectRateThreshold}%`,
+  })
   return fields
 })
 
@@ -700,16 +725,21 @@ function handleEdit() {
   })
 }
 
-function handleMaintainBom() {
+function handleMaintainFormula() {
   const id = record.value?.id
   if (!id) return
-  const nav = resolveItemBomNavigation(bomItemType.value, id)
-  const resolved = router.resolve({
-    path: nav.path,
-    query: { ...(nav.query || {}), itemName: record.value.name || '' },
-  })
-  openTab(resolved.fullPath || resolved.path, nav.title || '维护BOM')
-  router.push(resolved)
+  const hit = findMaintainFormula(id)
+  if (hit) {
+    const path = `/product-process/bom/${hit.id}`
+    openTab(path, hit.name || '配方详情')
+    router.push(path)
+    return
+  }
+  const query = new URLSearchParams({ itemId: String(id) })
+  if (record.value.name) query.set('itemName', record.value.name)
+  const fullPath = `/product-process/bom/new?${query.toString()}`
+  openTab(fullPath, '新增配方')
+  router.push(fullPath)
 }
 
 function handleBack() {
@@ -832,7 +862,7 @@ function handleBack() {
 }
 
 .product-material-link {
-  color: #1677ff;
+  color: #307068;
   word-break: break-all;
 }
 
@@ -862,8 +892,8 @@ function handleBack() {
 }
 
 .overview-card.clickable:hover {
-  border-color: #91caff;
-  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.08);
+  border-color: #a9c6c2;
+  box-shadow: 0 2px 8px rgba(48, 112, 104, 0.08);
 }
 
 .overview-label {
@@ -890,10 +920,10 @@ function handleBack() {
 }
 
 .overview-card.tone-blue {
-  border-top: 3px solid #1677ff;
+  border-top: 3px solid #307068;
 }
 .overview-card.tone-cyan {
-  border-top: 3px solid #13c2c2;
+  border-top: 3px solid #307068;
 }
 .overview-card.tone-purple {
   border-top: 3px solid #722ed1;
@@ -918,7 +948,7 @@ function handleBack() {
 }
 
 .bom-ref-link {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 

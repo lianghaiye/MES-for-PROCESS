@@ -1,6 +1,6 @@
 /**
  * 演示：网格「纯串行」工艺路线 + 待下发工单
- * 路线名：机加串行演示路线
+ * 路线名：湿法串行演示路线
  */
 
 import dayjs from 'dayjs'
@@ -15,39 +15,45 @@ function getProcessRouteState() {
   return require('@/store/processRouteStore').processRouteState
 }
 
-export const SERIAL_ROUTE_DEMO_NAME = '机加串行演示路线'
+export const SERIAL_ROUTE_DEMO_NAME = '湿法串行演示路线'
 export const SERIAL_ROUTE_DEMO_ID = 'route-010'
 export const SERIAL_ROUTE_DISPATCH_WO_ID = 'wo-serial-route-dispatch-001'
 export const SERIAL_ROUTE_DISPATCH_WO_CODE = 'SCGD20261008001'
+
+const EQ = {
+  R101: 'eq-d-1',
+  R201: 'eq-d-2',
+  F301: 'eq-d-3',
+  T501: 'eq-d-5',
+  P701: 'eq-d-7',
+}
 
 function getProcessIdByName(name) {
   const proc = processConfigState.processes.find((p) => p.name === name)
   return proc?.id || `proc-unknown-${name}`
 }
 
-function cell(processId, processFileId = '', qcOverride = '') {
+function cell(processId, extra = {}) {
   const row = { processId }
-  if (processFileId) row.processFileId = processFileId
-  if (qcOverride) row.qcOverride = qcOverride
+  if (extra.processFileId) row.processFileId = extra.processFileId
+  if (extra.equipmentId) row.equipmentId = extra.equipmentId
+  if (extra.qcOverride) row.qcOverride = extra.qcOverride
   return row
 }
 
 function buildSerialDemoGrid() {
   const p = getProcessIdByName
   const pairs = [
-    [1, 1, p('下料'), 'pdoc-004'],
-    // 粗车主数据已配质检 → 继承工序（相对并行演示路线「本路线不检」）
-    [2, 1, p('粗车')],
-    [3, 1, p('钻孔')],
-    [4, 1, p('铣削')],
-    [5, 1, p('质检'), 'pdoc-005'],
-    [6, 1, p('入库'), 'pdoc-006'],
+    [1, 1, p('投料'), { processFileId: 'pdoc-001', equipmentId: EQ.R101 }],
+    [2, 1, p('升温'), { processFileId: 'pdoc-002', equipmentId: EQ.R201 }],
+    [3, 1, p('保温'), { equipmentId: EQ.R201 }],
+    [4, 1, p('过滤'), { processFileId: 'pdoc-003', equipmentId: EQ.F301 }],
+    [5, 1, p('转罐'), { processFileId: 'pdoc-006', equipmentId: EQ.T501 }],
+    [6, 1, p('灌装'), { processFileId: 'pdoc-005', equipmentId: EQ.P701 }],
   ]
-  const maxStep = 6
-  const maxRow = 1
-  const grid = createEmptyGrid(maxStep, maxRow)
-  pairs.forEach(([step, row, processId, fileId, qcOverride]) => {
-    grid[step - 1][row - 1] = cell(processId, fileId, qcOverride)
+  const grid = createEmptyGrid(6, 1)
+  pairs.forEach(([step, row, processId, extra]) => {
+    grid[step - 1][row - 1] = cell(processId, extra)
   })
   return grid
 }
@@ -70,8 +76,7 @@ function buildSerialDemoRoute() {
     status: '使用中',
     applyScope: '全部产品',
     productDisplay: '',
-    remark:
-      '纯串行：下料→粗车→钻孔→铣削→质检→入库；粗车继承工序质检。对照并行演示路线粗车「本路线不检」',
+    remark: '纯串行：投料→升温→保温→过滤→转罐→灌装；过滤继承工序质检',
     grid,
     stepPolicies,
     creator: '张工艺',
@@ -103,21 +108,21 @@ function createSerialRouteDispatchDemoOrder() {
   const wo = {
     id: SERIAL_ROUTE_DISPATCH_WO_ID,
     code: SERIAL_ROUTE_DISPATCH_WO_CODE,
-    name: '轴套半成品串行机加演示工单',
-    productName: '轴套半成品',
-    materialCode: 'CP-BLANK-BAR-01',
+    name: '湿法成品串行演示批指令工单',
+    productName: '示范湿法成品',
+    materialCode: 'CP-PROC-001',
     orderCategory: '生产工单',
     status: '待下发',
     scheduleQty: 20,
     planQty: 20,
-    workCenter: '机加车间',
-    bom: '轴套半成品',
+    workCenter: '反应车间',
+    bom: '示范湿法成品',
     bomId: '',
-    bomLabel: '轴套半成品',
-    warehouse: '半成品仓',
+    bomLabel: '示范湿法成品',
+    warehouse: '成品仓',
     urgency: '正常',
     planDateRange: [today, end],
-    remark: '演示：工艺路线「机加串行演示路线」；下发页步骤 1～6 均为串行',
+    remark: '演示：工艺路线「湿法串行演示路线」；下发页步骤 1～6 均为串行',
     processRouteName: SERIAL_ROUTE_DEMO_NAME,
     source: 'serial-route-dispatch-demo',
     sourceOrderNo: 'SO20261008001',

@@ -618,7 +618,7 @@ function addMatrixRow() {
 }
 
 .rated {
-  color: #1677ff;
+  color: #307068;
   font-weight: 600;
 }
 

@@ -27,9 +27,9 @@ export default { name: 'InboundWorkOrderList' }
 
 <script setup>
 import { computed } from 'vue'
-import { INBOUND_WORK_ORDER_COLUMNS, enrichInboundWorkOrderRow } from '@/utils/inboundWorkOrders'
+import { INBOUND_WORK_ORDER_COLUMNS } from '@/utils/inboundWorkOrders'
 
-const props = defineProps({
+defineProps({
   workOrders: {
     type: Array,
     default: () => [],
@@ -38,7 +38,7 @@ const props = defineProps({
 
 const columns = INBOUND_WORK_ORDER_COLUMNS
 
-const list = computed(() => (props.workOrders || []).map(enrichInboundWorkOrderRow))
+const list = computed(() => [])
 </script>
 
 <style lang="less" scoped>

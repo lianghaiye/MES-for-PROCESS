@@ -1392,7 +1392,7 @@ onBeforeUnmount(() => {
   }
 
   .carousel-page {
-    color: #69b1ff;
+    color: #6a9e98;
   }
 
   .carousel-setting :deep(.ant-input-number) {
@@ -1414,7 +1414,7 @@ onBeforeUnmount(() => {
   }
 
   .view-tabs-bar :deep(.ant-tabs-tab-active .ant-tabs-tab-btn) {
-    color: #69b1ff !important;
+    color: #6a9e98 !important;
   }
 
   .filter-card :deep(.ant-form-item-label > label),
@@ -1430,7 +1430,7 @@ onBeforeUnmount(() => {
   }
 
   .breadcrumb .crumb {
-    color: #69b1ff;
+    color: #6a9e98;
   }
 
   .search :deep(.ant-input-affix-wrapper),
@@ -1523,13 +1523,13 @@ onBeforeUnmount(() => {
 
 .carousel-page {
   font-size: 12px;
-  color: #1677ff;
+  color: #307068;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .doc-link {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
   font-weight: 500;
 }
@@ -1647,7 +1647,7 @@ onBeforeUnmount(() => {
 }
 
 .crumb {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
   font-weight: 600;
 }

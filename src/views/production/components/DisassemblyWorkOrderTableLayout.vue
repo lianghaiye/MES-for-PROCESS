@@ -191,7 +191,7 @@ function onPageSizeChange(_current, size) {
     color: rgba(0, 0, 0, 0.45);
 
     &:hover {
-      color: #1677ff;
+      color: #307068;
     }
   }
 }

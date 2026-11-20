@@ -28,24 +28,12 @@
               <span>{{ draft.productName || '—' }}</span>
             </div>
             <div class="preview-row">
-              <span class="preview-label">规格型号</span>
+              <span class="preview-label">规格</span>
               <span>{{ draft.specModel || '—' }}</span>
-            </div>
-            <div class="preview-row">
-              <span class="preview-label">材质</span>
-              <span>{{ draft.material || '—' }}</span>
-            </div>
-            <div class="preview-row">
-              <span class="preview-label">图号</span>
-              <span>{{ draft.drawingNo || '—' }}</span>
             </div>
             <div class="preview-row">
               <span class="preview-label">变体属性</span>
               <span>{{ draft.variantSummary || '—' }}</span>
-            </div>
-            <div class="preview-row">
-              <span class="preview-label">BOM</span>
-              <span>{{ bomNameVersionDisplay }}</span>
             </div>
           </div>
         </div>
@@ -84,18 +72,8 @@
             </a-form-item>
           </a-col>
           <a-col :span="8">
-            <a-form-item label="规格型号">
-              <a-input v-model:value="draft.specModel" size="small" placeholder="请输入规格型号" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="8">
-            <a-form-item label="材质">
-              <a-input v-model:value="draft.material" size="small" placeholder="请输入材质" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="8">
-            <a-form-item label="图号">
-              <a-input v-model:value="draft.drawingNo" size="small" placeholder="请输入图号" />
+            <a-form-item label="规格">
+              <a-input v-model:value="draft.specModel" size="small" placeholder="请输入规格" />
             </a-form-item>
           </a-col>
         </template>
@@ -115,7 +93,22 @@
         </a-col>
         <a-col :span="8">
           <a-form-item label="单位" required>
-            <a-input v-model:value="draft.unit" size="small" placeholder="如 件" />
+            <a-input v-model:value="draft.unit" size="small" placeholder="如 吨" />
+          </a-form-item>
+        </a-col>
+        <a-col :span="8">
+          <a-form-item label="包装规格">
+            <a-select
+              v-if="packSpecOptions.length"
+              v-model:value="draft.packSpecId"
+              size="small"
+              allow-clear
+              placeholder="请选择包装规格"
+              :options="packSpecOptions"
+              @change="onPackSpecChange"
+            />
+            <span v-else>—</span>
+            <div class="field-hint">销售数量按单位计，包装规格只说明装运形态</div>
           </a-form-item>
         </a-col>
         <a-col :span="8">
@@ -127,11 +120,6 @@
               placeholder="选填"
               :maxlength="100"
             />
-          </a-form-item>
-        </a-col>
-        <a-col :span="8">
-          <a-form-item label="交付方式" required>
-            <a-select v-model:value="draft.deliveryMode" size="small" :options="deliveryModeOpts" />
           </a-form-item>
         </a-col>
         <a-col :span="8">
@@ -179,7 +167,71 @@
           </a-form-item>
         </a-col>
         <a-col :span="8">
-          <a-form-item label="单价（不含税）" required>
+          <a-form-item label="计价方式" required>
+            <a-select
+              v-model:value="draft.pricingMode"
+              size="small"
+              :options="pricingModeOptions"
+              @change="onPricingModeChange"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col v-if="contentPricing" :span="8">
+          <a-form-item label="基准含量(%)" required>
+            <a-input-number
+              v-model:value="draft.baseContent"
+              size="small"
+              :min="0"
+              :max="100"
+              :precision="4"
+              placeholder="如 98.5"
+              style="width: 100%"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col v-if="contentPricing" :span="8">
+          <a-form-item label="档距(%)" required>
+            <a-input-number
+              v-model:value="draft.contentStep"
+              size="small"
+              :min="0"
+              :precision="4"
+              placeholder="如 0.1"
+              style="width: 100%"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col v-if="contentPricing" :span="8">
+          <a-form-item label="每高一档加" required>
+            <a-input-number
+              v-model:value="draft.priceStepUp"
+              size="small"
+              :min="0"
+              :precision="4"
+              placeholder="不含税"
+              style="width: 100%"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col v-if="contentPricing" :span="8">
+          <a-form-item label="每低一档减" required>
+            <a-input-number
+              v-model:value="draft.priceStepDown"
+              size="small"
+              :min="0"
+              :precision="4"
+              placeholder="不含税"
+              style="width: 100%"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col v-if="contentPricing" :span="24">
+          <div class="field-hint">
+            订单金额按基准含量估算。发货时用批次实测含量计算结算单价，一车多批按过磅净重分别计价。加减价按不含税。
+          </div>
+        </a-col>
+        <a-col :span="8">
+          <a-form-item :label="exPriceLabel" required>
             <a-input-number
               v-model:value="draft.unitPriceExTax"
               size="small"
@@ -195,7 +247,7 @@
           </a-form-item>
         </a-col>
         <a-col :span="8">
-          <a-form-item label="单价（含税）" required>
+          <a-form-item :label="inPriceLabel" required>
             <a-input-number
               v-model:value="draft.unitPriceInTax"
               size="small"
@@ -223,7 +275,7 @@
           </a-form-item>
         </a-col>
         <a-col :span="8">
-          <a-form-item label="总价（不含税）">
+          <a-form-item :label="exTotalLabel">
             <a-input
               :value="formatMoney(linePricingPreview.totalPriceExTax)"
               size="small"
@@ -232,7 +284,7 @@
           </a-form-item>
         </a-col>
         <a-col :span="8">
-          <a-form-item label="总价（含税）">
+          <a-form-item :label="inTotalLabel">
             <a-input
               :value="formatMoney(linePricingPreview.totalPriceInTax)"
               size="small"
@@ -260,31 +312,6 @@
               :value="formatMoney(linePricingPreview.lineDiscountAmount)"
               size="small"
               disabled
-            />
-          </a-form-item>
-        </a-col>
-        <a-col :span="8">
-          <a-form-item label="包装形式">
-            <a-input v-model:value="draft.packagingForm" size="small" placeholder="包装形式" />
-          </a-form-item>
-        </a-col>
-        <a-col :span="16">
-          <a-form-item label="工业标识">
-            <a-checkbox v-model:checked="draft.needIndustrialLabel"> 生成工业SN/二维码 </a-checkbox>
-          </a-form-item>
-        </a-col>
-
-        <a-col :span="24">
-          <a-form-item label="技术参数">
-            <a-textarea v-model:value="draft.techParams" :rows="2" placeholder="技术参数" />
-          </a-form-item>
-        </a-col>
-        <a-col :span="24">
-          <a-form-item label="配套要求">
-            <a-textarea
-              v-model:value="draft.matchingRequirements"
-              :rows="2"
-              placeholder="配套要求"
             />
           </a-form-item>
         </a-col>
@@ -328,7 +355,9 @@ import dayjs from 'dayjs'
 import { inputNumberFormatter, inputNumberParser } from '@/utils/numberFormat'
 
 const MAX_LINE_FILE_SIZE = 200 * 1024 * 1024
-import { deliveryModeOptions } from '@/mock/salesOrderOptions'
+import { materialInfoState } from '@/store/materialInfoStore'
+import { listEnabledPackSpecs, packSpecOptionLabel } from '@/utils/packSpec'
+import { resolveSalesListPrice } from '@/utils/tradePrice'
 import {
   STOCK_FULFILLMENT_MODE,
   STOCK_FULFILLMENT_MODE_OPTIONS,
@@ -359,6 +388,12 @@ import {
   round2,
 } from '@/utils/salesOrderPricing'
 import { isSpuLine, validateSalesLinesSkuResolved } from '@/utils/spuLineResolve'
+import {
+  SALES_PRICING_MODE,
+  SALES_PRICING_MODE_OPTIONS,
+  isContentPricing,
+  toContentPercent,
+} from '@/utils/salesContentPricing'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -387,8 +422,40 @@ const manualBusinessTypeOpts = [
   CUSTOM_SALES_BUSINESS_TYPE,
 ].map((v) => ({ label: v, value: v }))
 
-const deliveryModeOpts = deliveryModeOptions.map((v) => ({ label: v, value: v }))
 const stockFulfillmentModeOpts = STOCK_FULFILLMENT_MODE_OPTIONS
+
+const lineMaster = computed(() => {
+  const id = draft.productId
+  if (!id) return null
+  return (
+    productInfoState.products.find((item) => item.id === id) ||
+    materialInfoState.materials.find((item) => item.id === id) ||
+    null
+  )
+})
+
+const packSpecOptions = computed(() => {
+  const unit = draft.unit || lineMaster.value?.inventoryUnit || ''
+  return listEnabledPackSpecs(lineMaster.value).map((row) => ({
+    value: row.id,
+    label: packSpecOptionLabel(row, unit),
+  }))
+})
+
+function onPackSpecChange(id) {
+  const unit = draft.unit || lineMaster.value?.inventoryUnit || ''
+  const spec = listEnabledPackSpecs(lineMaster.value).find((row) => row.id === id) || null
+  draft.packSpecName = spec?.name || ''
+  draft.packSpecText = spec ? packSpecOptionLabel(spec, unit) : ''
+  if (contractPriceLocked.value) return
+  const listPrice = resolveSalesListPrice(lineMaster.value, { packSpecId: id }).price
+  if (listPrice > 0) {
+    draft.listUnitPriceExTax = listPrice
+    draft.unitPriceExTax = listPrice
+    priceEditMode.value = 'unitPriceExTax'
+    onUnitPriceExTaxEdit()
+  }
+}
 
 const isPreferStockDraft = computed(
   () =>
@@ -427,11 +494,6 @@ const fulfillmentPathOpts = computed(() =>
   getFulfillmentPathOptions(draft, { businessType: draft.businessType }),
 )
 
-const linkedCatalogBom = computed(() => {
-  if (draft.isManualLine || !draft.productId) return null
-  return getOwnActiveBomForItem('product', draft.productId)
-})
-
 const contractPriceLocked = computed(() => draft.priceSource === 'contract')
 const showLineDiscountFields = computed(() => isSalesOrderDiscountEnabled())
 const lineDiscountReadOnly = computed(
@@ -440,6 +502,17 @@ const lineDiscountReadOnly = computed(
     isLineDiscountDisabled(props.discountStrategy) ||
     contractPriceLocked.value,
 )
+
+const pricingModeOptions = SALES_PRICING_MODE_OPTIONS
+const contentPricing = computed(() => isContentPricing(draft))
+const exPriceLabel = computed(() =>
+  contentPricing.value ? '基准单价（不含税）' : '单价（不含税）',
+)
+const inPriceLabel = computed(() => (contentPricing.value ? '基准单价（含税）' : '单价（含税）'))
+const exTotalLabel = computed(() =>
+  contentPricing.value ? '估算总价（不含税）' : '总价（不含税）',
+)
+const inTotalLabel = computed(() => (contentPricing.value ? '估算总价（含税）' : '总价（含税）'))
 
 const priceEditMode = ref('unitPriceInTax') // unitPriceExTax | unitPriceInTax | discount
 
@@ -506,16 +579,6 @@ function onTaxRateEdit() {
   }
 }
 
-const bomNameVersionDisplay = computed(() => {
-  if (draft.bomName && draft.bomVersion) {
-    return `${draft.bomName}（版本 ${draft.bomVersion}）`
-  }
-  if (linkedCatalogBom.value && draft.bomFulfillmentPath === BOM_FULFILLMENT_PATH.USE_CATALOG_BOM) {
-    return `${linkedCatalogBom.value.bomName}（版本 ${linkedCatalogBom.value.version}）`
-  }
-  return '—'
-})
-
 watch(
   () => props.open,
   (open) => {
@@ -572,6 +635,9 @@ function createDraft(line = {}) {
     specModel: line.specModel || '',
     material: line.material || '',
     unit: line.unit || '件',
+    packSpecId: line.packSpecId || '',
+    packSpecName: line.packSpecName || '',
+    packSpecText: line.packSpecText || '',
     externalJobNo: line.externalJobNo || '',
     salesQty: line.salesQty ?? line.qty ?? 1,
     deliveryMode: line.deliveryMode || '整件',
@@ -583,6 +649,11 @@ function createDraft(line = {}) {
     lineDiscountPercent: round2(normalizeDiscountRate(line.lineDiscountRate, 1) * 100),
     unitPriceExTax: line.unitPriceExTax ?? 0,
     unitPriceInTax: line.unitPriceInTax ?? 0,
+    pricingMode: line.pricingMode || SALES_PRICING_MODE.FLAT,
+    baseContent: line.baseContent ?? null,
+    contentStep: line.contentStep ?? null,
+    priceStepUp: line.priceStepUp ?? null,
+    priceStepDown: line.priceStepDown ?? null,
     taxRate: line.taxRate ?? 13,
     drawingNo: line.drawingNo || '',
     techParams: line.techParams || '',
@@ -718,6 +789,12 @@ function onDeliveryDateChange(date) {
   draft.deliveryDate = date ? date.format('YYYY-MM-DD') : ''
 }
 
+function onPricingModeChange(mode) {
+  if (mode === SALES_PRICING_MODE.CONTENT && !(Number(draft.contentStep) > 0)) {
+    draft.contentStep = 0.1
+  }
+}
+
 function formatMoney(val) {
   return Number(val || 0).toFixed(2)
 }
@@ -743,10 +820,6 @@ function validate() {
     message.warning('销售数量须大于 0')
     return false
   }
-  if (!draft.deliveryMode) {
-    message.warning('请选择交付方式')
-    return false
-  }
   if (!draft.deliveryDate) {
     message.warning('请选择交货日期')
     return false
@@ -756,12 +829,34 @@ function validate() {
     return false
   }
   if (draft.unitPriceExTax == null || draft.unitPriceExTax === '') {
-    message.warning('请填写单价（不含税）')
+    message.warning(contentPricing.value ? '请填写基准单价（不含税）' : '请填写单价（不含税）')
     return false
   }
   if (draft.unitPriceInTax == null || draft.unitPriceInTax === '') {
-    message.warning('请填写单价（含税）')
+    message.warning(contentPricing.value ? '请填写基准单价（含税）' : '请填写单价（含税）')
     return false
+  }
+  if (contentPricing.value) {
+    if (toContentPercent(draft.baseContent) == null) {
+      message.warning('请填写基准含量')
+      return false
+    }
+    if (!(Number(draft.contentStep) > 0)) {
+      message.warning('档距须大于 0')
+      return false
+    }
+    if (draft.priceStepUp == null || draft.priceStepUp === '' || Number(draft.priceStepUp) < 0) {
+      message.warning('请填写每高一档加价')
+      return false
+    }
+    if (
+      draft.priceStepDown == null ||
+      draft.priceStepDown === '' ||
+      Number(draft.priceStepDown) < 0
+    ) {
+      message.warning('请填写每低一档减价')
+      return false
+    }
   }
   if (draft.lineDiscountPercent == null || draft.lineDiscountPercent === '') {
     message.warning('请填写行折扣')
@@ -798,6 +893,9 @@ function handleSave() {
     specModel: draft.specModel || '',
     material: draft.material || '',
     unit: draft.unit.trim(),
+    packSpecId: draft.packSpecId || '',
+    packSpecName: draft.packSpecName || '',
+    packSpecText: draft.packSpecText || '',
     externalJobNo: String(draft.externalJobNo || '').trim(),
     salesQty: Number(draft.salesQty),
     qty: Number(draft.salesQty),
@@ -816,6 +914,11 @@ function handleSave() {
       : normalizeDiscountRate((Number(draft.lineDiscountPercent) || 100) / 100, 1),
     unitPriceExTax: Number(draft.unitPriceExTax) || 0,
     unitPriceInTax: Number(draft.unitPriceInTax) || 0,
+    pricingMode: draft.pricingMode || SALES_PRICING_MODE.FLAT,
+    baseContent: contentPricing.value ? toContentPercent(draft.baseContent) : null,
+    contentStep: contentPricing.value ? Number(draft.contentStep) || null : null,
+    priceStepUp: contentPricing.value ? Number(draft.priceStepUp) || 0 : null,
+    priceStepDown: contentPricing.value ? Number(draft.priceStepDown) || 0 : null,
     taxRate: Number(draft.taxRate) || 0,
     drawingNo: draft.drawingNo || '',
     techParams: draft.techParams || '',

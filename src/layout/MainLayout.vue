@@ -37,10 +37,7 @@ const moduleKey = computed(() => resolveModuleKey(route.path))
 const sideItems = computed(() => sideMenus[moduleKey.value] || [])
 
 const cachedViews = [
-  'ProductionPlanView',
-  'ProductBomCreateView',
   'EbomDesignView',
-  'EcnCreateView',
   'SalesOrderDetailView',
   'SalesOrderEditView',
   ...createPageRegistry.map((page) => page.keepAlive),

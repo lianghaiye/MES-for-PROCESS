@@ -37,7 +37,7 @@
           <a-tag :color="bomStatusColor(record.status)">{{ record.status }}</a-tag>
         </template>
         <template v-else-if="column.key === 'bomNo'">
-          <a class="link-code" @click.prevent="openBomDetail(record)">{{ record.bomNo }}</a>
+          <span>{{ record.bomNo || '—' }}</span>
         </template>
         <template v-else-if="column.key === 'levelCount'">
           {{ record.levelCount ?? '—' }}
@@ -59,7 +59,6 @@
 
 <script setup>
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
 import {
   productBomState,
   getBomsForItem,
@@ -71,16 +70,12 @@ import { materialInfoState } from '@/store/materialInfoStore'
 import { findSpuById } from '@/store/spuStore'
 import { bomStatusColor } from '@/mock/productBomOptions'
 import { enrichProductBomForList } from '@/utils/productBomListEnrich'
-import { useTabs } from '@/composables/useTabs'
 
 const props = defineProps({
   itemType: { type: String, required: true },
   itemId: { type: [String, Number], default: '' },
   disabled: { type: Boolean, default: false },
 })
-
-const router = useRouter()
-const { openTab } = useTabs()
 
 const masterRecord = computed(() => {
   if (!props.itemId) return null
@@ -131,15 +126,6 @@ const columns = [
   { title: '生效日期', key: 'effectiveAt', width: 150 },
   { title: '失效日期', key: 'expiredAt', width: 150 },
 ]
-
-function openBomDetail(record) {
-  const resolved = router.resolve({
-    name: 'product-process-bom-detail',
-    params: { id: record.id },
-  })
-  openTab(resolved.path, record.bomName || 'BOM详情')
-  router.push(resolved)
-}
 </script>
 
 <style lang="less" scoped>
@@ -171,7 +157,7 @@ function openBomDetail(record) {
   font-weight: 600;
 }
 .link-code {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 
   &:hover {

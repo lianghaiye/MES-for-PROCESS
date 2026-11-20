@@ -208,7 +208,7 @@ function confirmDelete(record) {
   }
 
   .link-code {
-    color: #1677ff;
+    color: #307068;
   }
 
   .danger-link {

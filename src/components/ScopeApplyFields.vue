@@ -47,8 +47,17 @@
           :options="itemSearchOptions"
           @search="onItemSearch"
           @update:value="itemObjectCodes = $event"
-        />
-        <a-button v-if="!readonly" type="link" @click="itemPickerOpen = true">查看更多</a-button>
+        >
+          <template v-if="!readonly" #dropdownRender="{ menuNode: menu }">
+            <div>
+              <component :is="menu" />
+              <a-divider style="margin: 4px 0" />
+              <div class="search-more-row" @mousedown.prevent @click="itemPickerOpen = true">
+                选择更多
+              </div>
+            </div>
+          </template>
+        </a-select>
       </div>
     </div>
 
@@ -299,5 +308,17 @@ function onItemsPicked(payload) {
 
 .objects-item-row {
   align-items: center;
+}
+
+.search-more-row {
+  padding: 8px 12px;
+  text-align: center;
+  color: #307068;
+  cursor: pointer;
+  font-size: 13px;
+
+  &:hover {
+    background: #f5f5f5;
+  }
 }
 </style>

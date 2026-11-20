@@ -374,7 +374,7 @@ function handleSave() {
 .shared-tip {
   margin-bottom: 10px;
   font-size: 12px;
-  color: #1677ff;
+  color: #307068;
 }
 
 .add-row-btn {

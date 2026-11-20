@@ -1738,8 +1738,8 @@ function handleSave(submit) {
   padding: 8px 12px;
   font-size: 12px;
   line-height: 1.7;
-  color: #1677ff;
-  background: #e6f4ff;
+  color: #307068;
+  background: #e7f2f0;
   border-radius: 4px;
 }
 

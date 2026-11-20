@@ -110,11 +110,7 @@
                   />
                 </template>
                 <template #workOrderNo>
-                  <DocNoLinks
-                    :value="record.workOrderNo"
-                    :links="workOrderLinks"
-                    @open="openWorkOrder"
-                  />
+                  <span>—</span>
                 </template>
               </PurchaseOrderBasicInfoSection>
             </DetailSectionCard>
@@ -543,8 +539,6 @@ import {
 } from '@/store/purchaseOrderStore'
 import { findPurchaseRequisitionByReqNo } from '@/store/purchaseRequisitionStore'
 import { findSalesOrderByOrderNo } from '@/store/salesOrderStore'
-import { workOrderState } from '@/store/workOrderStore'
-import { assemblyWorkOrderState } from '@/store/assemblyWorkOrderStore'
 import { getInboundOrdersByPurchaseOrder } from '@/store/inboundOrderStore'
 import {
   calcPoLineAppliedOccupyQty,
@@ -929,22 +923,6 @@ const salesOrderLinks = computed(() => {
   return map
 })
 
-const workOrderLinks = computed(() => {
-  const map = {}
-  splitDocNos(record.value?.workOrderNo).forEach((no) => {
-    if (findWorkOrderByCode(no)) map[no] = true
-  })
-  return map
-})
-
-function findWorkOrderByCode(code) {
-  return (
-    workOrderState.orders.find((o) => o.code === code) ||
-    assemblyWorkOrderState.orders.find((o) => o.code === code) ||
-    null
-  )
-}
-
 function lineProductName(line) {
   return line.productName || line.itemName || '—'
 }
@@ -1287,19 +1265,6 @@ function openSalesOrder(orderNo) {
   router.push({ name: 'sales-orders-detail', params: { id: order.id } })
 }
 
-function openWorkOrder(code) {
-  const wo = findWorkOrderByCode(code)
-  if (!wo) {
-    message.info('未找到关联生产工单')
-    return
-  }
-  const isAssembly = assemblyWorkOrderState.orders.some((o) => o.id === wo.id)
-  const basePath = isAssembly ? '/production/assembly-work-orders' : '/production/work-orders'
-  const path = `${basePath}?code=${encodeURIComponent(code)}`
-  openTab(path, `生产工单 ${code}`)
-  router.push({ path: basePath, query: { code } })
-}
-
 function goInboundDetailById(orderId) {
   if (!orderId) return
   const order = relatedInboundOrders.value.find((o) => o.id === orderId)
@@ -1414,7 +1379,7 @@ function openApprove() {
 }
 
 .link-code {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 

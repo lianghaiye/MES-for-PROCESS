@@ -23,7 +23,7 @@ export { QC_TASK_RESULT, QC_TASK_RESULT_OPTIONS }
 const STORAGE_KEY = 'i_doms_qc_tasks'
 const STORAGE_VERSION = 3
 const SEED_VERSION_KEY = 'i_doms_qc_tasks_seed_v'
-const CURRENT_SEED_VERSION = '22'
+const CURRENT_SEED_VERSION = '24'
 
 export const QC_TASK_STATUS = {
   PENDING: '待质检',
@@ -330,6 +330,8 @@ export function createQcTask(partial = {}) {
     processCode: partial.processCode || '',
     processName: partial.processName || '',
     processIndex: partial.processIndex ?? null,
+    assaySchemeId: partial.assaySchemeId || '',
+    assaySchemeName: partial.assaySchemeName || '',
     scheduleBatchId: partial.scheduleBatchId || '',
     scheduleBatchNo: partial.scheduleBatchNo ?? null,
     itemCode: partial.itemCode || '',
@@ -518,7 +520,153 @@ export function submitQcTaskInspection(
     updatedAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
   })
   syncSourceReceiptAfterQcSubmit(row)
+  try {
+    const { syncBatchStepQcFromTask } = require('@/store/batchInstructionStore')
+    syncBatchStepQcFromTask(row)
+  } catch {
+    /* ignore */
+  }
   return { ok: true, task: row, qcResult }
+}
+
+/**
+ * 批次指令步骤「化验」：按工序配置的方案生成过程检/成品检，可重复发起
+ * @returns {{ ok: boolean, task?: object, created?: boolean, message?: string }}
+ */
+export function createProcessQcFromBatchStep({ orderId, stepNo, schemeId, inspectQty } = {}) {
+  let getBatchOrder
+  let attachStepQc
+  let getStepQcRecords
+  let getProcessById
+  try {
+    ;({ getBatchOrder, attachStepQc, getStepQcRecords } = require('@/store/batchInstructionStore'))
+  } catch {
+    return { ok: false, message: '批次指令模块不可用' }
+  }
+  try {
+    ;({ getProcessById } = require('@/store/processConfigStore'))
+  } catch {
+    getProcessById = () => null
+  }
+  const { resolveAssaySchemesForStep } = require('@/utils/qcProcessConfig')
+
+  const order = getBatchOrder(orderId)
+  if (!order) return { ok: false, message: '批次指令不存在' }
+  if (order.status !== 'running') return { ok: false, message: '请先下发批次指令后再化验' }
+  const step = (order.routeSnapshot || []).find((s) => Number(s.stepNo) === Number(stepNo))
+  if (!step) return { ok: false, message: '步骤不存在' }
+
+  const proc = step.processId ? getProcessById(step.processId) : null
+  const schemes = resolveAssaySchemesForStep(step, proc)
+  if (!schemes.length) {
+    return { ok: false, message: '本工序未配置可发起的化验方案' }
+  }
+  let scheme = schemes.find((s) => s.id === schemeId)
+  if (!scheme && schemes.length === 1) scheme = schemes[0]
+  if (!scheme) return { ok: false, message: '请选择化验方案' }
+
+  const records = getStepQcRecords(order, step.stepNo).filter((row) => row.schemeId === scheme.id)
+  const pending = [...records].reverse().find((row) => {
+    const prev = getQcTaskById(row.taskId)
+    return (
+      prev &&
+      prev.qcStatus !== QC_TASK_STATUS.COMPLETED &&
+      prev.qcStatus !== QC_TASK_STATUS.CANCELLED
+    )
+  })
+  if (pending) {
+    const prev = getQcTaskById(pending.taskId)
+    return { ok: true, task: prev, created: false }
+  }
+  if (!scheme.allowMultiple && records.some((row) => row.qcStatus === QC_TASK_STATUS.COMPLETED)) {
+    return { ok: false, message: `「${scheme.name}」不允许重复发起` }
+  }
+
+  let findProcessItem
+  try {
+    ;({ findProcessItem } = require('@/store/materialBatchStore'))
+  } catch {
+    findProcessItem = () => null
+  }
+  const item = findProcessItem?.(order.itemId)
+  const itemCode = item?.code || order.itemId || ''
+  const itemName = item?.name || ''
+  const unit = item?.unit || order.unit || 'kg'
+  const qty =
+    Number(inspectQty) > 0
+      ? Number(inspectQty)
+      : Math.max(1, Number((Number(order.qty) * 0.01).toFixed(3)) || 1)
+
+  const bizScope = scheme.bizScope || '生产过程检'
+  // 工序不钉模板：一律按业务类型 + 物料 + 工序匹配
+  const matched = matchQcTemplate({
+    bizScope,
+    itemCode,
+    processCode: step.processCode || '',
+    processName: step.name || step.processName || '',
+    assayType: scheme.assayType || '',
+  })
+  if (!matched.ok) {
+    return { ok: false, message: matched.message || `未匹配到${bizScope}模板` }
+  }
+  const template = matched.template
+  const matchSource = matched.matchSource
+  if (!template || template.status === '停用') {
+    return { ok: false, message: `未匹配到可用的${bizScope}模板` }
+  }
+
+  const sheetConclusionOptionItems = normalizeSheetConclusionOptionItems(
+    template.sheetConclusionOptionItems,
+  )
+  const line = createQcTaskLineItem({
+    sourceLineId: `batch-step-${order.id}-${step.stepNo}-${scheme.id}-${Date.now()}`,
+    itemCode,
+    itemName,
+    unit,
+    receiptQty: Number(order.qty) || qty,
+    inspectQty: qty,
+    templateId: template.id,
+    templateCode: template.code,
+    templateName: template.name,
+    templateMatchSource: matchSource || 'process_scheme',
+    templateFields: cloneTemplateFieldsSnapshot(template.fields, sheetConclusionOptionItems),
+    sheetPassRule: normalizeSheetPassRule(template.sheetPassRule),
+    sheetConclusionOptionItems,
+    inspectMethod: resolveInspectMethodFromTemplate(template) || '抽检',
+  })
+  const summary = summarizeTaskTemplates([line])
+  const task = addQcTask({
+    bizScope,
+    sourceType: 'batch_instruction',
+    sourceDocId: order.id,
+    sourceDocNo: order.batchNo,
+    workOrderNo: order.batchNo,
+    workOrderId: order.id,
+    processCode: step.processCode || '',
+    processName: step.name || '',
+    processIndex: step.stepNo,
+    scheduleBatchId: order.id,
+    scheduleBatchNo: order.batchNo,
+    itemCode,
+    itemName,
+    unit,
+    processRouteName: order.equipmentRoute?.routeName || order.formulaName || '',
+    scheduleQty: Number(order.qty) || null,
+    assaySchemeId: scheme.id,
+    assaySchemeName: scheme.name,
+    assayType: scheme.assayType || '',
+    remark: `批次 ${order.batchNo} · 步骤 ${step.stepNo} ${step.name || ''} · ${scheme.name}`,
+    multiTemplate: summary.multiTemplate,
+    templateId: summary.templateId,
+    templateCode: summary.templateCode,
+    templateName: summary.templateName,
+    templateFields: summary.templateFields,
+    inspectMethod: summary.inspectMethod || line.inspectMethod || '抽检',
+    lineItems: [line],
+    qcStatus: QC_TASK_STATUS.PENDING,
+  })
+  attachStepQc(order.id, step.stepNo, task, scheme)
+  return { ok: true, task, created: true }
 }
 
 /** 打开录入页时记录录入端；状态保持「待质检」，提交后变为「已完成」 */

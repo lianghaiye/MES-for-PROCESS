@@ -3,31 +3,45 @@ import { isForbiddenProductOnlyProduce } from '@/utils/masterItemKind'
 /** 物料类型（与表单下拉一致） */
 export const MATERIAL_TYPE_OPTIONS = [
   '成品',
-  '零部件',
+  '中间体',
   '原材料',
-  '标准件',
-  '毛胚',
-  '半成品',
-  '虚拟件',
-  '配件',
+  '辅料',
+  '联产品',
+  '副产品',
+  '回收料',
+  '废弃物',
 ]
 
-/** 供应型态（与表单下拉一致） */
-export const SUPPLY_FORM_OPTIONS = ['外协件', '外购件', '自制件', '组装', '其他']
+/**
+ * 供应型态：决定本厂做、采购、外协加工还是客户来料。
+ * 自制 = 本厂产线；外购 = 直接采购；外协 = 本厂有配方/规格，原料发出外厂加工后收回；
+ * 客供 = 客户来料，不产生采购。
+ * 组装等离散项保留在旧数据里，不再作为新主数据的可选项。
+ */
+export const SUPPLY_FORM_OPTIONS = ['自制', '外购', '外协', '客供']
 
 /** ISG50 泵体/泵头总成：主数据为半成品 + 组装 */
 const SEMI_ASSEMBLY_CODES = new Set(['010040001', '010070014'])
 const SEMI_FINISHED_NAME_KEYWORDS = ['总成', '半成品', '泵体部件', '泵头部件']
 
 const LEGACY_SUPPLY_MAP = {
-  虚拟件: '其他',
-  虚拟: '其他',
-  组装件: '组装',
-  半成品: '其他',
+  自制件: '自制',
+  外购件: '外购',
+  外购: '外购',
+  外协件: '外协',
+  虚拟件: '自制',
+  虚拟: '自制',
+  半成品: '自制',
 }
 
 const LEGACY_TYPE_MAP = {
-  毛胚件: '毛胚',
+  毛胚件: '原材料',
+  毛胚: '原材料',
+  零部件: '中间体',
+  半成品: '中间体',
+  标准件: '辅料',
+  虚拟件: '中间体',
+  配件: '辅料',
 }
 
 export function normalizeSupplyForm(value) {
@@ -47,11 +61,11 @@ export function normalizeMaterialType(value) {
 function inferMaterialType(record) {
   const code = String(record.code || '')
   const name = String(record.name || '')
-  if (SEMI_ASSEMBLY_CODES.has(code)) return '半成品'
-  if (record.materialType === '虚拟件') return '虚拟件'
-  if (record.supplyForm === '虚拟件' || record.supplyForm === '虚拟') return '虚拟件'
-  if (record.materialType === '半成品') return '半成品'
-  if (SEMI_FINISHED_NAME_KEYWORDS.some((k) => name.includes(k))) return '半成品'
+  if (SEMI_ASSEMBLY_CODES.has(code)) return '中间体'
+  if (record.materialType === '虚拟件') return '中间体'
+  if (record.supplyForm === '虚拟件' || record.supplyForm === '虚拟') return '中间体'
+  if (record.materialType === '半成品') return '中间体'
+  if (SEMI_FINISHED_NAME_KEYWORDS.some((k) => name.includes(k))) return '中间体'
   return normalizeMaterialType(record.materialType) || record.materialType
 }
 
@@ -59,9 +73,9 @@ function inferSupplyForm(record) {
   const type = inferMaterialType(record)
   if (type === '虚拟件') return '其他'
   if (SEMI_ASSEMBLY_CODES.has(String(record.code || ''))) return '组装'
-  if (type === '半成品') {
+  if (type === '中间体') {
     const sf = normalizeSupplyForm(record.supplyForm)
-    return sf && sf !== '其他' ? sf : '自制件'
+    return sf && sf !== '其他' ? sf : '自制'
   }
   return normalizeSupplyForm(record.supplyForm) || record.supplyForm
 }

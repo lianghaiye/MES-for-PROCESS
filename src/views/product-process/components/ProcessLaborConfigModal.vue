@@ -381,7 +381,7 @@ function handleSave() {
 }
 
 .stat.configured {
-  color: #1677ff;
+  color: #307068;
   font-weight: 600;
 }
 
@@ -402,7 +402,7 @@ function handleSave() {
 }
 
 .price-text {
-  color: #1677ff;
+  color: #307068;
 }
 
 .status-ok {

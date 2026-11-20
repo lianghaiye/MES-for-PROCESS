@@ -354,11 +354,11 @@ function handleDelete(record) {
 }
 
 .code-link {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 
 .code-link:hover {
-  color: #4096ff;
+  color: #4e8a82;
 }
 </style>

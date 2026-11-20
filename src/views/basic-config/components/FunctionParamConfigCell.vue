@@ -89,50 +89,18 @@
     </a-radio-group>
 
     <a-radio-group
-      v-else-if="record.key === 'dualUnitIssueStrategy'"
-      :value="dualUnitIssueStrategy"
-      @change="(e) => onDualUnitIssueStrategyChange(e.target.value)"
+      v-else-if="record.key === 'processRouteMode'"
+      :value="processRouteMode"
+      @change="(e) => onProcessRouteModeChange(e.target.value)"
     >
       <a-radio
-        v-for="option in DUAL_UNIT_ISSUE_STRATEGY_OPTIONS"
+        v-for="option in PROCESS_ROUTE_MODE_OPTIONS"
         :key="option.value"
         :value="option.value"
-        :disabled="option.disabled"
       >
         {{ option.label }}
       </a-radio>
     </a-radio-group>
-
-    <a-checkbox-group
-      v-else-if="record.key === 'blankSizeAssistTools'"
-      class="checkbox-wrap"
-      :value="blankSizeAssistKeys"
-      @change="onBlankSizeAssistChange"
-    >
-      <a-checkbox
-        v-for="option in BLANK_SIZE_ASSIST_OPTIONS"
-        :key="option.value"
-        :value="option.value"
-      >
-        {{ option.label }}
-      </a-checkbox>
-    </a-checkbox-group>
-
-    <a-switch
-      v-else-if="record.key === 'enableBomLevelMts'"
-      :checked="enableBomLevelMts"
-      checked-children="开"
-      un-checked-children="关"
-      @change="onEnableBomLevelMtsChange"
-    />
-
-    <a-switch
-      v-else-if="record.key === 'enableSequentialProcessTask'"
-      :checked="enableSequentialProcessTask"
-      checked-children="开"
-      un-checked-children="关"
-      @change="onEnableSequentialProcessTaskChange"
-    />
 
     <a-switch
       v-else-if="record.key === 'enableSalesOrderDiscount'"
@@ -253,8 +221,6 @@ import {
   OUTBOUND_ISSUE_RULE_OPTIONS,
   SALES_OUTBOUND_ISSUE_RULE_OPTIONS,
   SHIP_ATTACHMENT_DECIDE_STAGE_OPTIONS,
-  DUAL_UNIT_ISSUE_STRATEGY_OPTIONS,
-  BLANK_SIZE_ASSIST_OPTIONS,
   QC_GATE_POLICY_PARAM_OPTIONS,
   QC_GATE_POLICY_BIZ_SCOPES,
   functionParamState,
@@ -269,14 +235,9 @@ import {
   getSalesOutboundIssueRule,
   setShipAttachmentDecideStage,
   getShipAttachmentDecideStage,
-  setDualUnitIssueStrategy,
-  getDualUnitIssueStrategy,
-  getBlankSizeAssistTools,
-  setBlankSizeAssistTools,
-  isBomLevelMtsEnabled,
-  setEnableBomLevelMts,
-  isSequentialProcessTaskEnabled,
-  setEnableSequentialProcessTask,
+  PROCESS_ROUTE_MODE_OPTIONS,
+  getProcessRouteMode,
+  setProcessRouteMode,
   isSalesOrderDiscountEnabled,
   setEnableSalesOrderDiscount,
   SALES_ORDER_STOCK_FULFILLMENT_DEFAULT_OPTIONS,
@@ -303,9 +264,10 @@ const inventoryDeductMode = computed(() => getInventoryDeductMode())
 const outboundIssueRule = computed(() => getOutboundIssueRule())
 const salesOutboundIssueRule = computed(() => getSalesOutboundIssueRule())
 const shipAttachmentDecideStage = computed(() => getShipAttachmentDecideStage())
-const dualUnitIssueStrategy = computed(() => getDualUnitIssueStrategy())
-const enableBomLevelMts = computed(() => isBomLevelMtsEnabled())
-const enableSequentialProcessTask = computed(() => isSequentialProcessTaskEnabled())
+const processRouteMode = computed(() => {
+  void functionParamState.params.processRouteMode
+  return getProcessRouteMode()
+})
 const enableSalesOrderDiscount = computed(() => isSalesOrderDiscountEnabled())
 const salesOrderStockFulfillmentDefault = computed(() => getSalesOrderStockFulfillmentDefault())
 const paymentLinkMode = computed(() => getPaymentLinkMode())
@@ -333,14 +295,6 @@ const autoApproveDocKeys = computed(() =>
     (option) => functionParamState.params.autoApproveDocs?.[option.value],
   ).map((option) => option.value),
 )
-
-const blankSizeAssistKeys = computed(() => {
-  void functionParamState.params.blankSizeAssistTools
-  const tools = getBlankSizeAssistTools()
-  return BLANK_SIZE_ASSIST_OPTIONS.filter((option) => tools[option.value]).map(
-    (option) => option.value,
-  )
-})
 
 function toastSave(res, successText = '已保存') {
   if (!res.ok) {
@@ -371,23 +325,8 @@ function onSalesOutboundIssueRuleChange(mode) {
 function onShipAttachmentDecideStageChange(mode) {
   toastSave(setShipAttachmentDecideStage(mode))
 }
-function onDualUnitIssueStrategyChange(mode) {
-  toastSave(setDualUnitIssueStrategy(mode))
-}
-function onBlankSizeAssistChange(keys) {
-  toastSave(setBlankSizeAssistTools(keys))
-}
-function onEnableBomLevelMtsChange(checked) {
-  toastSave(
-    setEnableBomLevelMts(checked),
-    checked ? '已开启生产计划 BOM 级 MTS' : '已关闭生产计划 BOM 级 MTS',
-  )
-}
-function onEnableSequentialProcessTaskChange(checked) {
-  toastSave(
-    setEnableSequentialProcessTask(checked),
-    checked ? '已开启工序任务时序下发' : '已关闭工序任务时序下发（各工序并行可见）',
-  )
+function onProcessRouteModeChange(value) {
+  toastSave(setProcessRouteMode(value), '已更新工艺路线模式')
 }
 function onEnableSalesOrderDiscountChange(checked) {
   toastSave(

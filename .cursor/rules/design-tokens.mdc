@@ -12,12 +12,12 @@ alwaysApply: false
 
 | 令牌 | 用途 | 值 |
 |------|------|-----|
-| primary | 主按钮、链接、选中、loading | `#1677ff` |
-| primary-hover | hover | `#4096ff` |
-| primary-active | mousedown | `#0958d9` |
-| primary-bg | 选中行/标签/弱化背景 | `#e6f4ff` |
-| primary-disabled | 主按钮禁用 | `#8ec6ff` |
-| link | 列表操作列链接 | `#1677ff` |
+| primary | 主按钮、链接、选中、loading | `#307068` |
+| primary-hover | hover | `#4E8A82` |
+| primary-active | mousedown | `#245850` |
+| primary-bg | 选中行/标签/弱化背景 | `#E7F3F1` |
+| primary-disabled | 主按钮禁用 | `#A9C6C2` |
+| link | 列表操作列链接 | `#307068` |
 
 ## 2.2 功能色
 
@@ -26,7 +26,7 @@ alwaysApply: false
 | 成功 | `#52c41a` | `#f6ffed` | 启用/正常、成功提示 |
 | 警告 | `#faad14` | `#fffbe6` | 待处理、需关注 |
 | 错误 | `#ff4d4f` | `#fff2f0` | 校验错误、删除类 |
-| 信息 | `#1677ff` | `#e6f4ff` | 进行中、系统提示 |
+| 信息 | `#307068` | `#E7F3F1` | 进行中、系统提示 |
 
 ## 2.3 中性色 / 文字
 

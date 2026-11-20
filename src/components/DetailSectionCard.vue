@@ -112,11 +112,11 @@ function toggle() {
   padding: 0 4px;
   height: auto;
   line-height: 22px;
-  color: #1677ff;
+  color: #307068;
 
   &:hover,
   &:focus {
-    color: #4096ff;
+    color: #4e8a82;
   }
 }
 

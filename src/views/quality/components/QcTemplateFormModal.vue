@@ -28,6 +28,21 @@
           </div>
         </div>
 
+        <div v-if="isProcessInspectScope" class="form-row form-row-last">
+          <label class="form-label required">化验类型</label>
+          <a-select
+            v-model:value="form.assayType"
+            allow-clear
+            placeholder="请选择化验类型"
+            style="flex: 1; min-width: 0"
+            :options="assayTypeOpts"
+          />
+        </div>
+        <div v-if="isProcessInspectScope" class="field-hint process-link-hint">
+          与工序方案上的化验类型一致（投料前核对 / 中控取样 / 转序放行），发起化验时按业务类型 +
+          化验类型 + 物料 + 工序匹配。
+        </div>
+
         <div class="form-row form-row-last">
           <label class="form-label required">适用范围</label>
           <a-radio-group v-model:value="form.scopeType" class="scope-radio">
@@ -398,6 +413,7 @@ import {
   qcTemplateBizScopeOptions,
   qcTemplateScopeTypeOptions,
 } from '@/mock/qcTemplates'
+import { PROCESS_ASSAY_TYPE_OPTIONS } from '@/utils/qcProcessConfig'
 import { productCategoryState } from '@/store/productCategoryStore' // 类别树取自 store
 import { materialCategoryState } from '@/store/materialCategoryStore'
 import { addQcTemplate, getQcTemplateById, updateQcTemplate } from '@/store/qcTemplateStore'
@@ -407,6 +423,7 @@ import {
   normalizeTemplateProcessLinks,
 } from '@/utils/qcTemplateProcessLink'
 import { QC_TASK_RESULT } from '@/constants/qcTaskResult'
+import { qcBizScopeLabel } from '@/constants/qcBizScopeLabel'
 import {
   DEFAULT_CONCLUSION_OPTION_ITEMS,
   QC_CONCLUSION_RESULT_OPTIONS,
@@ -510,7 +527,10 @@ const fieldTypeMap = {
 }
 
 const scopeTypeOpts = qcTemplateScopeTypeOptions
-const bizScopeOpts = qcTemplateBizScopeOptions.map((v) => ({ label: v, value: v }))
+const bizScopeOpts = qcTemplateBizScopeOptions.map((v) => ({
+  label: qcBizScopeLabel(v),
+  value: v,
+}))
 const conclusionResultOpts = QC_CONCLUSION_RESULT_OPTIONS
 
 const isEdit = computed(() => Boolean(editingId.value))
@@ -526,6 +546,7 @@ const fieldModalTitle = computed(() => {
 const form = reactive({
   name: '',
   bizScope: '成品检',
+  assayType: undefined,
   scopeType: QC_TEMPLATE_SCOPE_TYPE.GLOBAL,
   objects: [],
   processLinks: [],
@@ -535,6 +556,10 @@ const form = reactive({
 })
 
 const isProcessInspectScope = computed(() => isProcessInspectBizScope(form.bizScope))
+const assayTypeOpts = PROCESS_ASSAY_TYPE_OPTIONS.map((item) => ({
+  label: item.label,
+  value: item.value,
+}))
 
 const processLinkCodes = computed({
   get() {
@@ -588,7 +613,12 @@ function resolveProcessLinks(record) {
 watch(
   () => form.bizScope,
   (val) => {
-    if (!isProcessInspectBizScope(val)) form.processLinks = []
+    if (!isProcessInspectBizScope(val)) {
+      form.processLinks = []
+      form.assayType = undefined
+      return
+    }
+    if (!form.assayType) form.assayType = 'in_process'
   },
 )
 
@@ -983,6 +1013,7 @@ function resetForm() {
   templateStatus.value = '停用'
   form.name = ''
   form.bizScope = '成品检'
+  form.assayType = undefined
   form.scopeType = QC_TEMPLATE_SCOPE_TYPE.GLOBAL
   form.objects = []
   form.processLinks = []
@@ -1014,6 +1045,9 @@ function loadEdit(record) {
   templateStatus.value = record.status || '停用'
   form.name = record.name || ''
   form.bizScope = resolveBizScope(record)
+  form.assayType = isProcessInspectBizScope(form.bizScope)
+    ? String(record.assayType || '').trim() || 'in_process'
+    : undefined
   form.scopeType = resolveScopeType(record)
   form.objects = Array.isArray(record.objects) ? record.objects.map((o) => ({ ...o })) : []
   form.processLinks = resolveProcessLinks(record)
@@ -1059,6 +1093,7 @@ function captureDraft() {
     form: {
       name: form.name,
       bizScope: form.bizScope,
+      assayType: form.assayType,
       scopeType: form.scopeType,
       objects: (form.objects || []).map((o) => ({ ...o })),
       processLinks: (form.processLinks || []).map((row) => ({ ...row })),
@@ -1076,6 +1111,9 @@ function restoreDraft() {
   templateStatus.value = draft.templateStatus || '停用'
   form.name = draft.form.name || ''
   form.bizScope = draft.form.bizScope || '成品检'
+  form.assayType = isProcessInspectBizScope(form.bizScope)
+    ? String(draft.form.assayType || '').trim() || 'in_process'
+    : undefined
   form.scopeType = draft.form.scopeType || QC_TEMPLATE_SCOPE_TYPE.GLOBAL
   form.objects = Array.isArray(draft.form.objects) ? draft.form.objects.map((o) => ({ ...o })) : []
   form.processLinks = resolveProcessLinks({ processLinks: draft.form.processLinks || [] })
@@ -1458,6 +1496,7 @@ function buildSavePayload() {
   return {
     name: String(form.name).trim(),
     bizScope: form.bizScope,
+    assayType: isProcessInspectBizScope(form.bizScope) ? form.assayType || '' : '',
     scopeType: form.scopeType,
     objects,
     processLinks: isProcessInspectBizScope(form.bizScope)
@@ -1485,6 +1524,10 @@ function handleSave(conflictResolution = null) {
   }
   if (!form.bizScope) {
     message.warning('请选择业务类型')
+    return
+  }
+  if (isProcessInspectBizScope(form.bizScope) && !form.assayType) {
+    message.warning('请选择化验类型')
     return
   }
   if (!form.scopeType) {
@@ -1726,8 +1769,8 @@ function onConflictConfirm(resolution) {
 }
 
 .sheet-pass-option.active {
-  border-color: #91caff;
-  background: #e6f4ff;
+  border-color: #a9c6c2;
+  background: #e7f2f0;
 }
 
 .sheet-pass-label {
@@ -1744,13 +1787,13 @@ function onConflictConfirm(resolution) {
 .sheet-pass-key-tip {
   margin-top: 8px;
   font-size: 12px;
-  color: #1677ff;
+  color: #307068;
 }
 
 .sheet-conclusion-options {
   margin-top: 12px;
   padding: 12px;
-  border: 1px solid #e6f4ff;
+  border: 1px solid #e7f2f0;
   border-radius: 6px;
   background: #f9fcff;
 }
@@ -1784,7 +1827,7 @@ function onConflictConfirm(resolution) {
 }
 
 :deep(.field-row-drag-over) > td {
-  background: #e6f4ff !important;
+  background: #e7f2f0 !important;
 }
 
 :deep(tr[draggable='true']) {

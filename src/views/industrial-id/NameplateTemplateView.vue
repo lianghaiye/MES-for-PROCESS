@@ -1278,12 +1278,12 @@ export default {
   border: 1px solid transparent;
 }
 .btn-primary {
-  background: #1890ff;
+  background: #307068;
   color: #fff;
-  border-color: #1890ff;
+  border-color: #307068;
 }
 .btn-primary:hover {
-  background: #096dd9;
+  background: #245850;
 }
 .btn-default {
   background: #fff;
@@ -1291,8 +1291,8 @@ export default {
   border-color: #d1d5db;
 }
 .btn-default:hover {
-  border-color: #1890ff;
-  color: #1890ff;
+  border-color: #307068;
+  color: #307068;
 }
 .btn-default:disabled {
   color: #d1d5db;
@@ -1313,13 +1313,13 @@ export default {
 .btn-link {
   background: none;
   border: none;
-  color: #1890ff;
+  color: #307068;
   padding: 0;
   font-size: 13px;
   cursor: pointer;
 }
 .btn-link:hover {
-  color: #096dd9;
+  color: #245850;
 }
 .btn-icon {
   background: none;
@@ -1393,8 +1393,8 @@ export default {
 .scope-tag {
   display: inline-block;
   padding: 2px 8px;
-  background: #e6f7ff;
-  color: #1890ff;
+  background: #e7f2f0;
+  color: #307068;
   border-radius: 3px;
   font-size: 12px;
 }
@@ -1406,8 +1406,8 @@ export default {
   font-size: 12px;
 }
 .type-tag.system-tag {
-  background: #e6f7ff;
-  color: #1890ff;
+  background: #e7f2f0;
+  color: #307068;
 }
 .object-tags {
   display: flex;
@@ -1415,8 +1415,8 @@ export default {
   gap: 4px;
 }
 .obj-tag {
-  background: #f0f5ff;
-  color: #2f54eb;
+  background: #e7f2f0;
+  color: #307068;
   padding: 2px 6px;
   border-radius: 3px;
   font-size: 11px;
@@ -1434,25 +1434,25 @@ export default {
   white-space: nowrap;
 }
 .action-link {
-  color: #1890ff;
+  color: #307068;
   cursor: pointer;
   margin-right: 8px;
   font-size: 13px;
   text-decoration: none;
 }
 .action-link:hover {
-  color: #096dd9;
+  color: #245850;
 }
 .action-link.danger {
   color: #dc2626;
 }
 .code-link {
-  color: #1890ff;
+  color: #307068;
   cursor: pointer;
   text-decoration: underline;
 }
 .code-link:hover {
-  color: #096dd9;
+  color: #245850;
 }
 
 /* ---- 分页 ---- */
@@ -1598,11 +1598,11 @@ export default {
   background: #e5e7eb;
 }
 .btn-primary.btn-pill {
-  background: #1890ff;
+  background: #307068;
   color: #fff;
 }
 .btn-primary.btn-pill:hover {
-  background: #096dd9;
+  background: #245850;
 }
 .btn-danger.btn-pill {
   background: #ff4d4f;
@@ -1640,7 +1640,7 @@ export default {
 }
 .form-input:focus {
   outline: none;
-  border-color: #1890ff;
+  border-color: #307068;
   box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
 }
 .form-hint {
@@ -1660,7 +1660,7 @@ export default {
 }
 .radio-item input {
   margin-right: 4px;
-  accent-color: #1890ff;
+  accent-color: #307068;
 }
 
 /* ---- 适用对象选择器 ---- */
@@ -1679,8 +1679,8 @@ export default {
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  background: #f0f5ff;
-  color: #2f54eb;
+  background: #e7f2f0;
+  color: #307068;
   border-radius: 3px;
   font-size: 12px;
 }
@@ -1741,10 +1741,10 @@ export default {
   cursor: pointer;
 }
 .dropdown-item:hover {
-  background: #f0f7ff;
+  background: #e7f2f0;
 }
 .dropdown-item input {
-  accent-color: #1890ff;
+  accent-color: #307068;
 }
 
 /* ---- 字段区域 ---- */
@@ -1814,17 +1814,17 @@ export default {
   background: #fff;
 }
 .product-card:hover {
-  border-color: #1890ff;
+  border-color: #307068;
 }
 .product-card.selected {
-  border-color: #1890ff;
-  background: #f0f7ff;
+  border-color: #307068;
+  background: #e7f2f0;
 }
 .product-check {
   margin-bottom: 6px;
 }
 .product-check input {
-  accent-color: #1890ff;
+  accent-color: #307068;
 }
 .product-img {
   text-align: center;
@@ -2064,7 +2064,7 @@ export default {
   color: #1f2937;
   margin: 0 0 12px;
   padding-left: 10px;
-  border-left: 3px solid #1890ff;
+  border-left: 3px solid #307068;
 }
 
 @keyframes fadeIn {

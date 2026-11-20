@@ -18,7 +18,7 @@
       <div>
         <component :is="menu" />
         <a-divider style="margin: 4px 0" />
-        <div class="search-more-row" @mousedown.prevent @click="openPicker">搜索更多...</div>
+        <div class="search-more-row" @mousedown.prevent @click="openPicker">选择更多</div>
       </div>
     </template>
   </a-auto-complete>
@@ -147,7 +147,7 @@ function onPicked(items) {
 .search-more-row {
   padding: 8px 12px;
   text-align: center;
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
   font-size: 13px;
 

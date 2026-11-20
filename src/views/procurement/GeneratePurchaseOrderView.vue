@@ -1132,7 +1132,7 @@ function handleConfirm() {
     z-index: 2;
 
     &:hover {
-      background: rgba(22, 119, 255, 0.25);
+      background: rgba(48, 112, 104, 0.25);
     }
   }
 }
@@ -1149,12 +1149,12 @@ function handleConfirm() {
 }
 
 .stock-alert-above {
-  color: #1677ff;
+  color: #307068;
   font-weight: 500;
 }
 
 .order-size-link {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 </style>

@@ -363,7 +363,7 @@ function onSaved() {
   margin-bottom: 8px;
 }
 .link-code {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 </style>

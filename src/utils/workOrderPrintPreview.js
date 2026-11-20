@@ -274,12 +274,8 @@ export function loadWorkOrderPrintPayload(key) {
   }
 }
 
-export function openWorkOrderPrintPreview(router, payload, { autoPrint = false } = {}) {
-  const key = saveWorkOrderPrintPayload(payload)
-  const query = { key }
-  if (autoPrint) query.autoPrint = '1'
-  const { href } = router.resolve({ name: 'production-work-order-preview', query })
-  window.open(href, '_blank')
+export function openWorkOrderPrintPreview() {
+  return null
 }
 
 export async function openWorkOrderBatchPrintPreview(router, workOrders, options = {}) {

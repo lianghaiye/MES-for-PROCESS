@@ -1376,7 +1376,7 @@ function handleDelete() {
 }
 
 .link-code {
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
 }
 
@@ -1400,7 +1400,7 @@ function handleDelete() {
 
 .piece-hint {
   margin-left: 4px;
-  color: #1677ff;
+  color: #307068;
   font-size: 12px;
 }
 

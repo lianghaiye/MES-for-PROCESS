@@ -171,7 +171,7 @@ function syncTopMaterialFromWorkItem(top, workItem) {
   top.gapQty = gapQty
   top.planQty = planQty
   top.supplyType = supplyType
-  top.joinPlan = supplyType === '自制件' ? '是' : '否'
+  top.joinPlan = supplyType === '自制' || supplyType === '自制件' ? '是' : '否'
   top.bom = workItem.bomName || workItem.ebomSnapshot?.bomName || ''
 }
 
@@ -213,7 +213,7 @@ export function buildTopLevelPlanMaterial(workItem) {
     demandQty,
     gapQty,
     planQty,
-    joinPlan: supplyType === '自制件' ? '是' : '否',
+    joinPlan: supplyType === '自制' || supplyType === '自制件' ? '是' : '否',
     processRoute: workItem.processRoute || defaults.processRoute || '',
     bom: workItem.bomName || workItem.ebomSnapshot?.bomName || '',
     children: workItem.materials || [],

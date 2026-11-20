@@ -350,11 +350,11 @@ function canShowDispatchAction(record) {
   }
 
   .link-code {
-    color: #1677ff;
+    color: #307068;
     cursor: pointer;
 
     &:hover {
-      color: #4096ff;
+      color: #4e8a82;
     }
   }
 }

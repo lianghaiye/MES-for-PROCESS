@@ -52,7 +52,7 @@ const appendixItems = [{ key: 'wage-formulas', href: '#wage-formulas', title: 'å
   color: #1a1a2e;
   margin: 0 0 12px;
   padding-left: 10px;
-  border-left: 4px solid #1677ff;
+  border-left: 4px solid #307068;
 }
 
 .feature-card {

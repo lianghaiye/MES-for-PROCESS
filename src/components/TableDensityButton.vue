@@ -38,7 +38,7 @@ function onSelect({ key }) {
 }
 
 .table-density-trigger:hover {
-  color: #1677ff;
+  color: #307068;
 }
 
 .density-icon {

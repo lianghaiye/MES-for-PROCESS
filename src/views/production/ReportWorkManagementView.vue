@@ -276,8 +276,8 @@ onMounted(handleSearch)
     margin-bottom: 12px;
 
     :deep(.ant-col:nth-child(3n + 1) .stat-card) {
-      background: linear-gradient(145deg, #e6f4ff 0%, #f0f7ff 45%, #ffffff 100%);
-      border-color: #91caff;
+      background: linear-gradient(145deg, #e7f2f0 0%, #f0f7ff 45%, #ffffff 100%);
+      border-color: #a9c6c2;
     }
 
     :deep(.ant-col:nth-child(3n + 2) .stat-card) {
@@ -292,12 +292,12 @@ onMounted(handleSearch)
   }
 
   .stat-card {
-    background: linear-gradient(145deg, #e6f4ff 0%, #f0f7ff 45%, #ffffff 100%);
-    border: 1px solid #91caff;
+    background: linear-gradient(145deg, #e7f2f0 0%, #f0f7ff 45%, #ffffff 100%);
+    border: 1px solid #a9c6c2;
     border-radius: 8px;
     padding: 16px;
     margin-bottom: 8px;
-    box-shadow: 0 1px 2px rgba(22, 119, 255, 0.06);
+    box-shadow: 0 1px 2px rgba(48, 112, 104, 0.06);
   }
 
   .stat-title {
@@ -325,7 +325,7 @@ onMounted(handleSearch)
   }
 
   .qty-text {
-    color: #1677ff;
+    color: #307068;
     font-weight: 500;
   }
 

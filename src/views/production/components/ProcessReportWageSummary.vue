@@ -512,7 +512,7 @@ function formatSubsidyAmount(val) {
 .formula-link {
   padding: 0;
   height: auto;
-  color: #1677ff;
+  color: #307068;
 }
 
 .wage-desc {
@@ -610,8 +610,8 @@ function formatSubsidyAmount(val) {
 }
 
 .wage-card-total {
-  background: linear-gradient(180deg, #e6f4ff 0%, #f5faff 55%, #ffffff 100%);
-  border: 1px solid #91caff;
+  background: linear-gradient(180deg, #e7f2f0 0%, #f5faff 55%, #ffffff 100%);
+  border: 1px solid #a9c6c2;
 }
 
 .wage-card-label {

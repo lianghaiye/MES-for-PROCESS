@@ -233,7 +233,7 @@ function onReset() {
   color: #1c2b3a;
   margin-bottom: 8px;
   padding-left: 8px;
-  border-left: 3px solid #1677ff;
+  border-left: 3px solid #307068;
 }
 
 .updated-tip {

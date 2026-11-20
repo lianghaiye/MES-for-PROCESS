@@ -527,7 +527,7 @@ defineExpose({ openInvoice, openPayment })
   word-break: break-all;
 
   &.remain {
-    color: #1677ff;
+    color: #307068;
   }
 }
 
@@ -553,13 +553,13 @@ defineExpose({ openInvoice, openPayment })
     background 0.15s ease;
 
   &:hover {
-    border-color: #91caff;
+    border-color: #a9c6c2;
   }
 
   &.is-active {
-    border-color: #1677ff;
+    border-color: #307068;
     background: #f0f7ff;
-    box-shadow: 0 0 0 1px #1677ff inset;
+    box-shadow: 0 0 0 1px #307068 inset;
   }
 }
 
@@ -621,7 +621,7 @@ defineExpose({ openInvoice, openPayment })
 }
 
 .is-apply {
-  color: #1677ff;
+  color: #307068;
   font-weight: 600;
 }
 

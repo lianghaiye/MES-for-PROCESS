@@ -60,10 +60,10 @@ function openReport(item) {
 .hero-card {
   margin-bottom: 16px;
   padding: 20px 20px 18px;
-  background: linear-gradient(135deg, #1677ff 0%, #0958d9 55%, #003eb3 100%);
+  background: linear-gradient(135deg, #307068 0%, #245850 55%, #1a403c 100%);
   border-radius: 10px;
   color: #fff;
-  box-shadow: 0 8px 24px rgba(22, 119, 255, 0.2);
+  box-shadow: 0 8px 24px rgba(48, 112, 104, 0.2);
 }
 
 .hero-title {
@@ -94,7 +94,7 @@ function openReport(item) {
   width: 4px;
   height: 16px;
   border-radius: 4px;
-  background: #1677ff;
+  background: #307068;
 }
 
 .group-title {
@@ -123,8 +123,8 @@ function openReport(item) {
     box-shadow 0.15s;
 
   &:hover {
-    border-color: #91caff;
-    box-shadow: 0 4px 12px rgba(22, 119, 255, 0.12);
+    border-color: #a9c6c2;
+    box-shadow: 0 4px 12px rgba(48, 112, 104, 0.12);
   }
 }
 
@@ -137,7 +137,7 @@ function openReport(item) {
 .card-q {
   margin-top: 6px;
   font-size: 13px;
-  color: #1677ff;
+  color: #307068;
 }
 
 .card-desc {
@@ -160,6 +160,6 @@ function openReport(item) {
   border-top: 1px solid #f0f0f0;
   font-size: 13px;
   font-weight: 600;
-  color: #1677ff;
+  color: #307068;
 }
 </style>

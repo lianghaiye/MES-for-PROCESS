@@ -25,17 +25,6 @@
             </a-form-item>
           </a-col>
           <a-col :xs="24" :sm="12" :md="6">
-            <a-form-item label="资源类型">
-              <a-select
-                v-model:value="filters.resourceType"
-                allow-clear
-                size="small"
-                placeholder="请选择 资源类型"
-                :options="resourceTypeOpts"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :sm="12" :md="6">
             <a-form-item label="状态">
               <a-select
                 v-model:value="filters.status"
@@ -100,60 +89,88 @@
       >
         <template #bodyCell="{ column, record, index }">
           <template v-if="column.key === 'index'">{{ index + 1 }}</template>
-          <template v-else-if="column.key === 'code'">
-            <a class="link-code" @click="goDetail(record)">{{ record.code }}</a>
-          </template>
-          <template v-else-if="column.key === 'defaultExecutors'">
-            <div v-if="record.defaultExecutors?.length" class="executor-tags">
-              <a-tag
-                v-for="name in record.defaultExecutors"
-                :key="name"
-                color="processing"
-                class="executor-tag"
-              >
-                {{ name }}
-              </a-tag>
-            </div>
-            <span v-else class="muted">—</span>
-          </template>
-          <template v-else-if="column.key === 'processConfig'">
-            <div v-if="processConfigLabels(record).length" class="executor-tags">
-              <a-tag
-                v-for="item in processConfigLabels(record)"
-                :key="item.label"
-                :color="item.color"
-                class="executor-tag"
-              >
-                {{ item.label }}
-              </a-tag>
-            </div>
-            <span v-else class="muted">—</span>
-          </template>
-          <template v-else-if="column.key === 'image'">
-            <img v-if="record.image" :src="record.image" class="thumb" alt="" />
-            <span v-else class="thumb-placeholder">—</span>
-          </template>
           <template v-else-if="column.key === 'status'">
             <a-tag :color="record.status === '使用中' ? 'processing' : 'default'">{{
-              record.status
+              record.status || '—'
             }}</a-tag>
+          </template>
+          <template v-else-if="column.key === 'code'">
+            <a class="link-code" @click="goDetail(record)">{{ record.code || '—' }}</a>
+          </template>
+          <template v-else-if="column.key === 'name'">
+            {{ record.name || '—' }}
+          </template>
+          <template v-else-if="column.key === 'category'">
+            {{ record.category || '—' }}
+          </template>
+          <template v-else-if="column.key === 'resourceType'">
+            {{ record.resourceType || '岗位' }}
+          </template>
+          <template v-else-if="column.key === 'responsible'">
+            <span v-if="formatProcessResponsible(record)">{{
+              formatProcessResponsible(record)
+            }}</span>
+            <span v-else class="muted">—</span>
+          </template>
+          <template v-else-if="column.key === 'equipment'">
+            <span v-if="formatProcessEquipment(record)" :title="formatProcessEquipment(record)">{{
+              formatProcessEquipment(record)
+            }}</span>
+            <span v-else class="muted">—</span>
+          </template>
+          <template v-else-if="column.key === 'params'">
+            <span v-if="formatProcessParams(record)" :title="formatProcessParams(record)">{{
+              formatProcessParams(record)
+            }}</span>
+            <span v-else class="muted">—</span>
+          </template>
+          <template v-else-if="column.key === 'formTemplate'">
+            <span v-if="formTemplateText(record)" :title="formTemplateText(record)">{{
+              formTemplateText(record)
+            }}</span>
+            <span v-else class="muted">—</span>
+          </template>
+          <template v-else-if="column.key === 'assay'">
+            <span v-if="assaySchemeText(record)" :title="assaySchemeText(record)">{{
+              assaySchemeText(record)
+            }}</span>
+            <span v-else class="muted">—</span>
+          </template>
+          <template v-else-if="column.key === 'gate'">
+            <a-tag :color="record.gateMode === 'hard' ? 'warning' : 'default'">{{
+              formatProcessGate(record.gateMode)
+            }}</a-tag>
+          </template>
+          <template v-else-if="column.key === 'transfer'">
+            <span v-if="record.transferCondition" :title="record.transferCondition">{{
+              record.transferCondition
+            }}</span>
+            <span v-else class="muted">—</span>
+          </template>
+          <template v-else-if="column.key === 'refCount'">
+            {{ countRoutesReferencingProcess(record.id) }}
+          </template>
+          <template v-else-if="column.key === 'creator'">
+            {{ record.creator || '—' }}
+          </template>
+          <template v-else-if="column.key === 'createdAt'">
+            {{ record.createdAt || '—' }}
+          </template>
+          <template v-else-if="column.key === 'updater'">
+            {{ record.updater || '—' }}
+          </template>
+          <template v-else-if="column.key === 'updatedAt'">
+            {{ record.updatedAt || '—' }}
           </template>
           <template v-else-if="column.key === 'actions'">
             <a-space :size="8">
               <a @click="openEdit(record)">编辑</a>
-              <a @click="openLaborConfig(record)">工时配置</a>
               <a class="danger-link" @click="confirmDelete(record)">删除</a>
             </a-space>
           </template>
         </template>
       </a-table>
     </div>
-
-    <ProcessLaborConfigModal
-      v-model:open="laborModalOpen"
-      :process="laborProcess"
-      @saved="handleSearch"
-    />
 
     <TableColumnSettingDrawer
       v-model:open="columnDrawerOpen"
@@ -179,7 +196,6 @@ import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Modal, message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons-vue'
-import ProcessLaborConfigModal from './components/ProcessLaborConfigModal.vue'
 import TableColumnSettingDrawer from '@/components/TableColumnSettingDrawer.vue'
 import TableColumnSettingButton from '@/components/TableColumnSettingButton.vue'
 import { useTableColumnSettings } from '@/composables/useTableColumnSettings'
@@ -190,24 +206,19 @@ import {
   processConfigState,
   filterProcessConfig,
   deleteProcessConfig,
-  getOperationLabels,
-  PROCESS_OPERATION_DEFS,
   PROCESS_STATUS,
-  RESOURCE_TYPES,
+  formatProcessResponsible,
+  formatProcessEquipment,
+  formatProcessGate,
+  formatProcessParams,
 } from '@/store/processConfigStore'
+import { countRoutesReferencingProcess } from '@/store/processRouteStore'
 import { getActiveCategoryOptions } from '@/store/processCategoryStore'
-import { getProductionMode, isMinimalReportMode } from '@/store/businessRuleStore'
+import { getProcessFormTemplateById } from '@/store/processFormTemplateStore'
+import { assayTypeLabel, normalizeProcessQcConfigs } from '@/utils/qcProcessConfig'
 import ImportExcelModal from '@/components/ImportExcelModal.vue'
 import ImportExportHistoryModal from '@/components/ImportExportHistoryModal.vue'
 import { processRouteBundleImportDef } from '@/utils/importDefs/processRouteBundleImport'
-
-/** 极简模式列表仅展示这些工序操作标签 */
-const MINIMAL_PROCESS_OPERATION_KEYS = new Set([
-  'opQc',
-  'opOutsource',
-  'opDisassembly',
-  'opDisassemblyQc',
-])
 
 const router = useRouter()
 const { openTab } = useTabs()
@@ -217,78 +228,70 @@ const historyOpen = ref(false)
 const filters = reactive({
   name: '',
   category: undefined,
-  resourceType: undefined,
   status: undefined,
 })
 const applied = reactive({
   name: '',
   category: undefined,
-  resourceType: undefined,
   status: undefined,
 })
-const laborModalOpen = ref(false)
-const laborProcess = ref(null)
 
 const categoryOpts = computed(() => getActiveCategoryOptions())
-const resourceTypeOpts = RESOURCE_TYPES.map((v) => ({ label: v, value: v }))
 const statusOpts = PROCESS_STATUS.map((v) => ({ label: v, value: v }))
 
-const isMinimalMode = computed(() => {
-  const mode = getProductionMode()
-  return mode === 'minimal' || mode === 'minimal_salary' || isMinimalReportMode()
-})
-
-function processConfigLabels(record) {
-  const tags = []
-  if (record?.isBlanking) {
-    tags.push({ label: '下料', color: 'orange' })
-  }
-  let labels = getOperationLabels(record)
-  if (isMinimalMode.value) {
-    const allow = new Set(
-      PROCESS_OPERATION_DEFS.filter((d) => MINIMAL_PROCESS_OPERATION_KEYS.has(d.key)).map(
-        (d) => d.label,
-      ),
-    )
-    labels = labels.filter((label) => allow.has(label))
-  }
-  labels.forEach((label) => {
-    tags.push({ label, color: 'blue' })
-  })
-  return tags
-}
-
 const allBaseColumns = [
-  { title: '#', key: 'index', width: 48, align: 'center' },
-  { title: '工序编码', key: 'code', width: 130 },
-  { title: '工序名称', dataIndex: 'name', width: 140 },
-  { title: '工序分类', dataIndex: 'category', width: 100 },
-  { title: '工序配置', key: 'processConfig', width: 240, ellipsis: true },
-  { title: '资源类型', dataIndex: 'resourceType', width: 100 },
-  { title: '默认执行人/工组', key: 'defaultExecutors', width: 180, ellipsis: true },
-  { title: '图片', key: 'image', width: 72 },
-  { title: '状态', key: 'status', width: 90 },
-  { title: '创建日期', dataIndex: 'createdAt', width: 110 },
-  { title: '更新日期', dataIndex: 'updatedAt', width: 110 },
-  { title: '操作', key: 'actions', width: 180, fixed: 'right' },
+  { title: '序号', key: 'index', width: 56, align: 'center', fixed: 'left' },
+  { title: '状态', key: 'status', width: 88, fixed: 'left' },
+  { title: '工序编码', key: 'code', width: 130, fixed: 'left' },
+  { title: '工序名称', key: 'name', dataIndex: 'name', width: 110 },
+  { title: '工序分类', key: 'category', dataIndex: 'category', width: 100 },
+  { title: '资源类型', key: 'resourceType', width: 90 },
+  { title: '默认执行', key: 'responsible', width: 100 },
+  { title: '关联设备', key: 'equipment', width: 180, ellipsis: true },
+  { title: '工艺参数', key: 'params', width: 160, ellipsis: true },
+  { title: '过程记录', key: 'formTemplate', width: 140, ellipsis: true },
+  { title: '化验方案', key: 'assay', width: 160, ellipsis: true },
+  { title: '门禁', key: 'gate', width: 150 },
+  { title: '转移条件', key: 'transfer', width: 160, ellipsis: true },
+  { title: '被引用数', key: 'refCount', width: 90, align: 'right' },
+  { title: '创建人', key: 'creator', dataIndex: 'creator', width: 100 },
+  { title: '创建时间', key: 'createdAt', dataIndex: 'createdAt', width: 150 },
+  { title: '更新人', key: 'updater', dataIndex: 'updater', width: 100 },
+  { title: '更新时间', key: 'updatedAt', dataIndex: 'updatedAt', width: 150 },
+  { title: '操作', key: 'actions', width: 120, fixed: 'right' },
 ]
 
 const { columnSettings, columnDrawerOpen, displayColumns, tableScrollX, defaultColumnSettings } =
-  useTableColumnSettings('process-config-list-v2', allBaseColumns)
+  useTableColumnSettings('process-config-list-v11', allBaseColumns)
+
+function formTemplateText(record) {
+  const id = record?.formTemplateId
+  if (!id) return ''
+  const tpl = getProcessFormTemplateById(id)
+  if (!tpl) return id
+  return tpl.name || tpl.code || id
+}
+
+function assaySchemeText(record) {
+  const list = normalizeProcessQcConfigs(record?.qcConfigs || [])
+  if (!list.length) return ''
+  return list
+    .map((row) => row.name || assayTypeLabel(row.assayType, row.bizScope))
+    .filter(Boolean)
+    .join('、')
+}
 
 const filteredList = computed(() => filterProcessConfig(processConfigState.processes, applied))
 
 function handleSearch() {
   applied.name = filters.name.trim()
   applied.category = filters.category
-  applied.resourceType = filters.resourceType
   applied.status = filters.status
 }
 
 function handleReset() {
   filters.name = ''
   filters.category = undefined
-  filters.resourceType = undefined
   filters.status = undefined
   handleSearch()
 }
@@ -306,11 +309,6 @@ function openEdit(record) {
     path: `/product-process/process-config/${record.id}/edit`,
     title: `编辑工序 ${record.code || record.name || ''}`.trim(),
   })
-}
-
-function openLaborConfig(record) {
-  laborProcess.value = record
-  laborModalOpen.value = true
 }
 
 function goDetail(record) {
@@ -352,7 +350,7 @@ function confirmDelete(record) {
   }
 
   .link-code {
-    color: #1677ff;
+    color: #307068;
     cursor: pointer;
   }
 

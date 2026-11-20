@@ -7,24 +7,15 @@ export const MATERIAL_CATEGORY_DEFAULT = {
   count: 0,
 }
 
-/** 演示业务类别（可删可改） */
+/** 流程型演示类别（可删可改） */
 const DEMO_MATERIAL_CATEGORIES = [
-  { key: 'cat-009', code: '009', title: '附件', count: 12 },
-  { key: 'cat-008', code: '008', title: '标准件', count: 28 },
-  { key: 'cat-007', code: '007', title: '毛坯件', count: 15 },
-  { key: 'cat-006', code: '006', title: '半成品', count: 22 },
-  { key: 'cat-005', code: '005', title: '零件', count: 35 },
-  {
-    key: 'cat-004',
-    code: '004',
-    title: '部件',
-    count: 52,
-    children: [
-      { key: 'cat-004-001', code: '001', title: '叶轮', count: 18, parentKey: 'cat-004' },
-      { key: 'cat-004-002', code: '002', title: '托架', count: 14, parentKey: 'cat-004' },
-      { key: 'cat-004-003', code: '003', title: '电机', count: 20, parentKey: 'cat-004' },
-    ],
-  },
+  { key: 'cat-resin', code: '010', title: '树脂原料', count: 0 },
+  { key: 'cat-solvent', code: '011', title: '溶剂', count: 0 },
+  { key: 'cat-pigment', code: '012', title: '颜填料', count: 0 },
+  { key: 'cat-additive', code: '013', title: '助剂辅料', count: 0 },
+  { key: 'cat-intermediate', code: '020', title: '中间体', count: 0 },
+  { key: 'cat-recycle', code: '030', title: '回收料', count: 0 },
+  { key: 'cat-waste', code: '040', title: '废弃物', count: 0 },
 ]
 
 /** 新租户 / 空库种子：业务演示类别在前，系统默认「物料」靠后 */

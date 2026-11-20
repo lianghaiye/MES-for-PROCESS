@@ -337,7 +337,7 @@ function scrollTo(selector) {
 
   &:hover {
     background: #f0f5ff;
-    color: #1677ff;
+    color: #307068;
   }
 }
 
@@ -360,9 +360,9 @@ function scrollTo(selector) {
   border-left: 2px solid transparent;
 
   &:hover {
-    color: #1677ff;
+    color: #307068;
     background: #fafafa;
-    border-left-color: #1677ff;
+    border-left-color: #307068;
   }
 }
 
@@ -387,7 +387,7 @@ function scrollTo(selector) {
   color: #1a1a2e;
   margin: 0 0 12px;
   padding-left: 10px;
-  border-left: 4px solid #1677ff;
+  border-left: 4px solid #307068;
 }
 
 .feature-card {
@@ -424,7 +424,7 @@ function scrollTo(selector) {
 }
 
 .feat-id {
-  color: #1677ff;
+  color: #307068;
   margin-right: 6px;
 }
 
@@ -443,7 +443,7 @@ function scrollTo(selector) {
 .field-label {
   font-size: 13px;
   font-weight: 600;
-  color: #1677ff;
+  color: #307068;
   margin-bottom: 6px;
 }
 

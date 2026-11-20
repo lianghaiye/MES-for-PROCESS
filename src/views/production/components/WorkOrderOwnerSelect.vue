@@ -101,7 +101,7 @@ export default { name: 'WorkOrderOwnerSelect' }
   justify-content: center;
   gap: 6px;
   padding: 8px 12px;
-  color: #1677ff;
+  color: #307068;
   cursor: pointer;
   font-size: 13px;
 

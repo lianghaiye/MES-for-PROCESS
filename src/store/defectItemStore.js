@@ -4,7 +4,7 @@ import { createDefectItemSeed, normalizeDefectItem } from '@/mock/defectItemSeed
 
 const STORAGE_KEY = 'i_doms_defect_items'
 const SEED_VERSION_KEY = 'i_doms_defect_items_seed_v'
-const CURRENT_SEED_VERSION = '4'
+const CURRENT_SEED_VERSION = '6'
 const COMPANY_WAGE_SETTINGS_KEY = 'i_doms_defect_company_wage_settings'
 
 const DEFAULT_COMPANY_WAGE_SETTINGS = {

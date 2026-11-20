@@ -329,7 +329,7 @@ export function createMockReleases() {
       title: '【产品功能升级提醒】采购/外协收货终结与质检处理方案',
       publishDate: '2026-09-23',
       publishedAt: '2026-09-23 10:30:00',
-      publisher: 'I-DOMS',
+      publisher: '流程MES',
       contentHtml: `<p>尊敬的用户，本次更新的内容有：</p>
 <ol>
 <li>【采购管理】收货单支持终结并释放占用</li>
@@ -353,7 +353,7 @@ export function createMockReleases() {
       title: '【产品功能升级提醒】订单变更与结案',
       publishDate: '2026-09-10',
       publishedAt: '2026-09-10 10:45:46',
-      publisher: 'I-DOMS',
+      publisher: '流程MES',
       contentHtml: `<p>采购/外协订单支持取消行、短结与终结规则完善。</p>
 <ul>
 <li>订单行取消与短结</li>
@@ -372,7 +372,7 @@ export function createMockReleases() {
       title: '车间主任工作台上线（草稿示例）',
       publishDate: '2026-08-28',
       publishedAt: '',
-      publisher: 'I-DOMS',
+      publisher: '流程MES',
       contentHtml: `<p>按车间维度汇总待办与快捷入口。此条为草稿，不会出现在工作台。</p>`,
       status: 'draft',
       scopeType: 'all',
