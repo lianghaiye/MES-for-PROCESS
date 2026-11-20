@@ -61,5 +61,5 @@ cd agent-proxy && npm install && pm2 restart bxz-agent
 
 | 环境         | publicPath                     | 泵小智地址                                      |
 | ------------ | ------------------------------ | ----------------------------------------------- |
-| GitHub Pages | 默认 `/---MES--CURSOR/`        | 需 Secret `VUE_APP_AGENT_BASE_URL` 指向公网代理 |
+| GitHub Pages | 默认 `/MES-for-PROCESS/`       | 需 Secret `VUE_APP_AGENT_BASE_URL` 指向公网代理 |
 | 阿里云整站   | 构建时 `VUE_APP_PUBLIC_PATH=/` | 同域 `/agent-api`（见 nginx 配置）              |

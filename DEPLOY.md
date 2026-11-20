@@ -1,10 +1,10 @@
 # 部署说明
 
-演示地址：https://lianghaiye.github.io/---MES--CURSOR/
+演示地址：https://lianghaiye.github.io/MES-for-PROCESS/
 
 ## Pages 设置（一次性）
 
-1. 打开 https://github.com/lianghaiye/---MES--CURSOR/settings/pages
+1. 打开 https://github.com/lianghaiye/MES-for-PROCESS/settings/pages
 2. **Build and deployment → Source** 选择 **GitHub Actions**（不要选 Deploy from branch）
 
 ## 推送后自动部署
@@ -18,7 +18,7 @@
 
 ## 手动重新部署
 
-1. 打开 https://github.com/lianghaiye/---MES--CURSOR/actions
+1. 打开 https://github.com/lianghaiye/MES-for-PROCESS/actions
 2. 左侧点 **Deploy to GitHub Pages**
 3. 任选一种方式：
 
