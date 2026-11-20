@@ -1546,6 +1546,12 @@ const routes = [
         meta: { title: '系统字典' },
       },
       {
+        path: 'system/coding-rules',
+        name: 'system-coding-rules',
+        component: () => import('@/views/system/CodingRuleView.vue'),
+        meta: { title: '编码规则' },
+      },
+      {
         path: 'system/business-rules',
         name: 'system-business-rules',
         component: () => import('@/views/system/BusinessRuleView.vue'),

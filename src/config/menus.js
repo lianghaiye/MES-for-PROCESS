@@ -239,6 +239,7 @@ export const sideMenus = {
   ],
   system: [
     { key: 'dict', label: '系统字典', path: '/system/dict' },
+    { key: 'coding-rules', label: '编码规则', path: '/system/coding-rules' },
     { key: 'business-rules', label: '业务规则', path: '/system/business-rules' },
     { key: 'function-params', label: '功能参数', path: '/system/function-params' },
     { key: 'message-notify', label: '消息通知配置', path: '/system/message-notify' },
@@ -529,6 +530,7 @@ export const routeTitles = {
   '/quality/qc-template': '化验模板',
   '/quality/qc-template/:id': '化验模板详情',
   '/system/dict': '系统字典',
+  '/system/coding-rules': '编码规则',
   '/system/business-rules': '业务规则',
   '/system/function-params': '功能参数',
   '/system/message-notify': '消息通知配置',

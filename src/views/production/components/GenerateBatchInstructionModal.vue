@@ -2,7 +2,7 @@
   <a-modal
     :open="open"
     title="生成批次指令"
-    :width="720"
+    :width="960"
     :mask-closable="false"
     destroy-on-close
     @cancel="emit('update:open', false)"
@@ -11,56 +11,186 @@
       <div class="section-title">基本信息</div>
       <a-form layout="inline" class="horizontal-form">
         <a-row :gutter="[12, 8]" style="width: 100%">
-          <a-col :span="12">
-            <a-form-item label="生效配方" required>
-              <a-select
-                v-model:value="formulaId"
-                size="small"
-                :options="formulaOptions"
-                placeholder="请选择"
-                @change="refreshPreview"
+          <a-col :span="8">
+            <a-form-item label="生产计划">
+              <FeedPlanSelect
+                v-model="feedPlanId"
+                modal-title="选择生产计划"
+                placeholder="可选，选后带出产品与配方"
+                @change="onPlanChange"
               />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
-            <a-form-item label="需求量" required>
-              <a-input-number
-                v-model:value="demandQty"
+          <a-col :span="8">
+            <a-form-item label="主产品" required>
+              <MasterItemSelect
+                v-model="itemId"
+                catalog="product"
+                modal-title="选择主产品"
+                placeholder="输入编码或名称"
+                :disabled="Boolean(feedPlanId)"
+                @change="onProductChange"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="配方" required>
+              <FeedPlanSearchSelect
+                v-model="formulaId"
+                title="选择配方"
+                :placeholder="itemId ? '输入编号或名称' : '先选主产品'"
+                :options="formulaOptions"
+                :disabled="!itemId || Boolean(feedPlanId)"
+                @change="onFormulaChange"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="产线">
+              <a-select
+                v-model:value="productionLineId"
                 size="small"
-                :min="0"
+                allow-clear
+                :options="lineOptions"
+                placeholder="按配方设备"
+                style="width: 100%"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="基准批量">
+              <a-input :value="baseText" size="small" disabled />
+            </a-form-item>
+          </a-col>
+          <a-col v-if="feedPlanId" :span="8">
+            <a-form-item label="计划剩余">
+              <a-input :value="planRemainingText" size="small" disabled />
+            </a-form-item>
+          </a-col>
+          <a-col v-if="selectedFormula" :span="24">
+            <div class="plan-metric-bar">
+              <div class="plan-metric-item">
+                <div class="plan-metric-label">主原料</div>
+                <div class="plan-metric-value">{{ selectedMaterials }}</div>
+              </div>
+              <div class="plan-metric-item">
+                <div class="plan-metric-label">理论得率</div>
+                <div class="plan-metric-value">{{ theoreticalYieldText }}</div>
+              </div>
+              <div class="plan-metric-item">
+                <div class="plan-metric-label">理论产出</div>
+                <div class="plan-metric-value accent">{{ theoreticalOutputText }}</div>
+              </div>
+            </div>
+          </a-col>
+          <a-col :span="24">
+            <a-form-item label="拆分方式">
+              <a-radio-group v-model:value="splitMode" size="small" @change="refreshPreview">
+                <a-radio-button value="by_count">按张数</a-radio-button>
+                <a-radio-button value="by_qty">按投料量</a-radio-button>
+              </a-radio-group>
+            </a-form-item>
+          </a-col>
+          <a-col v-if="splitMode === 'by_count'" :span="8">
+            <a-form-item label="张数" required>
+              <a-input-number
+                v-model:value="batchCount"
+                size="small"
+                :min="1"
+                :max="200"
                 style="width: 100%"
                 @change="refreshPreview"
               />
             </a-form-item>
           </a-col>
+          <template v-else>
+            <a-col :span="8">
+              <a-form-item label="本次投料量" required>
+                <a-input-number
+                  v-model:value="demandQty"
+                  size="small"
+                  :min="0.001"
+                  :precision="3"
+                  style="width: 100%"
+                  @change="refreshPreview"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="向上取整">
+                <a-switch v-model:checked="ceil" size="small" @change="refreshPreview" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="预计张数">
+                <a-input :value="String(preview.length || 0)" size="small" disabled />
+              </a-form-item>
+            </a-col>
+          </template>
           <a-col :span="24">
-            <a-form-item label="来源">
+            <a-form-item label="来源单号">
               <a-input
                 v-model:value="sourceLabel"
                 size="small"
-                placeholder="销售订单号或手工需求"
+                allow-clear
+                placeholder="订单号 / 补货单号等，可空"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="24">
+            <a-form-item label="备注" class="remark-item">
+              <a-textarea
+                v-model:value="remark"
+                :rows="2"
+                size="small"
+                placeholder="写入本次生成的每张批次指令"
               />
             </a-form-item>
           </a-col>
         </a-row>
       </a-form>
     </div>
-    <p class="hint">
-      按基准批量向上取整，每一批都是完整基准批量。需求 100、基准批量 30 时生成 4
-      张。同一产品可以有多张生效配方，打开时优先选中默认配方。
-    </p>
+
+    <div class="section-title lines-title">指令明细</div>
     <a-table
-      :columns="columns"
-      :data-source="preview"
-      :pagination="false"
       size="small"
-      row-key="seq"
-    />
+      :columns="columns"
+      :data-source="displayLines"
+      :pagination="false"
+      row-key="key"
+      :scroll="{ y: 320 }"
+      :locale="{ emptyText: '请先选择主产品与配方，并填写数量' }"
+    >
+      <template #bodyCell="{ column, record, index }">
+        <template v-if="column.key === 'seq'">{{ preview.length - index }}</template>
+        <template v-else-if="column.key === 'batchNo'">
+          <a-input
+            v-model:value="record.batchNo"
+            size="small"
+            allow-clear
+            placeholder="留空自动生成"
+          />
+        </template>
+        <template v-else-if="column.key === 'qty'">
+          <a-input-number
+            v-model:value="record.qty"
+            size="small"
+            :min="0.001"
+            :precision="3"
+            style="width: 100%"
+            @change="() => onQtyChange(record)"
+          />
+        </template>
+        <template v-else-if="column.key === 'note'">{{ noteOf(record.qty) }}</template>
+      </template>
+    </a-table>
+    <div class="split-hint">{{ hint }}</div>
+
     <template #footer>
       <a-button @click="emit('update:open', false)">取消</a-button>
-      <a-button type="primary" :loading="saving" @click="submit"
-        >确定 ({{ preview.length }})</a-button
-      >
+      <a-button type="primary" :loading="saving" :disabled="!preview.length" @click="submit">
+        生成 ({{ preview.length }})
+      </a-button>
     </template>
   </a-modal>
 </template>
@@ -68,9 +198,20 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { planBatchCount } from '@/utils/processBatchMath'
-import { itemLabel, listActiveFormulas } from '@/store/processFormulaStore'
-import { createOrdersFromDemand } from '@/store/batchInstructionStore'
+import { round3, splitPlanFeedQty, theoreticalOutput } from '@/utils/processBatchMath'
+import { getFormula, itemLabel, itemUnit, listFormulas } from '@/store/processFormulaStore'
+import { listEnabledProductionLineOptions } from '@/store/productionLineStore'
+import { createTankChargeFromPlan } from '@/store/batchInstructionStore'
+import {
+  executeFeedPlan,
+  getFeedPlan,
+  mainRawMaterialIds,
+  planFeedCoverage,
+} from '@/store/feedPlanStore'
+import { FEED_PLAN_PERIOD_LABEL } from '@/utils/feedPlanPeriod'
+import MasterItemSelect from '@/views/product-process/components/MasterItemSelect.vue'
+import FeedPlanSearchSelect from '@/views/planning/components/FeedPlanSearchSelect.vue'
+import FeedPlanSelect from '@/views/planning/components/FeedPlanSelect.vue'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -79,62 +220,265 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:open', 'created'])
 
+const feedPlanId = ref()
+const itemId = ref()
 const formulaId = ref()
 const demandQty = ref(100)
+const batchCount = ref(1)
+const splitMode = ref('by_count')
+const ceil = ref(false)
 const sourceLabel = ref('')
+const remark = ref('')
+const productionLineId = ref(undefined)
 const saving = ref(false)
 const preview = ref([])
+let previewKey = 0
 
-const formulaOptions = computed(() =>
-  listActiveFormulas()
+const formulaOptions = computed(() => {
+  if (!itemId.value) return []
+  const rows = listFormulas().filter(
+    (row) => row.status === 'active' && row.itemId === itemId.value,
+  )
+  return rows
     .slice()
     .sort((a, b) => Number(Boolean(b.isDefault)) - Number(Boolean(a.isDefault)))
-    .map((f) => {
-      const mark = f.isDefault ? '（默认）' : ''
+    .map((row) => {
+      const mark = row.isDefault ? '（默认）' : ''
       return {
-        value: f.id,
-        label: `${f.formulaNo} ${f.name}${mark}（${itemLabel(f.itemId)} / ${f.baseBatchQty}kg）`,
+        value: row.id,
+        label: `${row.formulaNo || row.id} ${row.name || ''}${mark}`.trim(),
       }
-    }),
+    })
+})
+const lineOptions = computed(() => listEnabledProductionLineOptions())
+const selectedFormula = computed(() => (formulaId.value ? getFormula(formulaId.value) : null))
+const selectedPlan = computed(() => (feedPlanId.value ? getFeedPlan(feedPlanId.value) : null))
+const planCoverage = computed(() =>
+  feedPlanId.value ? planFeedCoverage(feedPlanId.value) : { remaining: 0 },
 )
+const baseQty = computed(() => Number(selectedFormula.value?.baseBatchQty) || 0)
+const baseText = computed(() => (baseQty.value > 0 ? `${baseQty.value} kg` : '—'))
+const planRemainingText = computed(() => `${round3(planCoverage.value.remaining) || 0} kg`)
+const sumQty = computed(() =>
+  round3(preview.value.reduce((sum, row) => sum + (Number(row.qty) || 0), 0)),
+)
+const selectedMaterials = computed(() => {
+  const ids = mainRawMaterialIds(selectedFormula.value)
+  return ids.length ? ids.map((id) => itemLabel(id)).join('、') : '—'
+})
+const feedUnit = computed(() => {
+  const ids = mainRawMaterialIds(selectedFormula.value)
+  return ids.length ? itemUnit(ids[0]) : 'kg'
+})
+const outputUnit = computed(() =>
+  selectedFormula.value?.itemId ? itemUnit(selectedFormula.value.itemId) : feedUnit.value,
+)
+const theoreticalYieldText = computed(() => {
+  const rate = Number(selectedFormula.value?.theoreticalYield)
+  if (!Number.isFinite(rate) || rate < 0) return '—'
+  return rate <= 1 ? `${Math.round(rate * 1000) / 10}%` : String(rate)
+})
+const metricFeedQty = computed(() => {
+  if (sumQty.value > 0) return sumQty.value
+  if (splitMode.value === 'by_qty') return Number(demandQty.value) || 0
+  if (baseQty.value > 0) return round3(batchCount.value * baseQty.value)
+  return 0
+})
+const theoreticalOutputText = computed(() => {
+  const formula = selectedFormula.value
+  const qty = metricFeedQty.value
+  if (!formula || !(qty > 0) || !Number.isFinite(Number(formula.theoreticalYield))) return '—'
+  return `${theoreticalOutput(qty, formula.theoreticalYield)} ${outputUnit.value}`
+})
 const columns = [
-  { title: '批序', dataIndex: 'seq', width: 80 },
-  { title: '批量', dataIndex: 'qtyText' },
-  { title: '理论产出', dataIndex: 'outputText' },
+  { title: '序号', key: 'seq', width: 56, align: 'center' },
+  { title: '批次号', key: 'batchNo', width: 180 },
+  { title: '计划投料量 (kg)', key: 'qty', width: 150 },
+  { title: '说明', key: 'note' },
 ]
+/** 倒序展示，余数/取整补足行固定在顶部可见。提交仍按拆分顺序。 */
+const displayLines = computed(() => preview.value.slice().reverse())
+const hint = computed(() => {
+  if (!selectedFormula.value) return '请先选择主产品与配方。'
+  const planTip = feedPlanId.value ? '将挂到所选生产计划。' : '未选生产计划时按手工需求生成。'
+  if (splitMode.value === 'by_qty') {
+    return ceil.value
+      ? `${planTip}按投料量拆分，余数不足一个基准批量时向上取整为完整批量。本次合计 ${sumQty.value} kg。批次号留空则自动生成。`
+      : `${planTip}按投料量拆分，整批等于基准批量，余数单独一张。本次合计 ${sumQty.value} kg。批次号留空则自动生成。`
+  }
+  return `${planTip}按张数拆分。本次合计 ${sumQty.value} kg。批次号留空则按编码规则/系统规则生成。`
+})
 
 watch(
   () => props.open,
   (val) => {
     if (!val) return
-    demandQty.value = props.presetDemand || 100
-    sourceLabel.value = props.presetSource || ''
-    const defaults = listActiveFormulas().filter((row) => row.isDefault)
-    formulaId.value = defaults.length === 1 ? defaults[0].id : undefined
-    refreshPreview()
+    resetForm()
   },
 )
 
+function resetForm() {
+  feedPlanId.value = undefined
+  itemId.value = undefined
+  formulaId.value = undefined
+  demandQty.value = props.presetDemand || 100
+  batchCount.value = 1
+  splitMode.value = 'by_count'
+  ceil.value = false
+  sourceLabel.value = props.presetSource || ''
+  remark.value = ''
+  productionLineId.value = undefined
+  preview.value = []
+}
+
+function formulasOfProduct(productId) {
+  return listFormulas().filter((row) => row.status === 'active' && row.itemId === productId)
+}
+
+function noteOf(qty) {
+  const base = baseQty.value
+  const value = Number(qty)
+  if (!(value > 0)) return '请填写计划投料量'
+  if (!(base > 0)) return '按填写数量'
+  if (Math.abs(value - base) < 1e-9) return '基准批量'
+  if (value < base) return '不足一个基准批量'
+  return '超过基准批量'
+}
+
+function onPlanChange() {
+  const plan = selectedPlan.value
+  if (!plan) {
+    refreshPreview()
+    return
+  }
+  const formula = getFormula(plan.formulaId)
+  itemId.value = plan.itemId || formula?.itemId
+  formulaId.value = plan.formulaId
+  productionLineId.value = plan.productionLineId || undefined
+  const remaining = planFeedCoverage(plan.id).remaining
+  if (remaining > 0) demandQty.value = remaining
+  const typeLabel = FEED_PLAN_PERIOD_LABEL[plan.periodType] || '计划'
+  sourceLabel.value =
+    props.presetSource || `${typeLabel} ${plan.periodLabel || plan.planNo || ''}`.trim()
+  if (formula?.baseBatchQty > 0 && demandQty.value > 0) {
+    batchCount.value = Math.max(
+      1,
+      splitPlanFeedQty(demandQty.value, formula.baseBatchQty, { ceil: false }).length,
+    )
+  }
+  refreshPreview()
+}
+
+function onProductChange() {
+  if (feedPlanId.value) return
+  const rows = formulasOfProduct(itemId.value)
+  const picked = rows.find((row) => row.isDefault) || (rows.length === 1 ? rows[0] : null)
+  formulaId.value = picked?.id
+  refreshPreview()
+}
+
+function onFormulaChange() {
+  refreshPreview()
+}
+
+function nextPreviewRow(qty, batchNo = '') {
+  previewKey += 1
+  return {
+    key: previewKey,
+    batchNo: batchNo || '',
+    qty: round3(qty),
+  }
+}
+
+function onQtyChange(record) {
+  record.qty = round3(record.qty)
+}
+
 function refreshPreview() {
-  const formula = listActiveFormulas().find((f) => f.id === formulaId.value)
-  const count = formula ? planBatchCount(demandQty.value, formula.baseBatchQty) : 0
-  preview.value = Array.from({ length: count }, (_, i) => ({
-    seq: `${i + 1}/${count}`,
-    qtyText: formula ? `${formula.baseBatchQty} kg` : '—',
-    outputText: formula
-      ? `${Math.round(formula.baseBatchQty * formula.theoreticalYield * 1000) / 1000} kg`
-      : '—',
-  }))
+  const formula = selectedFormula.value
+  const prev = preview.value.slice()
+  if (!formula || formula.status !== 'active') {
+    preview.value = []
+    return
+  }
+  const base = Number(formula.baseBatchQty) || 0
+  let rows = []
+  if (splitMode.value === 'by_count') {
+    const n = Math.max(1, Math.min(200, Number(batchCount.value) || 1))
+    batchCount.value = n
+    if (!(base > 0)) {
+      preview.value = []
+      return
+    }
+    rows = Array.from({ length: n }, (_, index) => nextPreviewRow(base, prev[index]?.batchNo || ''))
+  } else {
+    const qty = Number(demandQty.value)
+    if (!(qty > 0) || !(base > 0)) {
+      preview.value = []
+      return
+    }
+    rows = splitPlanFeedQty(qty, base, { ceil: ceil.value }).map((row, index) =>
+      nextPreviewRow(row.qty, prev[index]?.batchNo || ''),
+    )
+  }
+  preview.value = rows
 }
 
 function submit() {
+  if (!itemId.value) {
+    message.warning('请选择主产品')
+    return
+  }
+  const formula = selectedFormula.value
+  if (!formula || formula.status !== 'active') {
+    message.warning('请选择生效配方')
+    return
+  }
+  if (!preview.value.length) {
+    message.warning('没有可生成的批次')
+    return
+  }
+  const qtys = preview.value.map((row) => Number(row.qty))
+  if (qtys.some((qty) => !(qty > 0))) {
+    message.warning('每张计划投料量都要大于 0')
+    return
+  }
+  const batchNos = preview.value.map((row) => String(row.batchNo || '').trim())
+  const seen = new Set()
+  for (const no of batchNos) {
+    if (!no) continue
+    if (seen.has(no)) {
+      message.warning(`批次号「${no}」重复`)
+      return
+    }
+    seen.add(no)
+  }
   saving.value = true
   try {
-    const created = createOrdersFromDemand({
-      formulaId: formulaId.value,
-      demandQty: demandQty.value,
-      sourceLabel: sourceLabel.value,
-    })
+    let created
+    const remarkText = String(remark.value || '').trim()
+    if (feedPlanId.value) {
+      created = executeFeedPlan(feedPlanId.value, {
+        qtys,
+        batchNos,
+        productionLineId: productionLineId.value || '',
+        ceil: splitMode.value === 'by_qty' ? ceil.value : false,
+        remark: remarkText,
+      })
+    } else {
+      created = preview.value.map((row, index) =>
+        createTankChargeFromPlan({
+          formulaId: formulaId.value,
+          productionLineId: productionLineId.value || '',
+          sourceLabel: sourceLabel.value || '手工需求',
+          plannedQty: row.qty,
+          seq: index + 1,
+          batchCount: preview.value.length,
+          batchNo: batchNos[index],
+          remark: remarkText,
+        }),
+      )
+    }
     message.success(`已生成 ${created.length} 张批次指令`)
     emit('created', created)
     emit('update:open', false)
@@ -147,20 +491,61 @@ function submit() {
 </script>
 
 <style scoped>
-.modal-basic-card {
-  margin-bottom: 12px;
-  padding: 12px 16px;
-  background: #fff;
-  border: 1px solid #e5e6eb;
-  border-radius: 8px;
-}
 .section-title {
   margin-bottom: 8px;
+  color: #1f2329;
   font-size: 14px;
   font-weight: 600;
+  line-height: 22px;
 }
-.hint {
+
+.lines-title {
+  margin-top: 12px;
+}
+
+.split-hint {
+  margin-top: 8px;
   color: #4e5969;
   font-size: 13px;
+  line-height: 20px;
+}
+
+.plan-metric-bar {
+  display: flex;
+  margin: 4px 0 8px;
+  padding: 12px 4px;
+  background: linear-gradient(180deg, #f7f9fc 0%, #f5f5f5 100%);
+  border: 1px solid #ebedf0;
+  border-radius: 8px;
+}
+
+.plan-metric-item {
+  flex: 1;
+  min-width: 0;
+  padding: 0 16px;
+  border-right: 1px solid #e8e8e8;
+
+  &:last-child {
+    border-right: none;
+  }
+}
+
+.plan-metric-label {
+  margin-bottom: 6px;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.plan-metric-value {
+  color: rgba(0, 0, 0, 0.88);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  word-break: break-all;
+
+  &.accent {
+    color: #307068;
+  }
 }
 </style>

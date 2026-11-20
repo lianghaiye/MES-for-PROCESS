@@ -23,6 +23,7 @@ import {
 } from '@/store/salesStockAllocationStore'
 import { applyInboundBatchesFromRoots } from '@/store/stockBatchStore'
 import { buildLineUomConvert } from '@/utils/batchUomConvert'
+import { generateCodeByBusiness } from '@/store/codingRuleStore'
 import {
   isOneItemOneCodeBarcode,
   validateVariableLengthInboundLine,
@@ -139,6 +140,8 @@ function initOrders() {
 }
 
 export function generateInboundNo() {
+  const coded = generateCodeByBusiness('inbound_order')
+  if (coded) return coded
   const ymd = dayjs().format('YYYYMMDD')
   const prefix = `1-${ymd}-`
   const max = inboundOrderState.orders.reduce((m, o) => {

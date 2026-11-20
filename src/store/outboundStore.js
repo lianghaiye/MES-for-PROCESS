@@ -21,6 +21,7 @@ import { evaluateOutboundQcGate } from '@/utils/qcGateEnforceService'
 import { applyOutboundToStock } from '@/store/stockStore'
 import { releaseAllocationOnShip } from '@/store/salesStockAllocationStore'
 import { salesOrderState } from '@/store/salesOrderStore'
+import { generateCodeByBusiness } from '@/store/codingRuleStore'
 import { issueBatchQty, getBatchById } from '@/store/stockBatchStore'
 import {
   getOutboundIssueRule,
@@ -121,6 +122,8 @@ function initOutboundOrders() {
 }
 
 export function generateOutboundNo() {
+  const coded = generateCodeByBusiness('outbound_order')
+  if (coded) return coded
   const seq = outboundState.orders.length + 1
   return `OUT${dayjs().format('YYYYMMDD')}${String(seq).padStart(4, '0')}`
 }

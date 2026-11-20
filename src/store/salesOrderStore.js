@@ -18,6 +18,7 @@ import {
 import { hydrateApprovedSelfProdOrders } from '@/utils/hydrateSalesLines'
 import { validateChangeDeliveryRows, applyDeliveryModeChanges } from '@/utils/changeDeliveryMode'
 import { syncProductionPlanDeliveryMode } from '@/store/productionPlanStore'
+import { generateCodeByBusiness } from '@/store/codingRuleStore'
 import { applyOrderAmounts } from '@/utils/salesOrderPricing'
 import {
   deriveOrderBusinessType,
@@ -150,11 +151,15 @@ function pushApprovalRecord(order, { result, opinion }) {
 }
 
 export function generateSalesOrderNo() {
+  const coded = generateCodeByBusiness('sales_order')
+  if (coded) return coded
   orderSeq += 1
   return `XSDD${dayjs().format('YYYYMM')}${String(orderSeq).padStart(4, '0')}`
 }
 
 export function generateDeliveryCode() {
+  const coded = generateCodeByBusiness('delivery_order')
+  if (coded) return coded
   deliverySeq += 1
   return `SH${dayjs().format('YYYYMMDD')}${String(deliverySeq).padStart(3, '0')}`
 }

@@ -939,7 +939,10 @@ export function planFeedCoverage(planId) {
 }
 
 /** 在本档计划上按计划投料量生成批次指令。未传数量时按剩余目标和基准批量拆分。 */
-export function executeFeedPlan(planId, { qtys, ceil = false, actor } = {}) {
+export function executeFeedPlan(
+  planId,
+  { qtys, ceil = false, actor, productionLineId, batchNos, remark } = {},
+) {
   const plan = getFeedPlan(planId)
   if (!plan) throw new Error('计划不存在')
   if (plan.stopped || resolveFeedPlanStatus(planId) === FEED_PLAN_STATUS.STOPPED) {
@@ -959,11 +962,14 @@ export function executeFeedPlan(planId, { qtys, ceil = false, actor } = {}) {
     : splitPlanFeedQty(coverage.remaining, formula.baseBatchQty, { ceil }).map((row) => row.qty)
   if (!rows.length) throw new Error('剩余目标投料量已用完')
   const who = actor || currentOperator()
+  const lineId =
+    productionLineId === undefined ? plan.productionLineId || '' : productionLineId || ''
+  const remarkText = String(remark || '').trim()
   const created = rows.map((qty, index) =>
     createTankChargeFromPlan({
       formulaId: plan.formulaId,
       feedPlanId: plan.id,
-      productionLineId: plan.productionLineId || '',
+      productionLineId: lineId,
       sourceLabel: planSourceLabel(plan),
       planStart: plan.start,
       planEnd: plan.end,
@@ -971,6 +977,8 @@ export function executeFeedPlan(planId, { qtys, ceil = false, actor } = {}) {
       seq: index + 1,
       batchCount: rows.length,
       createdBy: who,
+      batchNo: Array.isArray(batchNos) ? batchNos[index] : '',
+      remark: remarkText,
     }),
   )
   markPlanExecuted(plan)
@@ -1116,6 +1124,24 @@ export function canGenerateFeedPlan(planId) {
   const status = resolveFeedPlanStatus(planId)
   if (status !== FEED_PLAN_STATUS.OPEN && status !== FEED_PLAN_STATUS.RUNNING) return false
   return planFeedCoverage(planId).remaining > 0
+}
+
+/** 生成批次指令弹窗：可选的生产计划下拉。 */
+export function listGeneratableFeedPlanOptions() {
+  return feedPlanState.plans
+    .filter((row) => canGenerateFeedPlan(row.id))
+    .slice()
+    .sort((a, b) => String(b.start || '').localeCompare(String(a.start || '')))
+    .map((row) => {
+      const typeLabel = FEED_PLAN_PERIOD_LABEL[row.periodType] || '计划'
+      const coverage = planFeedCoverage(row.id)
+      const name = row.planName || `${typeLabel} ${row.periodLabel || ''}`.trim()
+      return {
+        value: row.id,
+        label: `${row.planNo || row.id} ${name} · 剩余 ${coverage.remaining} kg`,
+        plan: row,
+      }
+    })
 }
 
 export function deleteFeedPlan(id) {

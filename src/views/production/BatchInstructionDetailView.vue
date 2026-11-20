@@ -108,6 +108,9 @@
               <span class="k">前批次：</span
               ><span class="v">{{ batchNo(order.reworkOfBatchId) }}</span>
             </div>
+            <div class="formula-kv-full">
+              <span class="k">备注：</span><span class="v">{{ order.remark || '—' }}</span>
+            </div>
           </div>
         </DetailSectionCard>
 
@@ -219,14 +222,44 @@
 
       <div v-show="detailTab === 'feed'" class="batch-tab-pane">
         <DetailSectionCard title="投料明细">
-          <a-table
-            :columns="feedColumns"
-            :data-source="feedRows"
-            :pagination="false"
-            size="small"
-            row-key="key"
-            :scroll="{ x: 1880 }"
-          />
+          <div v-if="feedRows.length" class="feed-groups">
+            <div v-for="row in feedRows" :key="row.key" class="feed-group">
+              <div class="feed-group-head">
+                <div class="feed-formula">
+                  <span><i>原料：</i>{{ row.item }}</span>
+                  <span><i>编号：</i>{{ row.itemCode }}</span>
+                  <span><i>规格：</i>{{ row.specText }}</span>
+                  <span><i>阶段：</i>{{ row.stepText }}</span>
+                  <span><i>理论投料：</i>{{ row.planQtyText }}</span>
+                  <span><i>允差：</i>{{ row.toleranceText }}</span>
+                  <span><i>关键物料：</i>{{ row.keyText }}</span>
+                  <span><i>辅料：</i>{{ row.auxText }}</span>
+                </div>
+                <div class="feed-summary">
+                  <span
+                    ><i>实投</i><b>{{ row.postedText }}</b></span
+                  >
+                  <span
+                    ><i>补料次数</i><b>{{ row.supplementText }}</b></span
+                  >
+                  <span
+                    ><i>偏差</i><b>{{ row.gapText }}</b></span
+                  >
+                </div>
+              </div>
+              <a-table
+                v-if="row.postings.length"
+                class="feed-posting-table"
+                :columns="feedPostingColumns"
+                :data-source="row.postings"
+                :pagination="false"
+                size="small"
+                row-key="key"
+              />
+              <div v-else class="feed-empty">还没有过账</div>
+            </div>
+          </div>
+          <a-empty v-else description="配方未维护投料" />
         </DetailSectionCard>
       </div>
 
@@ -760,22 +793,12 @@ const assayHistoryColumns = [
   { title: '检单', dataIndex: 'qcNo', width: 120 },
   { title: '状态', dataIndex: 'statusText' },
 ]
-const feedColumns = [
-  { title: '原料', dataIndex: 'item', width: 140 },
-  { title: '编号', dataIndex: 'itemCode', width: 120 },
-  { title: '规格', dataIndex: 'specText', width: 140 },
-  { title: '阶段', dataIndex: 'stepText', width: 120 },
-  { title: '理论投料', dataIndex: 'planQtyText', align: 'right', width: 120 },
-  { title: '允差(±)', dataIndex: 'toleranceText', align: 'right', width: 90 },
-  { title: '实投', dataIndex: 'postedText', align: 'right', width: 110 },
-  { title: '补料次数', dataIndex: 'supplementText', align: 'right', width: 90 },
-  { title: '偏差', dataIndex: 'gapText', align: 'right', width: 110 },
+const feedPostingColumns = [
+  { title: '时间', dataIndex: 'at', width: 170 },
+  { title: '执行人', dataIndex: 'operator', width: 120 },
+  { title: '原料批次', dataIndex: 'batchNo', width: 160 },
+  { title: '本次实投', dataIndex: 'qtyText', align: 'right', width: 120 },
   { title: '含量', dataIndex: 'contentText', align: 'right', width: 90 },
-  { title: '关键物料', dataIndex: 'keyText', width: 90 },
-  { title: '辅料', dataIndex: 'auxText', width: 80 },
-  { title: '原料批次', dataIndex: 'batches', width: 160 },
-  { title: '执行人', dataIndex: 'operatorText', width: 120 },
-  { title: '执行时间', dataIndex: 'executedAtText', width: 160 },
 ]
 const feedDraftColumns = [
   { title: '原料', dataIndex: 'item', width: 140 },
@@ -938,16 +961,10 @@ function contentWithUnit(value) {
   return `${formatNumber(pct, 2)}%`
 }
 
-function joinFeedText(feeds, pick) {
-  const parts = feeds.map(pick).filter((value) => value != null && value !== '')
-  return parts.length ? parts.join('，') : '—'
-}
-
 const feedRows = computed(() => {
   const posted = order.value?.feeds || []
   return (order.value?.theoreticalFeeds || []).map((line, index) => {
-    const feeds = posted.filter((f) => f.itemId === line.itemId)
-    const lastContent = feeds.length ? feeds[feeds.length - 1].contentUsed : null
+    const feeds = posted.filter((row) => row.itemId === line.itemId)
     const card = itemMasterCard(line.itemId)
     const unit = itemUnit(line.itemId) || order.value?.unit || ''
     const postedQty = feeds.reduce((sum, row) => sum + Number(row.qty), 0) || 0
@@ -962,16 +979,20 @@ const feedRows = computed(() => {
       toleranceText:
         line.tolerance == null || line.tolerance === ''
           ? '—'
-          : `${Number((Number(line.tolerance) * 100).toFixed(2))}%`,
-      postedText: formatQtyWithUnit(postedQty, unit),
-      supplementText: String(Math.max(0, feeds.length - 1)),
-      gapText: feeds.length && planQty > 0 ? formatQtyWithUnit(postedQty - planQty, unit) : '—',
-      contentText: contentWithUnit(lastContent),
+          : `±${Number((Number(line.tolerance) * 100).toFixed(2))}%`,
       keyText: line.isKeyMaterial ? '是' : '否',
       auxText: line.isAuxiliary ? '是' : '否',
-      batches: joinFeedText(feeds, (row) => row.batchNo),
-      operatorText: joinFeedText(feeds, (row) => row.operator),
-      executedAtText: joinFeedText(feeds, (row) => row.at),
+      postedText: feeds.length ? formatQtyWithUnit(postedQty, unit) : '—',
+      supplementText: feeds.length ? String(Math.max(0, feeds.length - 1)) : '—',
+      gapText: feeds.length && planQty > 0 ? formatQtyWithUnit(postedQty - planQty, unit) : '—',
+      postings: feeds.map((row, feedIndex) => ({
+        key: `${line.itemId}-${row.materialBatchId || row.batchNo}-${feedIndex}`,
+        at: row.at || '—',
+        operator: row.operator || '—',
+        batchNo: row.batchNo || '—',
+        qtyText: formatQtyWithUnit(row.qty, unit),
+        contentText: contentWithUnit(row.contentUsed),
+      })),
     }
   })
 })
@@ -1715,6 +1736,10 @@ function rework(record) {
   line-height: 22px;
 }
 
+.formula-kv-full {
+  grid-column: 1 / -1;
+}
+
 .doc-link {
   margin-right: 8px;
   color: #307068;
@@ -1775,6 +1800,82 @@ function rework(record) {
   font-size: 14px;
   font-weight: 600;
   color: #1f2329;
+}
+
+.feed-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.feed-group {
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.feed-group-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+}
+
+.feed-formula {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  min-width: 0;
+  flex: 1;
+  font-size: 14px;
+  line-height: 22px;
+  color: #1f2329;
+}
+
+.feed-formula i,
+.feed-summary i {
+  font-style: normal;
+  color: #4e5969;
+}
+
+.feed-summary {
+  display: flex;
+  flex-shrink: 0;
+  gap: 16px;
+  padding: 8px 12px;
+  background: #e7f3f1;
+  border-radius: 8px;
+}
+
+.feed-summary span {
+  display: flex;
+  flex-direction: column;
+  min-width: 72px;
+}
+
+.feed-summary i {
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.feed-summary b {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 22px;
+  color: #1f2329;
+}
+
+.feed-empty {
+  padding: 8px 16px 12px;
+  color: #86909c;
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.feed-posting-table {
+  margin: 0 12px 12px;
 }
 
 .section-hint {

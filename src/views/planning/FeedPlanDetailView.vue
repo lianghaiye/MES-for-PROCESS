@@ -97,17 +97,58 @@
           </div>
         </DetailSectionCard>
 
-        <DetailSectionCard v-if="children.length" :title="`子计划 (${children.length})`">
+        <DetailSectionCard v-if="children.length" :title="childSectionTitle">
+          <a-form layout="inline" class="horizontal-form child-filter">
+            <a-row :gutter="[12, 8]" style="width: 100%" align="middle">
+              <a-col :xs="24" :sm="12" :md="6">
+                <a-form-item label="计划号/批次号">
+                  <a-input
+                    v-model:value="childQuery.keyword"
+                    size="small"
+                    allow-clear
+                    placeholder="请输入"
+                    @press-enter="applyChildSearch"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :xs="24" :sm="12" :md="6">
+                <a-form-item label="状态">
+                  <a-select
+                    v-model:value="childQuery.status"
+                    size="small"
+                    allow-clear
+                    placeholder="请选择"
+                    :options="childStatusOptions"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :xs="24" :sm="12" :md="6">
+                <a-form-item label="期间">
+                  <a-select
+                    v-model:value="childQuery.period"
+                    size="small"
+                    allow-clear
+                    placeholder="请选择"
+                    :options="childPeriodOptions"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :xs="24" :sm="12" :md="6" class="child-filter-actions">
+                <a-button type="primary" size="small" @click="applyChildSearch">查询</a-button>
+                <a-button size="small" @click="resetChildSearch">重置</a-button>
+              </a-col>
+            </a-row>
+          </a-form>
           <a-table
             class="plan-tree-table"
             :columns="treeColumns"
-            :data-source="planTree"
+            :data-source="filteredPlanTree"
             row-key="id"
             size="small"
             :pagination="false"
             :scroll="{ x: 1560 }"
             :expanded-row-keys="expandedRowKeys"
-            :locale="{ emptyText: '还没有子计划' }"
+            :locale="{ emptyText: childFiltering ? '没有符合条件的子计划' : '还没有子计划' }"
             @expand="onExpandTree"
           >
             <template #headerCell="{ column }">
@@ -420,6 +461,7 @@ watch(
   () => route.params.id,
   () => {
     detailTab.value = 'overview'
+    resetChildSearch()
   },
 )
 const status = computed(() => (plan.value ? resolveFeedPlanStatus(plan.value.id) : ''))
@@ -869,6 +911,110 @@ const planTree = computed(() => {
     .map((row, index) => buildPlanNode(row, String(index + 1)))
 })
 
+const childQuery = reactive({ keyword: '', status: undefined, period: undefined })
+const appliedChild = reactive({ keyword: '', status: undefined, period: undefined })
+const childFiltering = computed(() =>
+  Boolean(appliedChild.keyword || appliedChild.status || appliedChild.period),
+)
+
+function nodeStatusValue(node) {
+  return `${node.kind}:${node.status}`
+}
+
+function childNodeHit(node, parentPeriod, ignoreKeyword) {
+  const keyword = appliedChild.keyword.trim().toLowerCase()
+  const no = String(node.planNo || node.batchNo || '').toLowerCase()
+  if (!ignoreKeyword && keyword && !no.includes(keyword)) return false
+  if (appliedChild.status && nodeStatusValue(node) !== appliedChild.status) return false
+  if (appliedChild.period) {
+    const period = node.kind === 'plan' ? node.periodText : parentPeriod
+    if (period !== appliedChild.period) return false
+  }
+  return true
+}
+
+function filterPlanNodes(nodes, parentPeriod, ignoreKeyword) {
+  const result = []
+  nodes.forEach((node) => {
+    const period = node.kind === 'plan' ? node.periodText : parentPeriod
+    const self = childNodeHit(node, parentPeriod, ignoreKeyword)
+    const kids = filterPlanNodes(node.children || [], period, self || ignoreKeyword)
+    if (!self && !kids.length) return
+    result.push({ ...node, children: kids.length ? kids : undefined })
+  })
+  return result
+}
+
+const filteredPlanTree = computed(() => {
+  if (!childFiltering.value) return planTree.value
+  return filterPlanNodes(planTree.value, '', false)
+})
+
+const childSectionTitle = computed(() =>
+  childFiltering.value
+    ? `子计划 (${filteredPlanTree.value.length}/${planTree.value.length})`
+    : `子计划 (${planTree.value.length})`,
+)
+
+const childStatusOptions = computed(() => {
+  const seen = new Set()
+  const options = []
+  const walk = (nodes) => {
+    nodes.forEach((node) => {
+      const value = nodeStatusValue(node)
+      if (!seen.has(value)) {
+        seen.add(value)
+        const label =
+          node.kind === 'plan'
+            ? statusLabel[node.status] || node.status
+            : ORDER_STATUS_LABEL[node.status] || node.status
+        options.push({
+          value,
+          label: node.kind === 'plan' ? `计划·${label}` : `批次·${label}`,
+        })
+      }
+      walk(node.children || [])
+    })
+  }
+  walk(planTree.value)
+  return options
+})
+
+const childPeriodOptions = computed(() => {
+  const seen = []
+  const walk = (nodes) => {
+    nodes.forEach((node) => {
+      if (
+        node.kind === 'plan' &&
+        node.periodText &&
+        node.periodText !== '—' &&
+        !seen.includes(node.periodText)
+      ) {
+        seen.push(node.periodText)
+      }
+      walk(node.children || [])
+    })
+  }
+  walk(planTree.value)
+  return seen.map((value) => ({ value, label: value }))
+})
+
+function applyChildSearch() {
+  appliedChild.keyword = childQuery.keyword.trim()
+  appliedChild.status = childQuery.status
+  appliedChild.period = childQuery.period
+  expandedRowKeys.value = collectExpandableIds(filteredPlanTree.value)
+}
+
+function resetChildSearch() {
+  childQuery.keyword = ''
+  childQuery.status = undefined
+  childQuery.period = undefined
+  appliedChild.keyword = ''
+  appliedChild.status = undefined
+  appliedChild.period = undefined
+}
+
 const ownOrderRows = computed(() => {
   if (!plan.value) return []
   void batchInstructionState.orders
@@ -1102,12 +1248,22 @@ function handleStop() {
 }
 
 .feed-plan-detail-page .plan-detail-tabs.detail-tabs-wrap {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
   margin-bottom: 8px;
-  padding: 8px 16px 0;
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+}
+
+.feed-plan-detail-page .plan-detail-tabs :deep(.ant-tabs) {
+  width: 100%;
 }
 
 .feed-plan-detail-page .plan-detail-tabs :deep(.ant-tabs-nav) {
-  margin-bottom: 0 !important;
+  margin: 0 !important;
 }
 
 .feed-plan-detail-page :deep(.detail-section-card) {
@@ -1247,6 +1403,14 @@ function handleStop() {
 
 .child-filter {
   margin-bottom: 8px;
+}
+
+.child-filter-actions {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
 }
 
 .th-with-tip {

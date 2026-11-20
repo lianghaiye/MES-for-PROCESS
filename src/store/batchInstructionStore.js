@@ -44,6 +44,7 @@ import {
 import { addInboundOrder } from '@/store/inboundOrderStore'
 import { createInboundLine } from '@/mock/inboundOrders'
 import { appendOperationLog, currentOperator } from '@/utils/operationLog'
+import { generateCodeByBusiness } from '@/store/codingRuleStore'
 
 const STORAGE_KEY = 'i-doms-batch-instruction-v1'
 
@@ -121,9 +122,37 @@ watch(
 
 let seq = 1
 
-function nextBatchNo() {
+/** 系统默认批次号：BO + 日期 + 流水。 */
+function nextSystemBatchNo() {
   seq += 1
   return `BO${dayjs().format('YYYYMMDD')}${String(seq).padStart(3, '0')}`
+}
+
+/**
+ * 批次号：优先用户自定义；否则走「生产管理-批次指令」编码规则；再没有规则则用系统默认。
+ */
+export function nextBatchNo(custom) {
+  const manual = String(custom || '').trim()
+  if (manual) {
+    assertBatchNoAvailable(manual)
+    return manual
+  }
+  for (let i = 0; i < 20; i += 1) {
+    const coded = generateCodeByBusiness('batch_instruction')
+    if (!coded) break
+    if (!batchInstructionState.orders.some((row) => row.batchNo === coded)) return coded
+  }
+  let candidate = nextSystemBatchNo()
+  while (batchInstructionState.orders.some((row) => row.batchNo === candidate)) {
+    candidate = nextSystemBatchNo()
+  }
+  return candidate
+}
+
+function assertBatchNoAvailable(batchNo) {
+  if (batchInstructionState.orders.some((row) => row.batchNo === batchNo)) {
+    throw new Error(`批次号「${batchNo}」已存在`)
+  }
 }
 
 function snapshotFeeds(formula) {
@@ -441,14 +470,23 @@ export function getBatchOrder(id) {
   return batchInstructionState.orders.find((o) => o.id === id) || null
 }
 
-export function createOrdersFromDemand({ formulaId, demandQty, sourceLabel }) {
+export function createOrdersFromDemand({
+  formulaId,
+  demandQty,
+  sourceLabel,
+  batchNos,
+  productionLineId,
+  remark,
+} = {}) {
   const formula = getFormula(formulaId)
   if (!formula || formula.status !== 'active') throw new Error('请选择一张生效配方')
   const count = planBatchCount(demandQty, formula.baseBatchQty)
   if (!count) throw new Error('需求量和基准批量都必须大于 0')
+  const lineId = productionLineId || ''
+  const remarkText = String(remark || '').trim()
   const created = []
   for (let i = 1; i <= count; i += 1) {
-    const batchNo = nextBatchNo()
+    const batchNo = nextBatchNo(Array.isArray(batchNos) ? batchNos[i - 1] : '')
     const order = {
       id: `bo-${Date.now()}-${i}`,
       batchNo,
@@ -477,9 +515,11 @@ export function createOrdersFromDemand({ formulaId, demandQty, sourceLabel }) {
       actualOutput: null,
       yieldGap: null,
       deviation: '',
+      remark: remarkText,
       reworkOfBatchId: '',
       feedPlanId: '',
-      productionLineId: '',
+      productionLineId: lineId,
+      executeBy: lineId ? 'line' : 'formula',
       sourceLabel: sourceLabel || '',
       demandQty: Number(demandQty),
       createdAt: dayjs().format('YYYY-MM-DD HH:mm'),
@@ -521,13 +561,15 @@ export function createTankChargeFromPlan({
   seq = 1,
   batchCount = 1,
   createdBy,
+  batchNo: customBatchNo,
+  remark,
 }) {
   const formula = getFormula(formulaId)
   if (!formula || formula.status !== 'active') throw new Error('请选择一张生效配方')
   const qty = round3(plannedQty)
   if (!(qty > 0)) throw new Error('计划投料量须大于 0')
   const scaled = scaleFeedSnapshots(formula, qty)
-  const batchNo = nextBatchNo()
+  const batchNo = nextBatchNo(customBatchNo)
   const who = createdBy || currentOperator()
   const order = {
     id: `bo-${Date.now()}-${seq}-${Math.random().toString(36).slice(2, 7)}`,
@@ -557,6 +599,7 @@ export function createTankChargeFromPlan({
     actualOutput: null,
     yieldGap: null,
     deviation: '',
+    remark: String(remark || '').trim(),
     reworkOfBatchId: '',
     feedPlanId: feedPlanId || '',
     productionLineId: productionLineId || '',
@@ -950,6 +993,7 @@ export function createRework({ sourceBatchId, qty }) {
     actualOutput: null,
     yieldGap: null,
     deviation: '',
+    remark: '',
     reworkOfBatchId: src.id,
     sourceLabel: `返工 ${src.batchNo}`,
     demandQty: take,

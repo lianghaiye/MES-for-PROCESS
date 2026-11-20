@@ -18,6 +18,7 @@ import {
   calcPoLineRemainInboundQty,
 } from '@/utils/purchaseLineInbound'
 import { addPurchaseReceipt, purchaseReceiptState } from '@/store/purchaseReceiptStore'
+import { generateCodeByBusiness } from '@/store/codingRuleStore'
 import { estimateSettleQty, hasSettleUnit, resolvePricingQty } from '@/utils/settleUnit'
 import { resolveDefaultWarehouseByMaterialCode } from '@/utils/warehouseResolver'
 import { persistJson, safeSetItem } from '@/utils/safeStorage'
@@ -92,6 +93,8 @@ function initPurchaseOrders() {
 }
 
 export function generatePurchaseOrderNo() {
+  const coded = generateCodeByBusiness('purchase_order')
+  if (coded) return coded
   poSeq += 1
   return `CG${dayjs().format('YYYYMMDD')}${String(poSeq).padStart(3, '0')}`
 }

@@ -17,6 +17,7 @@ import { cloneMockIncomingQcTasks } from '@/mock/qcTasks'
 import { buildSharedQcTaskSeed } from '@/mock/qcSharedDemoSeed'
 import { getQcTemplateByCode } from '@/store/qcTemplateStore'
 import { persistJson, safeSetItem } from '@/utils/safeStorage'
+import { generateCodeByBusiness } from '@/store/codingRuleStore'
 
 export { QC_TASK_RESULT, QC_TASK_RESULT_OPTIONS }
 
@@ -165,6 +166,10 @@ function persist() {
 }
 
 export function generateQcTaskNo(bizScope) {
+  const coded = generateCodeByBusiness('qc_task', {
+    params: { bizScope: String(bizScope || '') },
+  })
+  if (coded) return coded
   const prefixKey = QC_NO_PREFIX[bizScope] || 'QC'
   const datePart = dayjs().format('YYYYMMDD')
   const prefix = `${prefixKey}${datePart}`
