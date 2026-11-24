@@ -3,7 +3,8 @@
     <template #footer>
       <a-button @click="goBack">取消</a-button>
       <a-button v-if="isEdit" @click="handleSaveAsNew">另存为新配方</a-button>
-      <a-button type="primary" @click="handleSave">保存</a-button>
+      <a-button @click="handleSave">保存</a-button>
+      <a-button type="primary" @click="handleSaveAndPublish">保存并发布</a-button>
     </template>
     <p v-if="isEdit" class="page-hint">
       当前为待发布版本，保存只改这一版。生效配方请先「升版」再编辑。另存为新配方时，编号与当前相同或留空会新生成编号。
@@ -572,6 +573,7 @@ import {
   itemUnit,
   OUTPUT_ROLE_OPTIONS,
   normalizeOutputAssayScopes,
+  publishFormula,
   saveFormula,
   stepParamRows,
 } from '@/store/processFormulaStore'
@@ -1254,6 +1256,19 @@ function handleSave() {
     goBack()
   } catch (error) {
     message.error(error.message || '保存失败')
+  }
+}
+
+function handleSaveAndPublish() {
+  try {
+    syncMainOutput()
+    assignLineSteps()
+    const saved = saveFormula(form, existing?.id)
+    publishFormula(saved.id)
+    message.success('保存并发布成功，当前版本已生效')
+    goBack()
+  } catch (error) {
+    message.error(error.message || '保存并发布失败')
   }
 }
 

@@ -565,7 +565,7 @@ export const PROCESS_ROUTE_MODE_DESCRIPTION =
 
 export { ROUTE_MODE_OPTIONS as PROCESS_ROUTE_MODE_OPTIONS }
 
-/** 流程型投料扣减（不在投料来源里加第三档） */
+/** 流程型投料扣减：新料 / 回流可分别配置；投料来源在行上选 */
 export const PROCESS_FEED_DEDUCT_MODES = {
   BATCH_PICK: 'batch_pick',
   LOCATION_FIFO: 'location_fifo',
@@ -574,15 +574,20 @@ export const PROCESS_FEED_DEDUCT_MODES = {
 
 export const PROCESS_FEED_DEDUCT_OPTIONS = [
   { value: PROCESS_FEED_DEDUCT_MODES.BATCH_PICK, label: '选手选批次' },
-  { value: PROCESS_FEED_DEDUCT_MODES.LOCATION_FIFO, label: '按库位先进先出' },
+  { value: PROCESS_FEED_DEDUCT_MODES.LOCATION_FIFO, label: '按库位/储罐先进先出' },
   { value: PROCESS_FEED_DEDUCT_MODES.EITHER, label: '两者皆可' },
 ]
 
-export const PROCESS_FEED_DEDUCT_DESCRIPTION =
-  '选手选批次：投料过账时行上必须选择原料批次（可搜索更多）。' +
-  '按库位先进先出：线边新料须选来源库位/储罐，只填实投量；含量可空待过程检回填；系统仅在该库位内按失效日扣减。' +
-  '两者皆可：行上可选批次（选了按批扣并带出含量）；未选批须选来源库位，按罐/仓内先进先出，含量可空待化验回填。' +
-  '回流料、再提指令仍强制选手选批次，不受本项影响。投料来源仍为「线边新料 / 回流料」，不另增第三档。'
+export const PROCESS_FEED_DEDUCT_FRESH_DESCRIPTION =
+  '控制「线边新料」行怎么扣：选手选批次 / 只选储罐或库位按先进先出 / 两者皆可（选了批按批扣，未选批须选位置）。' +
+  'FIFO 时含量可手填或空着后补。投料来源在明细行选择，不在表头统一。'
+
+export const PROCESS_FEED_DEDUCT_RECYCLE_DESCRIPTION =
+  '控制「回流料」行怎么扣：选手选批次（默认）/ 回用罐+量先进先出 / 两者皆可。' +
+  'FIFO 只扣待回用池中落在所选回用罐上的量。再提指令仍强制选手选批次，不受本项影响。'
+
+/** @deprecated 文案兼容，等同新料说明 */
+export const PROCESS_FEED_DEDUCT_DESCRIPTION = PROCESS_FEED_DEDUCT_FRESH_DESCRIPTION
 
 export function normalizeProcessFeedDeductMode(value) {
   const text = String(value || '').trim()
@@ -664,8 +669,14 @@ export const FUNCTION_PARAM_ROWS = [
   {
     key: 'processFeedDeductMode',
     category: 'production',
-    scenario: '投料扣减',
-    description: PROCESS_FEED_DEDUCT_DESCRIPTION,
+    scenario: '新料投料扣减',
+    description: PROCESS_FEED_DEDUCT_FRESH_DESCRIPTION,
+  },
+  {
+    key: 'processFeedDeductModeRecycle',
+    category: 'production',
+    scenario: '回流投料扣减',
+    description: PROCESS_FEED_DEDUCT_RECYCLE_DESCRIPTION,
   },
   {
     key: 'salaryPushMode',
@@ -800,6 +811,9 @@ function loadFromStorage() {
             parsed.processRouteMode ?? readLegacyProcessRouteMode(),
           ),
           processFeedDeductMode: normalizeProcessFeedDeductMode(parsed.processFeedDeductMode),
+          processFeedDeductModeRecycle: normalizeProcessFeedDeductMode(
+            parsed.processFeedDeductModeRecycle,
+          ),
           enableSalesOrderDiscount: parsed.enableSalesOrderDiscount !== false,
           salesOrderStockFulfillmentDefault: normalizeSalesOrderStockFulfillmentDefault(
             parsed.salesOrderStockFulfillmentDefault,
@@ -851,6 +865,7 @@ export const functionParamState = reactive({
     enableSequentialProcessTask: false,
     processRouteMode: normalizeRouteMode(readLegacyProcessRouteMode()) || ROUTE_MODE_PROCESS,
     processFeedDeductMode: PROCESS_FEED_DEDUCT_MODES.BATCH_PICK,
+    processFeedDeductModeRecycle: PROCESS_FEED_DEDUCT_MODES.BATCH_PICK,
     enableSalesOrderDiscount: true,
     salesOrderStockFulfillmentDefault: STOCK_FULFILLMENT_MODE.PREFER_STOCK,
     paymentLinkMode: PAYMENT_LINK_MODES.BOTH,
@@ -1152,6 +1167,7 @@ export function setProcessRouteMode(value) {
   functionParamState.params.processRouteMode = normalizeRouteMode(value)
 }
 
+/** 新料投料扣减（兼容旧键 processFeedDeductMode） */
 export function getProcessFeedDeductMode() {
   return normalizeProcessFeedDeductMode(functionParamState.params.processFeedDeductMode)
 }
@@ -1161,19 +1177,35 @@ export function setProcessFeedDeductMode(value) {
   return { ok: true }
 }
 
-/** 强制仅先进先出（行上不出现批次选择） */
-export function isProcessFeedLocationFifo() {
-  return getProcessFeedDeductMode() === PROCESS_FEED_DEDUCT_MODES.LOCATION_FIFO
+/** 回流投料扣减 */
+export function getProcessFeedDeductModeRecycle() {
+  return normalizeProcessFeedDeductMode(functionParamState.params.processFeedDeductModeRecycle)
 }
 
-/** 两者皆可：可选批次，未选则 FIFO */
-export function isProcessFeedEitherMode() {
-  return getProcessFeedDeductMode() === PROCESS_FEED_DEDUCT_MODES.EITHER
+export function setProcessFeedDeductModeRecycle(value) {
+  functionParamState.params.processFeedDeductModeRecycle = normalizeProcessFeedDeductMode(value)
+  return { ok: true }
 }
 
-/** 允许 FIFO 扣减（强制 FIFO 或两者皆可） */
-export function allowsProcessFeedFifo() {
-  const mode = getProcessFeedDeductMode()
+/** @param {'fresh'|'recycle'|string} source */
+export function getFeedDeductModeForSource(source) {
+  if (source === 'recycle') return getProcessFeedDeductModeRecycle()
+  return getProcessFeedDeductMode()
+}
+
+/** 强制仅先进先出 */
+export function isProcessFeedLocationFifo(source = 'fresh') {
+  return getFeedDeductModeForSource(source) === PROCESS_FEED_DEDUCT_MODES.LOCATION_FIFO
+}
+
+/** 两者皆可 */
+export function isProcessFeedEitherMode(source = 'fresh') {
+  return getFeedDeductModeForSource(source) === PROCESS_FEED_DEDUCT_MODES.EITHER
+}
+
+/** 允许 FIFO 扣减 */
+export function allowsProcessFeedFifo(source = 'fresh') {
+  const mode = getFeedDeductModeForSource(source)
   return (
     mode === PROCESS_FEED_DEDUCT_MODES.LOCATION_FIFO || mode === PROCESS_FEED_DEDUCT_MODES.EITHER
   )

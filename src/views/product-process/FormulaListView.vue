@@ -123,6 +123,7 @@
           </template>
           <template v-else-if="column.key === 'creator'">{{ record.creator || '—' }}</template>
           <template v-else-if="column.key === 'createdAt'">{{ record.createdAt || '—' }}</template>
+          <template v-else-if="column.key === 'updater'">{{ record.updater || '—' }}</template>
           <template v-else-if="column.key === 'action'">
             <a-space v-if="record.status === 'pending'" :size="0" wrap>
               <a-button type="link" size="small" @click="publishOne(record)">
@@ -266,6 +267,7 @@ const statusFilterOptions = [
 
 const columns = [
   { title: '序号', key: 'index', width: 64, fixed: 'left' },
+  { title: '状态', key: 'status', width: 90 },
   { title: '配方编号', key: 'formulaNo', dataIndex: 'formulaNo', width: 150 },
   { title: '配方名称', dataIndex: 'name', width: 180 },
   { title: '配方类型', key: 'formulaType', width: 100 },
@@ -275,16 +277,16 @@ const columns = [
   { title: '基准批量', key: 'base', width: 100, align: 'right' },
   { title: '理论得率', key: 'yield', width: 90, align: 'right' },
   { title: '版本', dataIndex: 'version', width: 80 },
-  { title: '状态', key: 'status', width: 90 },
   { title: '默认', key: 'default', width: 100 },
   { title: '创建人', key: 'creator', width: 100 },
   { title: '创建时间', key: 'createdAt', width: 150 },
+  { title: '更新人', key: 'updater', width: 100 },
   { title: '更新时间', dataIndex: 'updatedAt', width: 150 },
   { title: '操作', key: 'action', width: 220, fixed: 'right' },
 ]
 
 const { columnSettings, columnDrawerOpen, displayColumns, tableScrollX, defaultColumnSettings } =
-  useTableColumnSettings('formula-list-v2', columns)
+  useTableColumnSettings('formula-list-v3', columns)
 
 const filteredList = computed(() =>
   formulaState.formulas.filter((row) => {
@@ -523,6 +525,7 @@ const exportFields = [
   },
   { title: '创建人', getValue: (row) => row.creator || '—' },
   { title: '创建时间', getValue: (row) => row.createdAt || '—' },
+  { title: '更新人', getValue: (row) => row.updater || '—' },
   { title: '更新时间', getValue: (row) => row.updatedAt || '—' },
 ]
 

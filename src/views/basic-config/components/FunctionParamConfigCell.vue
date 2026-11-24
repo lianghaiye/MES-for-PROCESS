@@ -59,6 +59,20 @@
       </a-radio>
     </a-radio-group>
 
+    <a-radio-group
+      v-else-if="record.key === 'processFeedDeductModeRecycle'"
+      :value="processFeedDeductModeRecycle"
+      @change="(e) => onProcessFeedDeductModeRecycleChange(e.target.value)"
+    >
+      <a-radio
+        v-for="option in PROCESS_FEED_DEDUCT_OPTIONS"
+        :key="option.value"
+        :value="option.value"
+      >
+        {{ option.label }}
+      </a-radio>
+    </a-radio-group>
+
     <a-switch
       v-else-if="record.key === 'enableSalesOrderDiscount'"
       :checked="enableSalesOrderDiscount"
@@ -165,6 +179,8 @@ import {
   setProcessRouteMode,
   getProcessFeedDeductMode,
   setProcessFeedDeductMode,
+  getProcessFeedDeductModeRecycle,
+  setProcessFeedDeductModeRecycle,
   isSalesOrderDiscountEnabled,
   setEnableSalesOrderDiscount,
   SALES_ORDER_STOCK_FULFILLMENT_DEFAULT_OPTIONS,
@@ -193,6 +209,10 @@ const processRouteMode = computed(() => {
 const processFeedDeductMode = computed(() => {
   void functionParamState.params.processFeedDeductMode
   return getProcessFeedDeductMode()
+})
+const processFeedDeductModeRecycle = computed(() => {
+  void functionParamState.params.processFeedDeductModeRecycle
+  return getProcessFeedDeductModeRecycle()
 })
 const enableSalesOrderDiscount = computed(() => isSalesOrderDiscountEnabled())
 const salesOrderStockFulfillmentDefault = computed(() => getSalesOrderStockFulfillmentDefault())
@@ -232,7 +252,10 @@ function onProcessRouteModeChange(value) {
   toastSave(setProcessRouteMode(value), '已更新工艺路线模式')
 }
 function onProcessFeedDeductModeChange(value) {
-  toastSave(setProcessFeedDeductMode(value), '已更新投料扣减方式')
+  toastSave(setProcessFeedDeductMode(value), '已更新新料投料扣减方式')
+}
+function onProcessFeedDeductModeRecycleChange(value) {
+  toastSave(setProcessFeedDeductModeRecycle(value), '已更新回流投料扣减方式')
 }
 function onEnableSalesOrderDiscountChange(checked) {
   toastSave(

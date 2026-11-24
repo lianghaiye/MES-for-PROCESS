@@ -708,17 +708,6 @@
         <div class="section-title">基本信息</div>
         <a-form layout="inline" class="horizontal-form">
           <a-row :gutter="[12, 8]" style="width: 100%">
-            <a-col v-if="!isReextractOrder" :span="12">
-              <a-form-item label="投料来源" required>
-                <a-radio-group
-                  v-model:value="feedForm.feedSource"
-                  size="small"
-                  option-type="button"
-                  :options="feedSourceOptions"
-                  @change="onFeedSourceChange"
-                />
-              </a-form-item>
-            </a-col>
             <a-col :span="12">
               <a-form-item label="阶段" required>
                 <a-select
@@ -749,11 +738,20 @@
         size="small"
         bordered
         row-key="key"
-        :scroll="{ x: 1480, y: 360 }"
+        :scroll="{ x: 1680, y: 360 }"
         :locale="{ emptyText: '本阶段没有计划投料，可勾选补加或换阶段' }"
       >
         <template #bodyCell="{ column, record, index }">
           <template v-if="column.key === 'index'">{{ index + 1 }}</template>
+          <template v-else-if="column.key === 'feedSource'">
+            <a-select
+              v-model:value="record.feedSource"
+              size="small"
+              style="width: 100%"
+              :options="feedSourceOptions"
+              @change="(val) => onFeedRowSourceChange(record, val)"
+            />
+          </template>
           <template v-else-if="column.key === 'feedLocation'">
             <a-select
               v-if="needsFeedSourceLocation(record)"
@@ -763,23 +761,24 @@
               show-search
               option-filter-prop="label"
               style="width: 100%"
-              :options="feedLocationOptionsForItem(record.itemId)"
+              :options="feedLocationOptionsForItem(record.itemId, record.feedSource)"
               :placeholder="
-                useFeedFifoOnlyMode ? '必选：从哪个储罐/库位扣' : '未选批时必选：从哪个储罐/库位扣'
+                rowFifoOnly(record) ? '必选：从哪个储罐/库位扣' : '未选批时必选：从哪个储罐/库位扣'
               "
             />
             <span v-else class="muted">{{ feedLocationFollowText(record) }}</span>
           </template>
           <template v-else-if="column.key === 'batchId'">
             <a-select
+              v-if="showFeedBatchSelect(record)"
               v-model:value="record.batchId"
               size="small"
               allow-clear
               show-search
               option-filter-prop="label"
               style="width: 100%"
-              :options="batchOptionsForItem(record.itemId)"
-              :placeholder="feedBatchPlaceholder"
+              :options="batchOptionsForItem(record.itemId, record.feedSource)"
+              :placeholder="feedBatchPlaceholder(record)"
               @change="(val) => onFeedBatchChange(record, val)"
             >
               <template #dropdownRender="{ menuNode: menu }">
@@ -796,6 +795,7 @@
                 </div>
               </template>
             </a-select>
+            <span v-else class="muted">按库位先进先出</span>
           </template>
           <template v-else-if="column.key === 'qty'">
             <a-input-number
@@ -866,7 +866,7 @@
       :item-id="feedBatchPickerRow?.itemId || ''"
       :unit-label="feedBatchPickerRow?.unit || 'kg'"
       :order="order"
-      :feed-source="feedForm.feedSource"
+      :feed-source="feedBatchPickerRow?.feedSource || 'fresh'"
       :selected-ids="feedBatchPickerSelectedIds"
       @selected="onFeedBatchesPicked"
     />
@@ -1290,7 +1290,7 @@ import {
 } from '@/store/materialBatchStore'
 import {
   PROCESS_FEED_DEDUCT_MODES,
-  getProcessFeedDeductMode,
+  getFeedDeductModeForSource,
   functionParamState,
 } from '@/store/functionParamStore'
 import { resolveStepFormTemplate } from '@/utils/processFormTemplateSnapshot'
@@ -1373,39 +1373,28 @@ const feedPostingColumns = [
   { title: '含量', key: 'content', width: 160 },
 ]
 const feedDraftColumns = computed(() => {
+  void functionParamState.params.processFeedDeductMode
+  void functionParamState.params.processFeedDeductModeRecycle
   const cols = [
     { title: '序号', key: 'index', width: 56, align: 'center', fixed: 'left' },
     { title: '原料', dataIndex: 'item', width: 120, ellipsis: true, fixed: 'left' },
     { title: '编号', dataIndex: 'itemCode', width: 110, ellipsis: true },
     { title: '规格', dataIndex: 'specText', width: 100, ellipsis: true },
-    { title: '理论量', dataIndex: 'planQtyText', width: 110, align: 'right' },
-    { title: '已投', dataIndex: 'postedText', width: 100, align: 'right' },
   ]
-  // 两者皆可：先批后罐——有批则罐随批；未选批才强调选罐/库位
-  if (!useFeedFifoOnlyMode.value) {
-    cols.push({
-      title: useFeedEitherMode.value ? '原料批次（可选）' : '原料批次',
-      key: 'batchId',
-      width: 280,
-    })
-  }
-  if (useFeedFifoOnlyMode.value || useFeedEitherMode.value) {
-    cols.push({
-      title: useFeedFifoOnlyMode.value ? '来源储罐/库位' : '来源储罐/库位（未选批时）',
-      key: 'feedLocation',
-      width: 220,
-    })
+  // 行级投料来源；再提单整单锁定，不展示切换
+  if (!isReextractOrder.value) {
+    cols.push({ title: '投料来源', key: 'feedSource', width: 120 })
   }
   cols.push(
+    { title: '理论量', dataIndex: 'planQtyText', width: 110, align: 'right' },
+    { title: '已投', dataIndex: 'postedText', width: 100, align: 'right' },
+    { title: '原料批次', key: 'batchId', width: 280 },
+    { title: '来源储罐/库位', key: 'feedLocation', width: 220 },
     { title: '实投量', key: 'qty', width: 140 },
     { title: '含量 (%)', key: 'content', width: 160 },
+    { title: '化验单号', key: 'qcNo', width: 140, ellipsis: true },
+    { title: '检验结论', key: 'qcResult', width: 110 },
   )
-  if (!useFeedFifoOnlyMode.value) {
-    cols.push(
-      { title: '化验单号', key: 'qcNo', width: 140, ellipsis: true },
-      { title: '检验结论', key: 'qcResult', width: 110 },
-    )
-  }
   return cols
 })
 const stepFeedSummaryColumns = [
@@ -1940,56 +1929,55 @@ const stepOperatedAtPicker = computed({
   },
 })
 const openFeed = ref(false)
-const feedForm = reactive({ stepNo: undefined, extra: false, feedSource: 'fresh' })
+const feedForm = reactive({ stepNo: undefined, extra: false })
 const feedSourceOptions = [
   { value: 'fresh', label: '线边新料' },
   { value: 'recycle', label: '回流料' },
 ]
 const isReextractOrder = computed(() => Boolean(order.value?.reextractOfBatchId))
-/** 线边新料才吃功能参数；回流/再提强制选手选，投料来源不另增第三档 */
-const processFeedDeductMode = computed(() => {
-  void functionParamState.params.processFeedDeductMode
-  return getProcessFeedDeductMode()
-})
-const useFeedFifoOnlyMode = computed(() => {
-  if (isReextractOrder.value) return false
-  if (feedForm.feedSource === 'recycle') return false
-  return processFeedDeductMode.value === PROCESS_FEED_DEDUCT_MODES.LOCATION_FIFO
-})
-const useFeedEitherMode = computed(() => {
-  if (isReextractOrder.value) return false
-  if (feedForm.feedSource === 'recycle') return false
-  return processFeedDeductMode.value === PROCESS_FEED_DEDUCT_MODES.EITHER
-})
-const feedModalTitle = computed(() => {
-  if (isReextractOrder.value) return '再提投料'
-  return feedForm.feedSource === 'recycle' ? '回流投料' : '投料过账'
-})
+const feedModalTitle = computed(() => (isReextractOrder.value ? '再提投料' : '投料过账'))
 const feedSourceHint = computed(() => {
   if (isReextractOrder.value) {
     return '本单为再提指令，只可选对应的待再提批次。行内选批次或点「搜索更多」。'
   }
-  if (feedForm.feedSource === 'recycle') {
-    return '回流料：确认回用后出现；若产出勾选化验且硬门禁，须化验合格后才可选。'
-  }
-  if (useFeedFifoOnlyMode.value) {
-    return '线边新料 · 按库位先进先出：只选来源储罐/库位（混罐场景），不选手选批次；系统在该罐/仓内扣减。含量可手填，也可空着后补（手补或过程检回填）。'
-  }
-  if (useFeedEitherMode.value) {
-    return '线边新料 · 两者皆可：想追溯到批 → 选手选批次（库位随批）；罐内已混批 → 不选批、改选来源储罐/库位。含量可手填或空着后补，不依赖过程检。'
-  }
-  return '线边新料：已领到线边即可投；列表展示检验结论，不看放行状态。'
-})
-const feedBatchPlaceholder = computed(() => {
-  if (feedForm.feedSource === 'recycle') return '搜索回流批次'
-  if (useFeedEitherMode.value) return '选批=按批扣；不选=再选储罐/库位'
-  return '搜索批次号'
+  return '投料来源按行选择。新料 / 回流各自在「功能参数 · 生产与计划」配置扣减方式（选批 / 库位先进先出 / 两者皆可）。FIFO 行只选储罐/库位；选批行展示检验结论。含量可手填或空着后补。'
 })
 
+function normalizeRowFeedSource(source) {
+  if (isReextractOrder.value) return 'reextract'
+  return source === 'recycle' ? 'recycle' : 'fresh'
+}
+
+function rowDeductMode(record) {
+  void functionParamState.params.processFeedDeductMode
+  void functionParamState.params.processFeedDeductModeRecycle
+  if (isReextractOrder.value) return PROCESS_FEED_DEDUCT_MODES.BATCH_PICK
+  const source = normalizeRowFeedSource(record?.feedSource)
+  return getFeedDeductModeForSource(source === 'recycle' ? 'recycle' : 'fresh')
+}
+
+function rowFifoOnly(record) {
+  return rowDeductMode(record) === PROCESS_FEED_DEDUCT_MODES.LOCATION_FIFO
+}
+
+function rowEither(record) {
+  return rowDeductMode(record) === PROCESS_FEED_DEDUCT_MODES.EITHER
+}
+
+function showFeedBatchSelect(record) {
+  return !rowFifoOnly(record)
+}
+
 function needsFeedSourceLocation(record) {
-  if (useFeedFifoOnlyMode.value) return true
-  if (useFeedEitherMode.value && !record?.batchId) return true
+  if (rowFifoOnly(record)) return true
+  if (rowEither(record) && !record?.batchId) return true
   return false
+}
+
+function feedBatchPlaceholder(record) {
+  if (normalizeRowFeedSource(record?.feedSource) === 'recycle') return '搜索回流批次'
+  if (rowEither(record)) return '选批=按批扣；不选=再选储罐/库位'
+  return '搜索批次号'
 }
 
 function feedLocationFollowText(record) {
@@ -2000,9 +1988,9 @@ function feedLocationFollowText(record) {
   return '—'
 }
 
-function feedLocationOptionsForItem(itemId) {
+function feedLocationOptionsForItem(itemId, feedSource) {
   return listFeedSourceLocations(itemId, order.value, {
-    source: feedForm.feedSource === 'recycle' ? 'recycle' : 'fresh',
+    source: normalizeRowFeedSource(feedSource) === 'recycle' ? 'recycle' : 'fresh',
   })
 }
 
@@ -2010,6 +1998,22 @@ function feedContentPlaceholder(record) {
   if (needsFeedSourceLocation(record)) return '可手填，或空着后补'
   if (record?.convertByContent) return '必填'
   return '可选'
+}
+
+function onFeedRowSourceChange(record, source) {
+  const next = normalizeRowFeedSource(source)
+  record.feedSource = next === 'reextract' ? 'reextract' : next
+  record.batchId = undefined
+  record.locationId = undefined
+  record.contentPct = null
+  record.qcNo = '—'
+  record.qcResult = '—'
+  record.qcTaskId = ''
+  if (rowFifoOnly(record) || rowEither(record)) return
+  const preferred = listFeedableBatches(record.itemId, order.value, {
+    source: next === 'recycle' ? 'recycle' : 'fresh',
+  })[0]
+  if (preferred) onFeedBatchChange(record, preferred.id)
 }
 
 const feedContentPatchOpen = ref(false)
@@ -2397,23 +2401,28 @@ function buildFeedLineDrafts() {
       ]
     }
   }
-  const fifoOnly = useFeedFifoOnlyMode.value
-  const either = useFeedEitherMode.value
+  void functionParamState.params.processFeedDeductMode
+  void functionParamState.params.processFeedDeductModeRecycle
   feedLineDrafts.value = lines.map((line, index) => {
     const posted = postedQtyForItem(line.itemId)
     const remain = Math.max(0, Number(line.qty || 0) - posted)
-    const source = feedForm.feedSource === 'recycle' ? 'recycle' : 'fresh'
-    const batches = listFeedableBatches(line.itemId, order.value, { source })
+    const feedSource = isReextractOrder.value ? 'reextract' : 'fresh'
+    const deductSource = feedSource === 'recycle' ? 'recycle' : 'fresh'
+    const mode = isReextractOrder.value
+      ? PROCESS_FEED_DEDUCT_MODES.BATCH_PICK
+      : getFeedDeductModeForSource(deductSource)
+    const fifoOnly = mode === PROCESS_FEED_DEDUCT_MODES.LOCATION_FIFO
+    const either = mode === PROCESS_FEED_DEDUCT_MODES.EITHER
+    const batches = listFeedableBatches(line.itemId, order.value, { source: deductSource })
     const preferred = batches[0]
     const card = itemMasterCard(line.itemId)
     const unit = itemUnit(line.itemId) || order.value?.unit || 'kg'
-    // 强制 FIFO / 两者皆可默认不选手选批次（未选=罐内先进先出）；选手选模式才预填首批
+    // 强制 FIFO / 两者皆可默认不选手选批次；选手选模式才预填首批
     const preselectBatch = !fifoOnly && !either
     const selected = preselectBatch ? preferred : null
     const qc = selected
       ? resolveMaterialBatchQc(selected)
       : { qcNo: '—', qcResult: '—', qcTaskId: '' }
-    const useFifoDraft = fifoOnly || either
     return {
       key: `${line.itemId}-${index}`,
       itemId: line.itemId,
@@ -2426,16 +2435,14 @@ function buildFeedLineDrafts() {
       posted,
       postedText: formatQtyWithUnit(posted, unit),
       convertByContent: Boolean(line.convertByContent),
+      feedSource,
       batchId: selected?.id || undefined,
-      // 不预填库位，避免「先库后批」的错觉；仅选手选批时带出批所在库位
       locationId: selected?.locationId || undefined,
       qty: remain > 0 ? remain : null,
-      // FIFO/未选批：不预填含量；选手选才带出批含量。均可手改/后补
       contentPct: selected ? contentToPct(selected.content) : null,
       qcNo: qc.qcNo,
       qcResult: qc.qcResult,
       qcTaskId: qc.qcTaskId,
-      fifoDraft: useFifoDraft,
     }
   })
 }
@@ -2444,9 +2451,9 @@ function resolveMaterialBatchQc(batch) {
   return resolveBatchInspectInfo(batch)
 }
 
-function batchOptionsForItem(itemId) {
+function batchOptionsForItem(itemId, feedSource) {
   return listFeedableBatches(itemId, order.value, {
-    source: feedForm.feedSource === 'recycle' ? 'recycle' : 'fresh',
+    source: normalizeRowFeedSource(feedSource) === 'recycle' ? 'recycle' : 'fresh',
   }).map((batch) => {
     const qc = resolveMaterialBatchQc(batch)
     const qcTag = qc.qcResult && qc.qcResult !== '—' ? ` 检验${qc.qcResult}` : ''
@@ -2510,6 +2517,7 @@ function cloneFeedDraftBase(row) {
     posted: row.posted,
     postedText: row.postedText,
     convertByContent: row.convertByContent,
+    feedSource: normalizeRowFeedSource(row.feedSource),
   }
 }
 
@@ -2519,6 +2527,7 @@ function makeFeedDraftRow(base, batch, qty) {
     ...cloneFeedDraftBase(base),
     key: `${base.itemId}-${batch?.id || 'none'}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     batchId: batch?.id || undefined,
+    locationId: batch?.locationId || undefined,
     qty: qty == null ? null : qty,
     contentPct: contentToPct(batch?.content),
     qcNo: qc.qcNo,
@@ -2613,7 +2622,7 @@ function paramLabel(field) {
 }
 
 watch(
-  () => [feedForm.stepNo, feedForm.extra, feedForm.feedSource],
+  () => [feedForm.stepNo, feedForm.extra],
   () => {
     if (!openFeed.value) return
     buildFeedLineDrafts()
@@ -2635,12 +2644,7 @@ function defaultFeedStepNo() {
 function openFeedFor(stepNo) {
   feedForm.stepNo = stepNo || defaultFeedStepNo()
   feedForm.extra = false
-  feedForm.feedSource = order.value?.reextractOfBatchId ? 'reextract' : 'fresh'
   openFeed.value = true
-  buildFeedLineDrafts()
-}
-
-function onFeedSourceChange() {
   buildFeedLineDrafts()
 }
 
@@ -3063,25 +3067,26 @@ function saveStep() {
 function saveFeed() {
   try {
     const lines = []
-    const fifoOnly = useFeedFifoOnlyMode.value
-    const either = useFeedEitherMode.value
     let usedFifo = false
     let usedPick = false
+    let usedRecycle = false
     let pendingContent = false
+    let anyFifoOrEither = false
     for (const row of feedLineDrafts.value || []) {
       if (!(Number(row.qty) > 0)) continue
-      const feedSource = isReextractOrder.value
-        ? 'reextract'
-        : feedForm.feedSource === 'recycle'
-          ? 'recycle'
-          : 'fresh'
+      const feedSource = normalizeRowFeedSource(row.feedSource)
+      const deductSource = feedSource === 'recycle' ? 'recycle' : 'fresh'
+      if (feedSource === 'recycle') usedRecycle = true
+      const fifoOnly = rowFifoOnly(row)
+      const either = rowEither(row)
+      if (fifoOnly || either) anyFifoOrEither = true
       const useFifo = fifoOnly || (either && !row.batchId)
       if (useFifo) {
         if (!row.locationId) {
           throw new Error(`${row.item || '原料'} 请选择来源库位（储罐/仓库）`)
         }
         planFeedFifoAllocations(row.itemId, row.qty, order.value, {
-          source: 'fresh',
+          source: deductSource,
           locationId: row.locationId,
         })
         const contentUsed = contentPctToFraction(row.contentPct)
@@ -3121,14 +3126,14 @@ function saveFeed() {
       usedPick = true
     }
     if (!lines.length) {
-      message.warning(fifoOnly || either ? '请至少填写一行实投量' : '请至少选择一批并填写实投量')
+      message.warning(anyFifoOrEither ? '请至少填写一行实投量' : '请至少选择一批并填写实投量')
       return
     }
     postFeeds(order.value.id, lines)
     openFeed.value = false
     let tip = '投料已记账，原料批次重量和罐液位已扣减'
     if (isReextractOrder.value) tip = '再提投料已记账'
-    else if (feedForm.feedSource === 'recycle') tip = '回流投料已记账'
+    else if (usedRecycle && !usedFifo && usedPick) tip = '回流投料已记账'
     else if (usedFifo && usedPick) tip = '投料已记账，部分选手选批次、部分按库位先进先出扣减'
     else if (usedFifo) tip = '投料已记账，已按所选储罐/库位扣减'
     if (pendingContent) tip += '；含量待补录（可手补或化验回填）'
