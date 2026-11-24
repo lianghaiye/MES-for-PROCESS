@@ -11,7 +11,6 @@ import {
   MATERIAL_REQ_AUDIT_OPTIONS,
   isMaterialReqMultiSourceMode,
 } from '@/mock/mobileMaterialReqSeed'
-import { ensureMultiUnitFlowMaterialReqs } from '@/mock/multiUnitFlowDemoSeed'
 import {
   appendOutboundOrder,
   getOutboundOrderById,
@@ -29,7 +28,7 @@ import {
 
 export const MOBILE_MATERIAL_REQ_STORAGE_KEY = 'i_doms_mobile_material_reqs'
 const SEED_VERSION_KEY = 'i_doms_mobile_material_reqs_seed_v'
-const CURRENT_SEED_VERSION = '4'
+const CURRENT_SEED_VERSION = '5'
 
 export {
   materialReqModeLabel,
@@ -59,52 +58,32 @@ function persist() {
   localStorage.setItem(SEED_VERSION_KEY, CURRENT_SEED_VERSION)
 }
 
+function isLegacyMaterialReqSeed(row) {
+  const id = String(row?.id || '')
+  return id.startsWith('mr-seed-') || id.startsWith('mr-mu-flow-')
+}
+
+/** 去掉离散演示单，换上流程领料种子；用户自己提交的申请保留。 */
+function mergeProcessMaterialReqSeeds(items) {
+  const seeds = createMobileMaterialReqSeed()
+  const seedIds = new Set(seeds.map((row) => row.id))
+  const kept = (items || [])
+    .map(normalizeReq)
+    .filter((row) => !isLegacyMaterialReqSeed(row) || seedIds.has(row.id))
+    .filter((row) => !seedIds.has(row.id))
+  return [...seeds, ...kept]
+}
+
 function createInitial() {
   const version = localStorage.getItem(SEED_VERSION_KEY)
   const cached = loadItems()
-  // 种子升级且无真实小程序数据时重灌演示数据（避免覆盖用户已有申请）
-  if (version !== CURRENT_SEED_VERSION && (!cached || !cached.length || allSeedIds(cached))) {
-    const seeded = ensureMultiUnitFlowMaterialReqs(createMobileMaterialReqSeed())
+  if (version !== CURRENT_SEED_VERSION || cached === null) {
+    const seeded = mergeProcessMaterialReqSeeds(cached || [])
     localStorage.setItem(SEED_VERSION_KEY, CURRENT_SEED_VERSION)
     localStorage.setItem(MOBILE_MATERIAL_REQ_STORAGE_KEY, JSON.stringify({ items: seeded }))
     return seeded
   }
-  if (cached !== null) {
-    localStorage.setItem(SEED_VERSION_KEY, CURRENT_SEED_VERSION)
-    return ensureMultiUnitFlowMaterialReqs(ensureMultiWarehouseSeedReqs(cached.map(normalizeReq)))
-  }
-  const seeded = ensureMultiUnitFlowMaterialReqs(createMobileMaterialReqSeed())
-  localStorage.setItem(SEED_VERSION_KEY, CURRENT_SEED_VERSION)
-  localStorage.setItem(MOBILE_MATERIAL_REQ_STORAGE_KEY, JSON.stringify({ items: seeded }))
-  return seeded
-}
-
-/** 在已有真实数据时补齐多仓演示单（不覆盖用户单据） */
-function ensureMultiWarehouseSeedReqs(items) {
-  const seeds = createMobileMaterialReqSeed().filter((r) =>
-    ['mr-seed-001', 'mr-seed-005', 'mr-seed-006'].includes(r.id),
-  )
-  const list = [...(items || [])]
-  const indexById = new Map(list.map((r, i) => [r.id, i]))
-  seeds.forEach((seed) => {
-    const idx = indexById.get(seed.id)
-    if (idx == null) {
-      list.unshift(seed)
-      return
-    }
-    // 仅覆盖仍是演示种子的行，刷新多仓字段
-    if (String(list[idx].id || '').startsWith('mr-seed-')) {
-      list[idx] = { ...seed }
-    }
-  })
-  return list
-}
-
-function allSeedIds(items) {
-  return items.every((r) => {
-    const id = String(r.id || '')
-    return id.startsWith('mr-seed-') || id.startsWith('mr-mu-flow-')
-  })
+  return cached.map(normalizeReq)
 }
 
 function normalizeReq(row) {

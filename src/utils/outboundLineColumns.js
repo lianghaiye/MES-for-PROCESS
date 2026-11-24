@@ -3,8 +3,8 @@
 /** 仅销售出库展示的明细列 */
 export const OUTBOUND_SALES_ONLY_LINE_KEYS = ['packagingForm', 'deliveryRemark']
 
-/** 销售出库隐藏的明细列（领料/发料出库展示） */
-export const OUTBOUND_NON_SALES_LINE_KEYS = ['blankSizeText']
+/** 销售出库不再单独隐藏离散列 */
+export const OUTBOUND_NON_SALES_LINE_KEYS = []
 
 export const outboundFormLineColumns = [
   { title: '序号', key: 'index', width: 56, align: 'center' },
@@ -12,22 +12,6 @@ export const outboundFormLineColumns = [
   { title: '物品编码', dataIndex: 'itemCode', key: 'itemCode', width: 120, ellipsis: true },
   { title: '物品名称', dataIndex: 'itemName', key: 'itemName', width: 130, ellipsis: true },
   { title: '规格型号', dataIndex: 'specModel', key: 'specModel', width: 110, ellipsis: true },
-  { title: '材质', dataIndex: 'material', key: 'material', width: 80, ellipsis: true },
-  {
-    title: '变体属性',
-    dataIndex: 'variantSummary',
-    key: 'variantAttr',
-    width: 140,
-    ellipsis: true,
-  },
-  { title: '图号', dataIndex: 'drawingNo', key: 'drawingNo', width: 90, ellipsis: true },
-  {
-    title: '下料尺寸',
-    dataIndex: 'blankSizeText',
-    key: 'blankSizeText',
-    width: 160,
-    ellipsis: true,
-  },
   { title: '条码类型', dataIndex: 'barcodeType', key: 'barcodeType', width: 96 },
   { title: '当前可用库存数', key: 'availableStockQty', width: 130, align: 'right' },
   { title: '当前仓库数量', key: 'warehouseStockQty', width: 130, align: 'right' },
@@ -61,7 +45,7 @@ export const outboundDetailLineColumns = outboundFormLineColumns.filter(
   (c) => !OUTBOUND_DETAIL_HIDDEN_LINE_KEYS.includes(c.key),
 )
 
-/** 按出库类型过滤明细列（非销售出库隐藏包装形式、发货备注；销售出库隐藏下料尺寸） */
+/** 按出库类型过滤明细列（非销售出库隐藏包装形式、发货备注） */
 export function filterOutboundLineColumns(columns, outboundType) {
   const list = Array.isArray(columns) ? columns : []
   if (outboundType === '销售出库') {
@@ -81,12 +65,19 @@ export const OUTBOUND_BATCH_PICK_TIP_AUTO =
 export const OUTBOUND_BATCH_PICK_TIP = OUTBOUND_BATCH_PICK_TIP_MANUAL
 
 const BATCH_ATTR_LABELS = {
-  material: '材质',
   specModel: '规格型号',
-  inboundEntryMode: '入库方式',
-  length: '长度',
-  weight: '重量',
+  content: '含量',
+  expiryDate: '失效日期',
+  supplierBatchNo: '供应商批号',
 }
+
+const BATCH_ATTR_SKIP = new Set([
+  'inboundEntryMode',
+  'processStatus',
+  'material',
+  'length',
+  'weight',
+])
 
 /** 批次 attrs 展示文案（确认出库回写等仍可用） */
 export function formatBatchAttrsText(attrs) {
@@ -94,7 +85,7 @@ export function formatBatchAttrsText(attrs) {
   const parts = []
   Object.entries(attrs).forEach(([key, val]) => {
     if (val == null || val === '') return
-    if (key === 'inboundEntryMode') return
+    if (BATCH_ATTR_SKIP.has(key)) return
     const label = BATCH_ATTR_LABELS[key] || key
     parts.push(`${label}:${val}`)
   })

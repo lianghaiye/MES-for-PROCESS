@@ -1,15 +1,12 @@
 import { reactive, watch } from 'vue'
 import dayjs from 'dayjs'
-import {
-  clonePurchaseReceipts,
-  createPurchaseReceipt,
-  generatePurchaseReceiptNo,
-} from '@/mock/purchaseReceipts'
+import { createPurchaseReceipt, generatePurchaseReceiptNo } from '@/mock/purchaseReceipts'
 import { persistJson, safeSetItem } from '@/utils/safeStorage'
 
 const STORAGE_KEY = 'i_doms_purchase_receipts'
 const SEED_VERSION_KEY = 'i_doms_purchase_receipts_seed_v'
-const CURRENT_SEED_VERSION = '11'
+/** v12：清空离散制造演示采购收货单 */
+const CURRENT_SEED_VERSION = '12'
 
 const UNFINISHED_QC_STATUSES = new Set(['未质检', '质检中'])
 const UNFINISHED_INBOUND_STATUSES = new Set(['入库中', '部分入库'])
@@ -109,15 +106,15 @@ function normalizeReceipt(row) {
 }
 
 function initReceipts() {
-  const list = shouldReseed()
-    ? clonePurchaseReceipts()
-    : loadFromStorage() || clonePurchaseReceipts()
+  const list = shouldReseed() ? [] : loadFromStorage() || []
   return list.map(normalizeReceipt)
 }
 
 export const purchaseReceiptState = reactive({
   receipts: initReceipts(),
 })
+
+persist()
 
 watch(
   () => purchaseReceiptState.receipts,

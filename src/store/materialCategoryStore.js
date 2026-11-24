@@ -9,7 +9,7 @@ import { moveCategoryInList } from '@/utils/categoryTreeSort'
 const STORAGE_KEY = 'i_doms_material_categories'
 const SEED_VERSION_KEY = 'i_doms_material_categories_seed_v'
 /** v2：流程型物料分类（树脂 / 溶剂 / 助剂 / 回收料等），版本不一致时重种演示树 */
-const CURRENT_SEED_VERSION = '2'
+const CURRENT_SEED_VERSION = '4'
 
 function loadFromStorage() {
   try {

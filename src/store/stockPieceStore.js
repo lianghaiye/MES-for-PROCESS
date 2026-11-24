@@ -2,15 +2,12 @@
 
 import { reactive, watch } from 'vue'
 import { roundMeters } from '@/utils/variableLengthMaterial'
-import { cloneStockPieceSeed } from '@/mock/stockPieceSeed'
-import { ensureOneItemOneCodeInventoryPieces } from '@/mock/oneItemOneCodeInventoryDemoSeed'
-import { ensureCategoryBatchPiecePieces } from '@/mock/categoryBatchPieceDemoSeed'
 import { persistJson, safeSetItem } from '@/utils/safeStorage'
 
 const STORAGE_KEY = 'i_doms_stock_pieces'
 const SEED_VERSION_KEY = 'i_doms_stock_pieces_seed_v'
-/** v6：一类/一批三口径件码 */
-const CURRENT_SEED_VERSION = '6'
+/** v7：清空离散制造演示件码 */
+const CURRENT_SEED_VERSION = '7'
 
 export const PIECE_STATUS = {
   IN_STOCK: '在库',
@@ -44,9 +41,8 @@ function nid() {
 }
 
 function initPieces() {
-  const stored = loadFromStorage()
-  const base = shouldReseed() || !stored?.length ? cloneStockPieceSeed() : stored
-  return ensureCategoryBatchPiecePieces(ensureOneItemOneCodeInventoryPieces(base))
+  if (shouldReseed()) return []
+  return loadFromStorage() || []
 }
 
 export const stockPieceState = reactive({

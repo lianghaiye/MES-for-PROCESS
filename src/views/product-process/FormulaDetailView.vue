@@ -180,6 +180,8 @@ import {
   FORMULA_STATUS_LABEL,
   FORMULA_TYPE_LABEL,
   OUTPUT_ROLE_LABEL,
+  normalizeOutputAssayScopes,
+  resolveFormulaStepAssaySchemes,
   archiveFormula,
   getFormula,
   itemLabel,
@@ -192,6 +194,9 @@ import {
   setDefaultFormula,
 } from '@/store/processFormulaStore'
 import { getProcessRouteById } from '@/store/processRouteStore'
+import { qcBizScopeLabel } from '@/constants/qcBizScopeLabel'
+import { formatProcessGate } from '@/mock/processConfigSeed'
+import { assayTypeLabel, isFinishedAssayScheme } from '@/utils/qcProcessConfig'
 import { getProcessById } from '@/store/processConfigStore'
 import { deviceLabelById } from '@/store/equipmentStore'
 
@@ -297,6 +302,7 @@ const outputColumns = [
   { title: '类型', dataIndex: 'materialType', width: 90 },
   { title: '规格', dataIndex: 'specModel', width: 150 },
   { title: '产出工序', dataIndex: 'stepText', width: 140 },
+  { title: '产出化验 / 门禁', dataIndex: 'assayText', width: 280 },
   { title: '预期数量', dataIndex: 'expectedQty', align: 'right', width: 140 },
 ]
 const lineColumns = [
@@ -340,6 +346,22 @@ const logColumns = [
   { title: '备注', dataIndex: 'remark', ellipsis: true },
 ]
 
+function outputAssayText(row, step) {
+  const proc = step?.processId ? getProcessById(step.processId) : null
+  const schemes = resolveFormulaStepAssaySchemes(step, proc).filter(isFinishedAssayScheme)
+  if (schemes.length) {
+    return schemes
+      .map((scheme) => {
+        const type = assayTypeLabel(scheme.assayType, scheme.bizScope)
+        const gate = formatProcessGate(scheme.gateMode)
+        return `${type}（${gate}）`
+      })
+      .join('；')
+  }
+  const names = normalizeOutputAssayScopes(row?.assayScopes).map((scope) => qcBizScopeLabel(scope))
+  return names.length ? names.join('、') : '—'
+}
+
 const outputRows = computed(() =>
   (record.value?.outputs || []).map((row, index) => {
     const card = itemMasterCard(row.itemId)
@@ -356,6 +378,7 @@ const outputRows = computed(() =>
       materialType: text(card.materialType),
       specModel: text(card.specModel),
       stepText: row.stepNo ? `${row.stepNo} ${row.stepName || step?.name || ''}`.trim() : '—',
+      assayText: outputAssayText(row, step),
     }
   }),
 )
@@ -382,7 +405,9 @@ const lineRows = computed(() =>
       toleranceText: percentText(line.tolerance),
       keyText: key ? '是' : '否',
       auxText: aux ? '是' : '否',
-      contentText: line.convertByContent ? `是（含量 ${line.content ?? '—'}）` : '否',
+      contentText: line.convertByContent
+        ? `是（含量 ${line.content == null || line.content === '' ? '—' : percentText(line.content)}）`
+        : '否',
       theoreticalQty: calc.ok ? calc.qty : '—',
     }
   }),

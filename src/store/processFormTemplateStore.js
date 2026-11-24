@@ -10,7 +10,7 @@ import { getUser } from '@/utils/auth'
 
 const STORAGE_KEY = 'i_doms_process_form_template_v2'
 const SEED_VERSION_KEY = 'i_doms_process_form_template_seed_v'
-const CURRENT_SEED_VERSION = '3'
+const CURRENT_SEED_VERSION = '5'
 
 function nowText() {
   return dayjs().format('YYYY-MM-DD HH:mm:ss')

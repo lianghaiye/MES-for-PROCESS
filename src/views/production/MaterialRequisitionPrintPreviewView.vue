@@ -50,15 +50,10 @@
                     <th>序号</th>
                     <th>物料编码</th>
                     <th>物料名称</th>
-                    <th>规格型号</th>
-                    <th>材质</th>
-                    <th>图号</th>
-                    <th>下料尺寸</th>
-                    <th>领料数量</th>
-                    <th>单位</th>
+                    <th>申领数量</th>
                     <th>领料仓库</th>
-                    <th>来源工单</th>
-                    <th>备注</th>
+                    <th>实领数量</th>
+                    <th>已领批次</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -66,15 +61,10 @@
                     <td class="cell-index">{{ row.seq }}</td>
                     <td>{{ row.itemCode }}</td>
                     <td>{{ row.itemName }}</td>
-                    <td>{{ row.specModel }}</td>
-                    <td>{{ row.material }}</td>
-                    <td>{{ row.drawingNo }}</td>
-                    <td>{{ row.blankSizeText }}</td>
-                    <td class="cell-num">{{ row.shipQty }}</td>
-                    <td>{{ row.unit }}</td>
+                    <td class="cell-num">{{ row.requestQty }}</td>
                     <td>{{ row.shipWarehouse }}</td>
-                    <td>{{ row.sourceWorkOrders }}</td>
-                    <td>{{ row.remark }}</td>
+                    <td class="cell-num">{{ row.issuedQty }}</td>
+                    <td>{{ row.issuedBatch }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -82,7 +72,8 @@
             <div v-else class="bom-empty">暂无领料明细</div>
             <div v-if="sheet.summary" class="print-summary">
               <span>明细行数：{{ sheet.summary.lineCount || '—' }}</span>
-              <span>领料数量合计：{{ sheet.summary.totalShipQty || '—' }}</span>
+              <span>申领数量合计：{{ sheet.summary.totalShipQty || '—' }}</span>
+              <span>实领数量合计：{{ sheet.summary.totalIssuedQty || '—' }}</span>
             </div>
           </section>
 

@@ -116,7 +116,7 @@
         <a-button size="small" @click="addStep">添加阶段</a-button>
       </div>
       <p class="block-hint">
-        请先维护工艺阶段，再填写产出与投料所属阶段。阶段从工序配置中选择，同一道工序可以出现多次；选中后带出该工序参数，设定值可按本配方修改。设备可先选分类，再多选候选台；有工艺路线时候选优先落在路线该工序挂的设备上。执行时以计划产线设备为准。
+        请先维护工艺阶段，再填写产出与投料所属阶段。阶段从工序配置中选择，同一道工序可以出现多次；选中后带出该工序参数，设定值可按本配方修改。设备可先选分类，再多选候选台；有工艺路线时，候选设备优先落在路线该工序挂的设备上。执行时用本阶段选定的设备，产线不改这台设备。
       </p>
       <a-table
         :columns="stageColumns"
@@ -230,7 +230,9 @@
       </div>
       <p class="block-hint">
         主产品预期数量 = 基准批量 ×
-        理论得率。联产品、副产品、回收料、废弃物按一个基准批量单独填写；请指定在哪一工序产出。
+        理论得率。联产品、副产品、回收料、废弃物按一个基准批量单独填写；请指定在哪一工序产出。产出行只配
+        <strong>产出化验</strong>
+        （门禁可改，不回写工序主数据）；过程检在工艺阶段/工序化验清单配置。记产出时按勾选带出检单。
       </p>
       <a-table
         :columns="outputColumns"
@@ -238,7 +240,7 @@
         :pagination="false"
         size="small"
         row-key="key"
-        :scroll="{ x: 1440 }"
+        :scroll="{ x: 1980 }"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'role'">
@@ -274,7 +276,32 @@
               placeholder="产出工序"
               :options="stageOptions"
               style="width: 100%"
+              @change="() => onOutputStepChange(record)"
             />
+          </template>
+          <template v-else-if="column.key === 'assay'">
+            <div class="output-assay-panel">
+              <template v-if="!record.stepKey">
+                <span class="output-assay-empty">请先选产出工序</span>
+              </template>
+              <div v-else class="output-assay-row">
+                <a-checkbox
+                  :checked="outputAssayEnabled(record)"
+                  @change="(e) => onOutputAssayToggle(record, e.target.checked)"
+                >
+                  产出化验
+                </a-checkbox>
+                <a-select
+                  :value="outputAssayGateMode(record)"
+                  size="small"
+                  :options="PROCESS_GATE_OPTIONS"
+                  :disabled="!outputAssayEnabled(record)"
+                  :placeholder="outputAssayEnabled(record) ? '请选择门禁' : '勾选后必选'"
+                  style="flex: 1; min-width: 140px"
+                  @change="(value) => onOutputAssayGateSelect(record, value)"
+                />
+              </div>
+            </div>
           </template>
           <template v-else-if="column.key === 'qty'">
             <span v-if="record.role === 'main'">{{ mainExpectedText }}</span>
@@ -309,6 +336,9 @@
           <a-button size="small" @click="addLine">添加投料</a-button>
         </a-space>
       </div>
+      <p class="block-hint">
+        投料量与配比二选一。开启「按含量折算」时，右侧「理论投料」=（投料量或基准批量×配比）×(1+损耗)÷含量；配方含量只用于算出计划领用量。现场实投以手填或原料批次含量为准，缺含量不能过账。
+      </p>
       <div class="ratio-bar">
         <span>配比合计 {{ ratioPercentText }}</span>
         <a-tag v-if="ratioOnly && ratioOk" color="success">已到 100%</a-tag>
@@ -322,7 +352,7 @@
         :pagination="false"
         size="small"
         row-key="key"
-        :scroll="{ x: 2200 }"
+        :scroll="{ x: 2360 }"
       >
         <template #bodyCell="{ column, record, index }">
           <template v-if="column.key === 'index'">{{ index + 1 }}</template>
@@ -415,12 +445,22 @@
           </template>
           <template v-else-if="column.key === 'content'">
             <a-input-number
-              v-model:value="record.content"
+              :value="percentValue(record.content)"
               size="small"
               :min="0"
-              :max="1"
-              :step="0.01"
+              :max="100"
+              :step="0.1"
+              :disabled="!record.convertByContent"
+              placeholder="如 98.5"
+              addon-after="%"
+              style="width: 100%"
+              @change="(value) => onContentPercent(record, value)"
             />
+          </template>
+          <template v-else-if="column.key === 'theoreticalQty'">
+            <span :class="{ muted: lineTheoreticalQty(record) === '—' }">{{
+              lineTheoreticalQty(record)
+            }}</span>
           </template>
           <template v-else-if="column.key === 'action'">
             <a-button type="link" size="small" danger @click="removeLine(record.key)"
@@ -506,6 +546,12 @@ import {
 } from '@/store/equipmentStore'
 import { EQUIPMENT_CATEGORY_OPTIONS, EQUIPMENT_STATUS } from '@/mock/equipmentSeed'
 import {
+  PROCESS_GATE_HARD,
+  PROCESS_GATE_OPTIONS,
+  PROCESS_GATE_RECORD,
+} from '@/mock/processConfigSeed'
+import {
+  calcTheoreticalFeed,
   convertToFeedKg,
   isRatioOnlyFormula,
   ratiosClosed,
@@ -513,12 +559,19 @@ import {
   theoreticalOutput,
 } from '@/utils/processBatchMath'
 import {
+  createProcessQcConfig,
+  isFinishedAssayScheme,
+  normalizeProcessQcConfigs,
+} from '@/utils/qcProcessConfig'
+import {
   FORMULA_TYPE_OPTIONS,
+  assayScopesFromSchemes,
   getFormula,
   itemMasterCard,
   itemMasterProfile,
   itemUnit,
   OUTPUT_ROLE_OPTIONS,
+  normalizeOutputAssayScopes,
   saveFormula,
   stepParamRows,
 } from '@/store/processFormulaStore'
@@ -566,7 +619,14 @@ function paramsFromProcess(proc) {
   }))
 }
 
-function blankStep(name, params, processId = '', equipmentPartial = {}) {
+function assaySchemesFromProcess(proc, existing) {
+  if (Array.isArray(existing) && existing.length) {
+    return normalizeProcessQcConfigs(existing)
+  }
+  return normalizeProcessQcConfigs(proc?.qcConfigs || [])
+}
+
+function blankStep(name, params, processId = '', equipmentPartial = {}, assaySchemes) {
   const proc = resolveStepProcess({ name, processId })
   const fromLegacy =
     typeof equipmentPartial === 'string'
@@ -583,6 +643,7 @@ function blankStep(name, params, processId = '', equipmentPartial = {}) {
     equipmentCategory: fromLegacy.equipmentCategory || undefined,
     equipmentIds,
     params: params?.length ? params : paramsFromProcess(proc),
+    assaySchemes: assaySchemesFromProcess(proc, assaySchemes),
   }
 }
 
@@ -635,15 +696,28 @@ if (existing) {
   form.routeId = existing.routeId || undefined
   form.steps = (existing.steps || []).map((step) => {
     const params = stepParamRows(step).map((param) => ({ ...param, key: nextKey() }))
-    return blankStep(step.name, params.length ? params : [blankParam()], step.processId, {
-      equipmentCategory: step.equipmentCategory,
-      equipmentIds: step.equipmentIds,
-      equipmentId: step.equipmentId,
-    })
+    return blankStep(
+      step.name,
+      params.length ? params : [blankParam()],
+      step.processId,
+      {
+        equipmentCategory: step.equipmentCategory,
+        equipmentIds: step.equipmentIds,
+        equipmentId: step.equipmentId,
+      },
+      step.assaySchemes,
+    )
   })
   form.outputs = existing.outputs.map((o) => {
     const step = form.steps[(Number(o.stepNo) || 0) - 1] || form.steps[form.steps.length - 1]
-    return { ...o, key: nextKey(), stepKey: step?.key }
+    const row = {
+      ...o,
+      key: nextKey(),
+      stepKey: step?.key,
+      assayScopes: normalizeOutputAssayScopes(o.assayScopes),
+    }
+    syncOutputAssayScopes(row)
+    return row
   })
   form.lines = existing.lines.map((line) => {
     const profile = itemMasterProfile(line.itemId)
@@ -661,15 +735,16 @@ if (existing) {
   const presetItemId = route.query.itemId ? String(route.query.itemId) : undefined
   form.itemId = presetItemId
   if (route.query.itemName) form.name = `${route.query.itemName}配方`
-  form.outputs = [
-    {
-      key: nextKey(),
-      role: 'main',
-      itemId: presetItemId,
-      expectedQty: null,
-      stepKey: form.steps[form.steps.length - 1]?.key,
-    },
-  ]
+  const mainOutput = {
+    key: nextKey(),
+    role: 'main',
+    itemId: presetItemId,
+    expectedQty: null,
+    stepKey: form.steps[form.steps.length - 1]?.key,
+    assayScopes: [],
+  }
+  form.outputs = [mainOutput]
+  syncOutputAssayScopes(mainOutput)
   if (form.lines[0]) form.lines[0].stepKey = form.steps[0]?.key
 }
 syncMainExpected()
@@ -686,6 +761,7 @@ const outputColumns = [
   { title: '类型', key: 'materialType', width: 90 },
   { title: '规格', key: 'specModel', width: 150 },
   { title: '产出工序', key: 'stage', width: 160 },
+  { title: '产出化验 / 门禁', key: 'assay', width: 320 },
   { title: '预期数量', key: 'qty', width: 140, align: 'right' },
   { title: '操作', key: 'action', width: 80 },
 ]
@@ -704,7 +780,8 @@ const lineColumns = [
   { title: '关键物料', key: 'keyMaterial', width: 100 },
   { title: '辅料', key: 'auxiliary', width: 80 },
   { title: '按含量折算', key: 'contentFlag', width: 110 },
-  { title: '含量', key: 'content', width: 110 },
+  { title: '含量(%)', key: 'content', width: 130 },
+  { title: '理论投料', key: 'theoreticalQty', width: 120, align: 'right' },
   { title: '操作', key: 'action', width: 80 },
 ]
 function stageCell(record) {
@@ -797,13 +874,111 @@ function syncMainOutput() {
 }
 
 function addOutput() {
-  form.outputs.push({
+  const row = {
     key: nextKey(),
     role: 'by',
     itemId: undefined,
     expectedQty: null,
     stepKey: form.steps[form.steps.length - 1]?.key,
-  })
+    assayScopes: [],
+  }
+  form.outputs.push(row)
+  syncOutputAssayScopes(row)
+}
+
+function findOutputStep(record) {
+  if (!record?.stepKey) return null
+  return form.steps.find((step) => step.key === record.stepKey) || null
+}
+
+function ensureStepAssaySchemes(step) {
+  if (!step) return []
+  if (!Array.isArray(step.assaySchemes)) step.assaySchemes = []
+  if (step.assaySchemes.length) return step.assaySchemes
+  const proc = resolveStepProcess(step)
+  step.assaySchemes = assaySchemesFromProcess(proc)
+  return step.assaySchemes
+}
+
+function outputAssaySchemes(record) {
+  const step = findOutputStep(record)
+  if (!step) return []
+  return ensureStepAssaySchemes(step).filter(isFinishedAssayScheme)
+}
+
+function outputAssayEnabled(record) {
+  return outputAssaySchemes(record).length > 0
+}
+
+function outputAssayGateMode(record) {
+  return outputAssaySchemes(record)[0]?.gateMode || undefined
+}
+
+function syncOutputAssayScopes(record) {
+  if (!record) return
+  const schemes = outputAssaySchemes(record)
+  record.assayScopes = assayScopesFromSchemes(schemes)
+}
+
+function onOutputStepChange(record) {
+  const step = findOutputStep(record)
+  if (step) ensureStepAssaySchemes(step)
+  syncOutputAssayScopes(record)
+}
+
+function ensureOutputAssayScheme(record, gateMode = PROCESS_GATE_HARD) {
+  const step = findOutputStep(record)
+  if (!step) return null
+  ensureStepAssaySchemes(step)
+  let scheme = outputAssaySchemes(record)[0]
+  if (!scheme) {
+    scheme = createProcessQcConfig({
+      bizScope: '成品检',
+      assayType: 'finished',
+      gateMode: gateMode === PROCESS_GATE_HARD ? PROCESS_GATE_HARD : PROCESS_GATE_RECORD,
+      allowMultiple: true,
+    })
+    step.assaySchemes.push(scheme)
+  }
+  return scheme
+}
+
+function onOutputAssayToggle(record, checked) {
+  if (!record?.stepKey) return
+  if (checked) {
+    const scheme = ensureOutputAssayScheme(record, PROCESS_GATE_HARD)
+    if (scheme) {
+      scheme.bizScope = '成品检'
+      scheme.assayType = 'finished'
+      scheme.name = '产出化验'
+      scheme.templateCode = ''
+      if (!scheme.gateMode) scheme.gateMode = PROCESS_GATE_HARD
+      scheme.hardGate = scheme.gateMode === PROCESS_GATE_HARD
+    }
+    syncOutputAssayScopes(record)
+    return
+  }
+  const step = findOutputStep(record)
+  if (!step || !Array.isArray(step.assaySchemes)) return
+  const finishedIds = new Set(outputAssaySchemes(record).map((row) => row.id))
+  step.assaySchemes = step.assaySchemes.filter((row) => !finishedIds.has(row.id))
+  syncOutputAssayScopes(record)
+}
+
+function onOutputAssayGateSelect(record, gateMode) {
+  if (!gateMode) {
+    message.warning('已启用产出化验，请选择门禁')
+    return
+  }
+  const scheme = ensureOutputAssayScheme(record, gateMode)
+  if (!scheme) return
+  scheme.bizScope = '成品检'
+  scheme.assayType = 'finished'
+  scheme.name = '产出化验'
+  scheme.templateCode = ''
+  scheme.gateMode = gateMode === PROCESS_GATE_HARD ? PROCESS_GATE_HARD : PROCESS_GATE_RECORD
+  scheme.hardGate = scheme.gateMode === PROCESS_GATE_HARD
+  syncOutputAssayScopes(record)
 }
 
 function removeOutput(key) {
@@ -832,7 +1007,10 @@ function removeStep(key) {
     if (line.stepKey === key) line.stepKey = undefined
   })
   form.outputs.forEach((row) => {
-    if (row.stepKey === key) row.stepKey = form.steps[form.steps.length - 1]?.key
+    if (row.stepKey === key) {
+      row.stepKey = form.steps[form.steps.length - 1]?.key
+      syncOutputAssayScopes(row)
+    }
   })
 }
 
@@ -905,6 +1083,17 @@ function onLossPercent(record, percent) {
 
 function onTolerancePercent(record, percent) {
   record.tolerance = fractionFromPercent(percent)
+}
+
+function onContentPercent(record, percent) {
+  record.content = fractionFromPercent(percent)
+}
+
+function lineTheoreticalQty(record) {
+  const calc = calcTheoreticalFeed(record, form.baseBatchQty)
+  if (!calc.ok) return '—'
+  const unit = itemUnit(record.itemId) || 'kg'
+  return `${calc.qty} ${unit}`
 }
 
 const processStepOptions = computed(() => {
@@ -1014,14 +1203,22 @@ function onStepProcessChange(step, value) {
   if (String(value || '').startsWith('legacy:')) {
     step.processId = ''
     step.name = String(value).slice('legacy:'.length)
+    step.assaySchemes = []
     reconcileEquipment(step, true)
+    form.outputs.forEach((row) => {
+      if (row.stepKey === step.key) syncOutputAssayScopes(row)
+    })
     return
   }
   const proc = getProcessById(value)
   step.processId = proc?.id || ''
   step.name = proc?.name || step.name
   step.params = paramsFromProcess(proc)
+  step.assaySchemes = assaySchemesFromProcess(proc)
   reconcileEquipment(step, true)
+  form.outputs.forEach((row) => {
+    if (row.stepKey === step.key) syncOutputAssayScopes(row)
+  })
 }
 
 function fillFromMaster(record, itemId) {
@@ -1044,6 +1241,7 @@ function assignLineSteps() {
   })
   form.outputs.forEach((row) => {
     row.stepNo = stepNoByKey.get(row.stepKey) || null
+    syncOutputAssayScopes(row)
   })
 }
 
@@ -1104,6 +1302,12 @@ function handleSaveAsNew() {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+.block-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 20px;
+  color: #86909c;
 }
 .page-hint {
   margin: 0 0 8px;
@@ -1197,10 +1401,32 @@ function handleSaveAsNew() {
   font-size: 13px;
   color: #1f2329;
 }
+.muted {
+  color: #86909c;
+}
+
 .ratio-note {
   color: #4e5969;
 }
 .ratio-warn {
   color: #d4380d;
+}
+.output-assay-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.output-assay-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.output-assay-empty {
+  color: #86909c;
+  font-size: 12px;
 }
 </style>

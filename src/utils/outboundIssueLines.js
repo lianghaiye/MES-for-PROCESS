@@ -42,7 +42,6 @@ export function createOutboundIssueLineColumns() {
     { title: '物料名称', dataIndex: 'productName', width: 140, ellipsis: true },
     { title: '编号', dataIndex: 'productCode', width: 120, ellipsis: true },
     { title: '规格型号', dataIndex: 'specModel', width: 110, ellipsis: true },
-    { title: '材质', dataIndex: 'material', width: 90, ellipsis: true },
     { title: '申请出库数量', key: 'applyQty', width: 110, align: 'right' },
     { title: '实际出库数量', key: 'actualQty', width: 110, align: 'right' },
     { ...BARCODE_BATCH_NO_COLUMN },

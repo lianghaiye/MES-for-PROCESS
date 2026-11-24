@@ -30,18 +30,6 @@
               <span class="preview-label">规格型号</span>
               <span>{{ preview?.specModel || draft.specModel || '—' }}</span>
             </div>
-            <div class="preview-row">
-              <span class="preview-label">材质</span>
-              <span>{{ draft.material || '—' }}</span>
-            </div>
-            <div class="preview-row">
-              <span class="preview-label">图号</span>
-              <span>{{ draft.drawingNo || '—' }}</span>
-            </div>
-            <div class="preview-row">
-              <span class="preview-label">变体属性</span>
-              <span>{{ draft.variantSummary || draft.variantAttr || draft.specAttr || '—' }}</span>
-            </div>
           </div>
           <div class="preview-bottom">
             <div class="preview-row">

@@ -570,6 +570,12 @@ const routes = [
         meta: { title: '批次指令详情', listPath: '/production/work-orders' },
       },
       {
+        path: 'production/pending-output',
+        name: 'production-pending-output',
+        component: () => import('@/views/inventory/PendingOutputDispositionView.vue'),
+        meta: { title: '待处置产出' },
+      },
+      {
         path: 'production/disassembly-work-orders',
         name: 'production-disassembly-work-orders',
         component: () => import('@/views/production/DisassemblyWorkOrderManagementView.vue'),
@@ -602,6 +608,12 @@ const routes = [
       {
         path: 'production/material-requisition',
         name: 'production-material-requisition',
+        component: () => import('@/views/production/MaterialRequisitionManagementView.vue'),
+        meta: { title: '领料管理' },
+      },
+      {
+        path: 'production/feed-posting',
+        name: 'production-feed-posting',
         component: () => import('@/views/production/FeedPostingView.vue'),
         meta: { title: '投料明细' },
       },
@@ -826,6 +838,10 @@ const routes = [
         name: 'inventory-material-batches',
         component: () => import('@/views/inventory/MaterialBatchView.vue'),
         meta: { title: '原料批次' },
+      },
+      {
+        path: 'inventory/pending-output',
+        redirect: '/production/pending-output',
       },
       {
         path: 'inventory/expiry-alerts',

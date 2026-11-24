@@ -14,6 +14,10 @@ import { productInfoState } from '@/store/productInfoStore'
 import { getProcessById } from '@/store/processConfigStore'
 import { getProcessRouteById } from '@/store/processRouteStore'
 import { collectRouteEquipmentIds } from '@/utils/processRouteGrid'
+import {
+  deriveProcessGateFromAssaySchemes,
+  normalizeProcessQcConfigs,
+} from '@/utils/qcProcessConfig'
 import { getUser } from '@/utils/auth'
 
 const STORAGE_KEY = 'i-doms-process-formula-v2'
@@ -56,6 +60,87 @@ export const OUTPUT_ROLE_OPTIONS = [
 export const OUTPUT_ROLE_LABEL = Object.fromEntries(
   OUTPUT_ROLE_OPTIONS.map((item) => [item.value, item.label]),
 )
+
+/**
+ * 记产出去向：
+ * 待判定 → 先落暂存位，化验后再定回用/再提/入库/废弃；
+ * 入仓库 / 入储罐 → 库存批次 + 入库单；
+ * 回用 / 再提 → 待回用 / 待再提批次；
+ * 废弃 → 已拒收，不生成入库单。
+ */
+export const OUTPUT_DISPOSITION_OPTIONS = [
+  { value: 'pending_decide', label: '待判定' },
+  { value: 'warehouse', label: '入仓库' },
+  { value: 'tank', label: '入储罐' },
+  { value: 'reuse', label: '回用' },
+  { value: 'reextract', label: '再提' },
+  { value: 'scrap', label: '废弃' },
+]
+
+export const OUTPUT_DISPOSITION_LABEL = Object.fromEntries(
+  OUTPUT_DISPOSITION_OPTIONS.map((item) => [item.value, item.label]),
+)
+
+/** 会生成库存批次与入库单的去向 */
+export function isStockOutputDisposition(value) {
+  const text = String(value || '').trim()
+  return text === 'warehouse' || text === 'tank' || text === 'inbound'
+}
+
+/** 会生成物料批次 */
+export function createsOutputBatchDisposition(value) {
+  const text = String(value || '').trim()
+  return (
+    isStockOutputDisposition(text) ||
+    text === 'reuse' ||
+    text === 'reextract' ||
+    text === 'pending_decide' ||
+    text === 'scrap'
+  )
+}
+
+/** 位置主数据 kind：warehouse→silo，tank→tank；其它不限 */
+export function locationKindForDisposition(value) {
+  const text = String(value || '').trim()
+  if (text === 'tank') return 'tank'
+  if (text === 'warehouse' || text === 'inbound') return 'silo'
+  return ''
+}
+
+export function batchStatusForDisposition(value) {
+  const text = String(value || '').trim()
+  if (text === 'reuse') return 'await_reuse'
+  if (text === 'reextract') return 'await_reextract'
+  if (text === 'pending_decide') return 'await_decide'
+  if (text === 'scrap') return 'rejected'
+  return 'pending'
+}
+
+export function normalizeOutputDisposition(value) {
+  const text = String(value || '').trim()
+  if (text === 'inbound') return 'warehouse'
+  if (OUTPUT_DISPOSITION_LABEL[text]) return text
+  return ''
+}
+
+/** 产出行只挂产出化验（成品检）；过程检在工序化验清单，出厂化验走发货/出库。 */
+export const OUTPUT_ASSAY_SCOPES = ['成品检']
+
+export function normalizeOutputAssayScopes(values) {
+  const allowed = new Set(OUTPUT_ASSAY_SCOPES)
+  const list = Array.isArray(values) ? values : []
+  const names = list.map((item) => String(item || '').trim()).filter((item) => allowed.has(item))
+  return [...new Set(names)]
+}
+
+/** 从化验方案列表推导产出行勾选（仅成品检 / 产出化验）。 */
+export function assayScopesFromSchemes(schemes) {
+  const allowed = new Set(OUTPUT_ASSAY_SCOPES)
+  const names = (Array.isArray(schemes) ? schemes : [])
+    .map((row) => String(row?.bizScope || '').trim())
+    .filter((scope) => allowed.has(scope))
+  return [...new Set(names)]
+}
 
 export const FORMULA_TYPE_OPTIONS = [
   { value: 'standard', label: '标准配方' },
@@ -462,6 +547,223 @@ function seed() {
         },
       ],
     },
+    {
+      id: 'formula-licarbon',
+      formulaNo: 'PF-LIC-001',
+      name: '工业级碳酸锂（酸浸沉锂）',
+      itemId: 'pi-licarbon',
+      version: 'V1.0',
+      lineageId: 'lineage-licarbon',
+      formulaType: 'standard',
+      status: 'active',
+      isDefault: true,
+      // 单槽一次进料约 100 吨（调研）；日计划约 150 吨会跨多槽。
+      // 基准批量按原料吨计；理论得率 = 工碳产出 / 原料吨，约 6.4%。
+      baseBatchQty: 100000,
+      theoreticalYield: 0.064,
+      routeId: 'route-012',
+      // 角色口径：卤水/渣=副产品；洗渣水/母液=回收料；氟钙镁渣=废弃物
+      outputs: [
+        { role: 'main', itemId: 'pi-licarbon', expectedQty: 6400, stepNo: 9 },
+        { role: 'by', itemId: 'pi-acid-brine', expectedQty: 95000, stepNo: 3 },
+        { role: 'by', itemId: 'pi-acid-slag', expectedQty: 82000, stepNo: 3 },
+        { role: 'recycle', itemId: 'pi-wash-water', expectedQty: 12000, stepNo: 3 },
+        { role: 'recycle', itemId: 'pi-mother-liquor', expectedQty: 8000, stepNo: 7 },
+        { role: 'waste', itemId: 'pi-f-slag', expectedQty: 2800, stepNo: 5 },
+      ],
+      lines: [
+        {
+          itemId: 'pi-black-powder',
+          feedQty: 100000,
+          ratio: null,
+          lossRate: 0.01,
+          tolerance: 0.03,
+          feedSequence: 1,
+          stepNo: 1,
+          // 含量 1.5% 记在行上供金属量核算；投料量按实物吨，不在此再除含量
+          convertByContent: false,
+          content: 0.015,
+          isKeyMaterial: true,
+          isAuxiliary: false,
+        },
+        {
+          itemId: 'pi-sulfuric',
+          feedQty: 18000,
+          ratio: null,
+          lossRate: 0.02,
+          tolerance: 0.05,
+          feedSequence: 2,
+          stepNo: 2,
+          convertByContent: true,
+          content: 0.98,
+          isKeyMaterial: false,
+          isAuxiliary: true,
+        },
+        {
+          itemId: 'pi-defluor',
+          feedQty: 850,
+          ratio: null,
+          lossRate: 0,
+          tolerance: 0.05,
+          feedSequence: 3,
+          stepNo: 4,
+          convertByContent: false,
+          content: 1,
+          isKeyMaterial: false,
+          isAuxiliary: true,
+        },
+        {
+          itemId: 'pi-caustic',
+          feedQty: 620,
+          ratio: null,
+          lossRate: 0,
+          tolerance: 0.05,
+          feedSequence: 4,
+          stepNo: 5,
+          convertByContent: true,
+          content: 0.99,
+          isKeyMaterial: false,
+          isAuxiliary: true,
+        },
+        {
+          itemId: 'pi-pfs',
+          feedQty: 400,
+          ratio: null,
+          lossRate: 0,
+          tolerance: 0.08,
+          feedSequence: 5,
+          stepNo: 5,
+          convertByContent: false,
+          content: 1,
+          isKeyMaterial: false,
+          isAuxiliary: true,
+        },
+        {
+          itemId: 'pi-soda',
+          feedQty: 4800,
+          ratio: null,
+          lossRate: 0.01,
+          tolerance: 0.03,
+          feedSequence: 6,
+          stepNo: 6,
+          convertByContent: true,
+          content: 0.99,
+          isKeyMaterial: true,
+          isAuxiliary: false,
+        },
+      ],
+      steps: [
+        {
+          stepNo: 1,
+          name: '投料浆化',
+          processId: 'proc-op-008',
+          equipmentCategory: '反应设备',
+          equipmentIds: ['eq-d-1'],
+          params: [],
+        },
+        {
+          stepNo: 2,
+          name: '一次酸浸',
+          processId: 'proc-op-009',
+          equipmentCategory: '反应设备',
+          equipmentIds: ['eq-d-2'],
+          params: [
+            { name: '温度', unit: '℃', target: 85, min: 75, max: 95 },
+            { name: '时间', unit: 'min', target: 180, min: 120, max: 300 },
+            { name: 'pH', unit: '', target: 1.5, min: 1.0, max: 2.5 },
+          ],
+        },
+        {
+          stepNo: 3,
+          name: '压滤',
+          processId: 'proc-op-010',
+          equipmentCategory: '分离设备',
+          equipmentIds: ['eq-d-3'],
+          params: [],
+        },
+        {
+          stepNo: 4,
+          name: '一次净化',
+          processId: 'proc-op-012',
+          equipmentCategory: '反应设备',
+          equipmentIds: ['eq-d-2'],
+          params: [
+            { name: '温度', unit: '℃', target: 60, min: 50, max: 70 },
+            { name: '时间', unit: 'min', target: 60, min: 40, max: 90 },
+          ],
+        },
+        {
+          stepNo: 5,
+          name: '二次浆化',
+          processId: 'proc-op-013',
+          equipmentCategory: '反应设备',
+          equipmentIds: ['eq-d-2'],
+          params: [
+            { name: 'pH', unit: '', target: 10.5, min: 9.5, max: 11.5 },
+            { name: '时间', unit: 'min', target: 90, min: 60, max: 150 },
+          ],
+        },
+        {
+          stepNo: 6,
+          name: '沉锂',
+          processId: 'proc-op-014',
+          equipmentCategory: '反应设备',
+          equipmentIds: ['eq-d-2'],
+          params: [
+            { name: '温度', unit: '℃', target: 90, min: 80, max: 95 },
+            { name: '时间', unit: 'min', target: 120, min: 90, max: 180 },
+            { name: '转速', unit: 'rpm', target: 40, min: 30, max: 60 },
+          ],
+        },
+        {
+          stepNo: 7,
+          name: '锂盐洗涤',
+          processId: 'proc-op-015',
+          equipmentCategory: '分离设备',
+          equipmentIds: ['eq-d-3'],
+          params: [],
+        },
+        {
+          stepNo: 8,
+          name: '离心',
+          processId: 'proc-op-005',
+          equipmentCategory: '分离设备',
+          equipmentIds: ['eq-d-4'],
+          params: [
+            { name: '转速', unit: 'rpm', target: 1200, min: 1000, max: 1500 },
+            { name: '时间', unit: 'min', target: 25, min: 15, max: 40 },
+          ],
+        },
+        {
+          stepNo: 9,
+          name: '包装',
+          processId: 'proc-op-016',
+          equipmentCategory: '计量灌装',
+          equipmentIds: ['eq-d-7'],
+          params: [],
+        },
+      ],
+      creator: '系统管理员',
+      createdAt: '2026-11-16 10:00',
+      updater: '系统管理员',
+      updatedAt: dayjs().format('YYYY-MM-DD HH:mm'),
+      operationLogs: [
+        {
+          id: 'flog-lic-1',
+          operatedAt: '2026-11-16 10:00',
+          action: '创建',
+          operator: '系统管理员',
+          remark: '按锂盐回收现场调研整理：酸浸→除杂→沉锂工碳',
+        },
+        {
+          id: 'flog-lic-2',
+          operatedAt: '2026-11-16 11:30',
+          action: '审核发布',
+          operator: '系统管理员',
+          remark: '挂路线 GYLX0012，基准批量 100 吨/槽',
+        },
+      ],
+    },
   ]
 }
 
@@ -485,6 +787,12 @@ function normalizeStoredFormula(row) {
     updater: row.updater || row.creator || '系统管理员',
     updatedAt: row.updatedAt || stamp,
     operationLogs: Array.isArray(row.operationLogs) ? row.operationLogs : [],
+    steps: steps.map((step) => ({
+      ...step,
+      assaySchemes: Array.isArray(step.assaySchemes)
+        ? normalizeProcessQcConfigs(step.assaySchemes)
+        : step.assaySchemes,
+    })),
     outputs: (row.outputs || []).map((output) => {
       let stepNo = Number(output.stepNo)
       if (!(stepNo > 0)) {
@@ -496,6 +804,7 @@ function normalizeStoredFormula(row) {
         ...output,
         stepNo: stepNo > 0 ? stepNo : null,
         stepName: output.stepName || step?.name || '',
+        assayScopes: normalizeOutputAssayScopes(output.assayScopes),
       }
     }),
     lines: (row.lines || []).map((line) => {
@@ -548,6 +857,15 @@ function mergeSeedFormulas(list) {
   return next
 }
 
+/** 演示配方 PF-LIC-001：按约定产出角色口径覆盖 outputs（不影响其他用户配方）。 */
+function migrateLicarbonOutputRoles(list) {
+  const demo = seed().find((row) => row.id === 'formula-licarbon')
+  if (!demo) return
+  const target = list.find((row) => row.id === 'formula-licarbon' || row.formulaNo === 'PF-LIC-001')
+  if (!target) return
+  target.outputs = demo.outputs.map((o) => ({ ...o }))
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -556,6 +874,7 @@ function load() {
     if (!Array.isArray(parsed)) return null
     const list = mergeSeedFormulas(parsed.map(normalizeStoredFormula))
     migrateMissingDefault(parsed, list)
+    migrateLicarbonOutputRoles(list)
     exclusiveActiveDefault(list)
     return list
   } catch {
@@ -835,6 +1154,12 @@ function resolveFormulaNo(raw, { id, lineageId } = {}) {
   return formulaNo
 }
 
+/** 配方阶段化验快照：有数组（含空）则用配方快照；未维护时才从工序带出。 */
+export function resolveFormulaStepAssaySchemes(step, process) {
+  if (Array.isArray(step?.assaySchemes)) return normalizeProcessQcConfigs(step.assaySchemes)
+  return normalizeProcessQcConfigs(process?.qcConfigs || [])
+}
+
 function normalizeFormulaSteps(steps) {
   return (steps || []).map((s, i) => {
     const name = String(s.name || '').trim() || `阶段${i + 1}`
@@ -851,6 +1176,7 @@ function normalizeFormulaSteps(steps) {
         throw new Error(`${name} 的设备不在该工序允许的设备里`)
       }
     }
+    const assaySchemes = resolveFormulaStepAssaySchemes(s, proc)
     return {
       stepNo: i + 1,
       name,
@@ -859,6 +1185,8 @@ function normalizeFormulaSteps(steps) {
       equipmentIds,
       // 兼容旧读法：默认台取候选第一台
       equipmentId: equipmentIds[0] || '',
+      assaySchemes,
+      gateMode: deriveProcessGateFromAssaySchemes(assaySchemes),
       params: (s.params || [])
         .filter((param) => String(param.name || '').trim())
         .map((param) => {
@@ -907,12 +1235,15 @@ export function saveFormula(payload, id) {
     outputs: payload.outputs.map((o) => {
       const stepNo = Number(o.stepNo) > 0 ? Number(o.stepNo) : null
       const step = steps.find((item) => Number(item.stepNo) === stepNo)
+      const fromSchemes = assayScopesFromSchemes(step?.assaySchemes)
       return {
         role: o.role,
         itemId: o.itemId,
         expectedQty: round3(o.expectedQty),
         stepNo,
         stepName: step?.name || o.stepName || '',
+        // 优先按产出工序上的化验方案快照推导；无方案时保留行上手勾的业务类型
+        assayScopes: fromSchemes.length ? fromSchemes : normalizeOutputAssayScopes(o.assayScopes),
       }
     }),
     lines: checked.lines,

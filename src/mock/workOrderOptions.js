@@ -7,24 +7,15 @@ export const processRouteOptions = [
   '树脂合成路线',
   '配漆路线',
 ]
-export const workCenterOptions = [
-  '默认工厂',
-  '机加车间',
-  '装配车间',
-  '总装车间',
-  '热处理车间',
-  '反应车间',
-  '配漆车间',
-]
+/** 流程型工作中心。机加、装配、总装、热处理等离散车间不再作为可选项。 */
+export const workCenterOptions = ['默认工厂', '反应车间', '配漆车间']
 export const personInChargeOptions = ['孙琴丽', '张三', '李四', '王五']
 
 /** 工作中心默认负责人 */
 export const workCenterManagers = {
   默认工厂: 'admin1',
-  机加车间: '张三',
-  装配车间: '李四',
-  总装车间: '孙琴丽',
-  热处理车间: '王五',
+  反应车间: '张三',
+  配漆车间: '李四',
 }
 
 export function resolveWorkCenterOwner(workCenter) {

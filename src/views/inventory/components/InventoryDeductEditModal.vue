@@ -41,22 +41,6 @@
               }}</span>
             </div>
             <div class="info-item">
-              <span class="field-label">材质</span>
-              <span class="field-value" :title="basicInfo.material">{{ basicInfo.material }}</span>
-            </div>
-            <div class="info-item">
-              <span class="field-label">变体属性</span>
-              <span class="field-value" :title="basicInfo.variantSummary">{{
-                basicInfo.variantSummary
-              }}</span>
-            </div>
-            <div class="info-item">
-              <span class="field-label">图号</span>
-              <span class="field-value" :title="basicInfo.drawingNo">{{
-                basicInfo.drawingNo
-              }}</span>
-            </div>
-            <div class="info-item">
               <span class="field-label">报工数量</span>
               <span class="field-value">{{ basicInfo.reportQty }}</span>
             </div>
@@ -305,16 +289,6 @@ const columns = [
   { title: '物料名称', dataIndex: 'materialName', key: 'materialName', width: 120 },
   { title: '发料方式', key: 'issueMode', width: 88 },
   { title: '规格型号', dataIndex: 'specModel', key: 'specModel', width: 100, ellipsis: true },
-  { title: '材质', dataIndex: 'material', key: 'material', width: 80, ellipsis: true },
-  { title: '图号', dataIndex: 'drawingNo', key: 'drawingNo', width: 100, ellipsis: true },
-  {
-    title: '变体属性',
-    dataIndex: 'variantSummary',
-    key: 'variantSummary',
-    width: 110,
-    ellipsis: true,
-  },
-  { title: '下料尺寸', key: 'blankSizeText', width: 130, ellipsis: true },
   { title: '当前库存量', key: 'stockDisplay', width: 130 },
   { title: 'BOM单位用量', key: 'unitUsage', width: 110, align: 'right' },
   { title: '应扣', key: 'shouldQty', width: 80, align: 'right' },

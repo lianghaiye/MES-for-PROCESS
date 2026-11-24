@@ -6,15 +6,6 @@ export const inboundFormLineColumns = [
   { title: '物品编码', dataIndex: 'itemCode', key: 'itemCode', width: 120, ellipsis: true },
   { title: '物品名称', dataIndex: 'itemName', key: 'itemName', width: 130, ellipsis: true },
   { title: '规格型号', dataIndex: 'specModel', key: 'specModel', width: 110, ellipsis: true },
-  { title: '材质', dataIndex: 'material', key: 'material', width: 80, ellipsis: true },
-  {
-    title: '变体属性',
-    dataIndex: 'variantSummary',
-    key: 'variantAttr',
-    width: 140,
-    ellipsis: true,
-  },
-  { title: '图号', dataIndex: 'drawingNo', key: 'drawingNo', width: 90, ellipsis: true },
   { title: '条码类型', dataIndex: 'barcodeType', key: 'barcodeType', width: 96 },
   /** 点收数量：按采购单位计，如「3 根」；单单位时与入库数量同值 */
   { title: '点收数量', key: 'qty', width: 120 },

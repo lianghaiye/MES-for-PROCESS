@@ -1,7 +1,6 @@
 import { reactive, watch } from 'vue'
 import dayjs from 'dayjs'
 import {
-  cloneStocktakeSeedOrders,
   createStocktakeLine,
   createStocktakeOrder,
   generateStocktakeNo,
@@ -30,8 +29,8 @@ import {
 
 const STORAGE_KEY = 'i_doms_stocktake_orders'
 const SEED_VERSION_KEY = 'i_doms_stocktake_orders_seed_v'
-/** v7：列表创建人 + 审核/过账人时间 */
-const CURRENT_SEED_VERSION = '7'
+/** v8：清空离散制造演示盘点单 */
+const CURRENT_SEED_VERSION = '8'
 
 function migrateOrder(order) {
   if (!order) return order
@@ -82,11 +81,8 @@ function shouldReseed() {
 }
 
 function initOrders() {
-  const stored = loadFromStorage()
-  if (shouldReseed() || !stored?.length) {
-    return cloneStocktakeSeedOrders().map(migrateOrder)
-  }
-  return stored
+  if (shouldReseed()) return []
+  return loadFromStorage() || []
 }
 
 export const stocktakeOrderState = reactive({

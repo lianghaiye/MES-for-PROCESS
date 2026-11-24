@@ -280,7 +280,11 @@ const processLinksText = computed(() => {
 
 const assayTypeText = computed(() => {
   const record = props.record
-  if (!record || !isProcessInspectBizScope(record.bizScope)) return ''
+  if (!record) return ''
+  if (record.bizScope === '成品检') {
+    return assayTypeLabel(record.assayType || 'finished', '成品检')
+  }
+  if (!isProcessInspectBizScope(record.bizScope)) return ''
   const type = String(record.assayType || '').trim()
   return type ? assayTypeLabel(type, record.bizScope) : ''
 })

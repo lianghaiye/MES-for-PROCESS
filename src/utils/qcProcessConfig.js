@@ -131,14 +131,24 @@ export function deriveProcessGateFromAssaySchemes(qcConfigs = []) {
 }
 
 export function resolveAssaySchemesForStep(step, process) {
-  const fromStep = Array.isArray(step?.assaySchemes) ? step.assaySchemes : null
-  if (fromStep?.length) return normalizeProcessQcConfigs(fromStep)
+  // 有数组（含空）表示步骤已落过快照；未维护时才回落工序默认
+  if (Array.isArray(step?.assaySchemes)) return normalizeProcessQcConfigs(step.assaySchemes)
   return normalizeProcessQcConfigs(process?.qcConfigs || [])
 }
 
 export function isAssaySchemeHardGate(scheme) {
   if (!scheme) return false
   return normalizeProcessGate(scheme.gateMode) === PROCESS_GATE_HARD || Boolean(scheme.hardGate)
+}
+
+/** 过程检方案（投料前核对 / 中控 / 转序），在工序「化验」清单发起 */
+export function isProcessAssayScheme(scheme) {
+  return (scheme?.bizScope || '生产过程检') === '生产过程检'
+}
+
+/** 成品检 / 产出化验：挂在产出行，记产出时发起，不在工序化验弹窗单选 */
+export function isFinishedAssayScheme(scheme) {
+  return scheme?.bizScope === '成品检'
 }
 
 function isInProcessAssayScheme(scheme) {

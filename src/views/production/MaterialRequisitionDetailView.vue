@@ -83,43 +83,26 @@
               size="small"
               bordered
               :pagination="false"
-              :scroll="{ x: 1460 }"
+              :scroll="{ x: 1480 }"
               :locale="{ emptyText: '暂无领料明细' }"
             >
               <template #bodyCell="{ column, record: line, index }">
                 <template v-if="column.key === 'seq'">{{ index + 1 }}</template>
-                <template v-else-if="column.key === 'material'">
-                  {{ line.material || '—' }}
+                <template v-else-if="column.key === 'specModel'">{{
+                  line.specModel || '—'
+                }}</template>
+                <template v-else-if="column.key === 'suggestedQty'">
+                  {{ qtyWithUnit(line.suggestedQty ?? line.planQty, line.unit) }}
                 </template>
-                <template v-else-if="column.key === 'variantAttr'">
-                  {{ lineVariantSummary(line) || line.variantSummary || '—' }}
+                <template v-else-if="column.key === 'shipQty'">
+                  {{ qtyWithUnit(line.shipQty, line.unit) }}
                 </template>
-                <template v-else-if="column.key === 'drawingNo'">
-                  {{ line.drawingNo || '—' }}
+                <template v-else-if="column.key === 'warehouseStockQty'">
+                  {{ qtyWithUnit(warehouseQty(line), line.unit) }}
                 </template>
-                <template v-else-if="column.key === 'blankSizeText'">
-                  <template v-if="line.blankSizeText">
-                    {{ line.blankSizeText }}
-                    <div v-if="line.blankArea > 0" class="blank-size-hint">
-                      ≈ {{ line.blankArea }}㎡/件
-                    </div>
-                    <div v-else-if="line.blankLength > 0" class="blank-size-hint">
-                      ≈ {{ line.blankLength }}米/件
-                    </div>
-                  </template>
-                  <span v-else>—</span>
-                </template>
-                <template v-else-if="column.key === 'source'">
-                  <template v-if="line.sourceWorkOrders?.length">
-                    <a-tag
-                      v-for="source in line.sourceWorkOrders"
-                      :key="source.workOrderId || source.workOrderCode"
-                      color="blue"
-                    >
-                      {{ source.workOrderCode }} ×{{ source.qty }}
-                    </a-tag>
-                  </template>
-                  <span v-else>{{ line.lineSource === 'EBOM' ? '工单 EBOM' : '手工添加' }}</span>
+                <template v-else-if="column.key === 'source'">{{ sourceText(line) }}</template>
+                <template v-else-if="column.key === 'issuedBatch'">
+                  {{ issuedBatchText(line) }}
                 </template>
               </template>
               <template #summary>
@@ -132,7 +115,9 @@
                       :align="col.align"
                     >
                       <template v-if="col.key === 'seq'">合计</template>
-                      <template v-else-if="col.key === 'shipQty'">{{ lineQtyTotal }}</template>
+                      <template v-else-if="col.key === 'shipQty'">{{
+                        formatLineQty(lineQtyTotal)
+                      }}</template>
                     </a-table-summary-cell>
                   </a-table-summary-row>
                 </a-table-summary>
@@ -206,13 +191,13 @@ import { outboundState } from '@/store/outboundStore'
 import { workOrderState } from '@/store/workOrderStore'
 import { assemblyWorkOrderState } from '@/store/assemblyWorkOrderStore'
 import { getWorkOrderPlanQty } from '@/utils/workOrderScheduleBatch'
-import { lineVariantSummary } from '@/utils/spuLineResolve'
 import { flattenMaterialReqOutboundLines } from '@/utils/materialReqOutboundLines'
 import {
   createOutboundIssueLineColumns,
   getOutboundIssueLineScrollX,
 } from '@/utils/outboundIssueLines'
-import { formatQty } from '@/utils/numberFormat'
+import { formatNumber, formatQty } from '@/utils/numberFormat'
+import { getWarehouseStockQty } from '@/utils/outboundLineHelpers'
 import MaterialRequisitionBasicInfoSection from './components/MaterialRequisitionBasicInfoSection.vue'
 import MaterialRequisitionPrintModal from './components/MaterialRequisitionPrintModal.vue'
 
@@ -299,26 +284,61 @@ const woColumns = [
 ]
 
 const lineColumns = [
-  { title: '序号', key: 'seq', width: 56, align: 'center', fixed: 'left' },
-  { title: '物料编码', dataIndex: 'itemCode', key: 'itemCode', width: 120 },
-  { title: '物料名称', dataIndex: 'itemName', key: 'itemName', width: 150 },
-  { title: '规格型号', dataIndex: 'specModel', key: 'specModel', width: 110 },
-  { title: '材质', key: 'material', width: 90 },
-  { title: '变体属性', key: 'variantAttr', width: 140, ellipsis: true },
-  { title: '图号', key: 'drawingNo', width: 110 },
-  { title: '下料尺寸', key: 'blankSizeText', width: 160, ellipsis: true },
-  { title: '领料数量', dataIndex: 'shipQty', key: 'shipQty', width: 90, align: 'right' },
-  { title: '单位', dataIndex: 'unit', key: 'unit', width: 60 },
-  { title: '领料仓库', dataIndex: 'shipWarehouse', key: 'shipWarehouse', width: 110 },
-  {
-    title: '库存',
-    dataIndex: 'warehouseStockQty',
-    key: 'warehouseStockQty',
-    width: 80,
-    align: 'right',
-  },
-  { title: '来源', key: 'source', width: 200 },
+  { title: '序号', key: 'seq', width: 64, align: 'center', fixed: 'left' },
+  { title: '物料编号', dataIndex: 'itemCode', key: 'itemCode', width: 140 },
+  { title: '物料名称', dataIndex: 'itemName', key: 'itemName', width: 160, ellipsis: true },
+  { title: '规格型号', key: 'specModel', width: 120, ellipsis: true },
+  { title: '建议数量', key: 'suggestedQty', width: 130, align: 'right' },
+  { title: '申请数量', key: 'shipQty', width: 130, align: 'right' },
+  { title: '领料仓库', dataIndex: 'shipWarehouse', key: 'shipWarehouse', width: 140 },
+  { title: '当前仓库数量', key: 'warehouseStockQty', width: 140, align: 'right' },
+  { title: '来源', key: 'source', width: 160, ellipsis: true },
+  { title: '已领批次', key: 'issuedBatch', width: 220 },
 ]
+
+function issuedBatchText(line) {
+  const req = record.value
+  if (!req || !line) return '—'
+  const ids = new Set((req.outboundOrders || []).map((order) => order.id).filter(Boolean))
+  if (req.outboundId) ids.add(req.outboundId)
+  const orders = outboundState.orders.filter(
+    (order) => ids.has(order.id) || (req.id && order.materialReqId === req.id),
+  )
+  const nos = []
+  orders.forEach((order) => {
+    ;(order.lineItems || []).forEach((item) => {
+      const code = item.itemCode || item.productCode || ''
+      if (line.itemCode && code && code !== line.itemCode) return
+      const text = item.issuedBatchNo || item.pickedBatchNo || ''
+      if (text) nos.push(text)
+    })
+  })
+  const unique = [...new Set(nos)]
+  return unique.length ? unique.join('、') : '—'
+}
+
+function formatLineQty(value) {
+  return formatNumber(value, 3, { empty: '—' })
+}
+
+function qtyWithUnit(value, unit) {
+  if (value == null || value === '') return '—'
+  const qty = formatLineQty(value)
+  return unit ? `${qty} ${unit}` : qty
+}
+
+function warehouseQty(line) {
+  if (line?.warehouseStockQty != null && line.warehouseStockQty !== '')
+    return line.warehouseStockQty
+  return getWarehouseStockQty(line?.shipWarehouse, line?.itemCode)
+}
+
+function sourceText(line) {
+  if (line?.lineSource === '手工添加') return '手工添加'
+  if (line?.sourceBatchNos?.length) return line.sourceBatchNos.join('、')
+  if (line?.lineSource) return line.lineSource
+  return '—'
+}
 
 const lineQtyTotal = computed(() =>
   (record.value?.lines || []).reduce((sum, line) => sum + (Number(line.shipQty) || 0), 0),
@@ -385,6 +405,7 @@ function onReject() {
 
 function modeColor(mode) {
   if (mode === MATERIAL_REQ_MODES.QUICK) return 'purple'
+  if (mode === MATERIAL_REQ_MODES.BATCH_ORDER) return 'blue'
   if (mode === MATERIAL_REQ_MODES.BATCH) return 'blue'
   return 'cyan'
 }

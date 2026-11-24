@@ -316,7 +316,12 @@ const lineColumns = computed(() => {
     { title: '质检模板', dataIndex: 'templateName', width: 140, ellipsis: true },
     { title: '质检方式', dataIndex: 'inspectMethod', width: 80 },
     { title: qtyTitle, key: 'receiptQty', width: 90, align: 'right' },
-    { title: '质检数量', key: 'inspectQty', width: 90, align: 'right' },
+    {
+      title: isProductionScope.value ? '取样量' : '质检数量',
+      key: 'inspectQty',
+      width: 90,
+      align: 'right',
+    },
     { title: '单位', dataIndex: 'unit', width: 56 },
   ]
   if (!isProductionScope.value) {

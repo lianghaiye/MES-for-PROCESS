@@ -59,7 +59,7 @@ const columns = [
   { title: '申请单号', key: 'reqNo', width: 150 },
   { title: '产品/摘要', dataIndex: 'summary', ellipsis: true },
   { title: '数量', dataIndex: 'qty', width: 80, align: 'right' },
-  { title: '领用车间', dataIndex: 'workshop', width: 110 },
+  { title: '申请车间', dataIndex: 'workshop', width: 120 },
   { title: '出库单号', key: 'outboundNo', width: 200 },
   { title: '出库状态', dataIndex: 'outboundStatus', width: 90 },
   { title: '申请人', dataIndex: 'applicant', width: 90 },

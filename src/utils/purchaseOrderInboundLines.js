@@ -13,7 +13,6 @@ export function createInboundInfoLineColumns(options = {}) {
     { title: itemNameTitle, dataIndex: 'itemName', width: 140, ellipsis: true },
     { title: '编码', dataIndex: 'itemCode', width: 120, ellipsis: true },
     { title: '规格型号', dataIndex: 'specModel', width: 110, ellipsis: true },
-    { title: '材质', dataIndex: 'material', width: 80, ellipsis: true },
     { title: '申请入库数量', key: 'applyQty', width: 110, align: 'right' },
     { title: '实际入库数量', key: 'actualQty', width: 110, align: 'right' },
   ]

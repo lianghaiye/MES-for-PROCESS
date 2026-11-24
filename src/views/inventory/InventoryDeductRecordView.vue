@@ -299,8 +299,6 @@ const columns = [
   { title: '工单/领料单号', key: 'workOrderNo', width: 160 },
   { title: '产品名称', key: 'product', width: 120, ellipsis: true },
   { title: '规格型号', key: 'productSpec', width: 120, ellipsis: true },
-  { title: '材质', key: 'material', width: 100, ellipsis: true },
-  { title: '图号', key: 'drawingNo', width: 130, ellipsis: true },
   { title: '报工数量', dataIndex: 'reportQty', key: 'reportQty', width: 100, align: 'right' },
   { title: '扣减时间', key: 'deductTime', width: 170 },
   { title: '仓库', key: 'warehouse', width: 160 },

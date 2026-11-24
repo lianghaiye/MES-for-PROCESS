@@ -16,196 +16,100 @@
     <div class="page-body">
       <div class="section-card">
         <div class="section-title">领料方式</div>
-        <a-radio-group v-model:value="mode" button-style="solid" @change="onModeChange">
-          <a-radio-button :value="MATERIAL_REQ_MODES.WORK_ORDER">工单领料</a-radio-button>
-          <a-radio-button :value="MATERIAL_REQ_MODES.SALES_ORDER">订单领料</a-radio-button>
-          <a-radio-button :value="MATERIAL_REQ_MODES.QUICK">快速领料</a-radio-button>
+        <a-radio-group v-model:value="mode" button-style="solid" class="mode-tabs">
+          <a-radio-button value="quick">快速领料</a-radio-button>
+          <a-radio-button value="batch">批次领料</a-radio-button>
         </a-radio-group>
         <div class="mode-hint">
-          <template v-if="mode === MATERIAL_REQ_MODES.WORK_ORDER">
-            选择工单自动带出关联产品；可添加工单行合并领料，按物料编码汇总并保留来源工单溯源
+          <template v-if="mode === 'batch'">
+            选择批次指令后按计划投料带出物料，数量可改。不指定原料批次，仓库出库时确定实际批次。
           </template>
-          <template v-else-if="mode === MATERIAL_REQ_MODES.SALES_ORDER">
-            选择销售订单与订单产品后，自动带出对应工单及 EBOM 物料；可手工补料
+          <template v-else>
+            不关联批次指令，手工添加物料和数量。不指定原料批次，仓库出库时确定实际批次。
           </template>
-          <template v-else>无工单场景，手工添加物料领料</template>
         </div>
       </div>
 
-      <div v-if="mode === MATERIAL_REQ_MODES.WORK_ORDER" class="section-card">
-        <div class="section-head">
-          <div class="section-title">选择工单</div>
-          <a-button
-            type="link"
-            size="small"
-            :disabled="!selectedWorkOrders.length"
-            @click="loadEbomLines"
-          >
-            按 EBOM 刷新明细
-          </a-button>
-        </div>
-
+      <div v-if="mode === 'batch'" class="section-card">
+        <div class="section-title">选择批次指令</div>
         <a-table
-          :columns="woRowColumns"
-          :data-source="workOrderRows"
+          :columns="batchRowColumns"
+          :data-source="batchRows"
           row-key="key"
           size="small"
           bordered
           :pagination="false"
-          class="wo-pick-table"
+          class="batch-pick-table"
         >
           <template #bodyCell="{ column, record, index }">
-            <template v-if="column.key === 'workOrder'">
-              <WorkOrderSearchSelect
-                :value="record.workOrderCode"
-                size="small"
-                placeholder="请搜索或选择工单"
-                @update:value="(code) => onWorkOrderCodeChange(index, code)"
+            <template v-if="column.key === 'batch'">
+              <BatchInstructionSearchSelect
+                :value="record.batchId"
+                :orders="openBatchOrders"
+                :exclude-ids="excludeBatchIds(record.batchId)"
+                @change="(id) => onBatchRowChange(index, id)"
               />
             </template>
             <template v-else-if="column.key === 'product'">
-              <div v-if="record.productName" class="wo-product-cell">
-                <div class="wo-product-name">{{ record.productName }}</div>
-                <div class="wo-product-meta">
-                  规格：{{ record.specModel || '—' }} 材质：{{ record.material || '—' }} 图号：{{
-                    record.drawingNo || '—'
-                  }}
-                </div>
-              </div>
-              <a-input v-else size="small" disabled placeholder="选择工单后自动带出" />
+              <span v-if="batchOf(record.batchId)">{{ batchProductText(record.batchId) }}</span>
+              <span v-else class="cell-placeholder">选择批次指令后自动带出</span>
+            </template>
+            <template v-else-if="column.key === 'qty'">
+              {{ batchQtyText(record.batchId) }}
             </template>
             <template v-else-if="column.key === 'action'">
               <a-button
                 type="link"
                 size="small"
                 danger
-                :disabled="workOrderRows.length <= 1"
-                @click="removeWorkOrderRow(index)"
+                :disabled="batchRows.length <= 1"
+                @click="removeBatchRow(index)"
               >
                 删除
               </a-button>
             </template>
           </template>
         </a-table>
-
-        <a-button type="dashed" block class="add-wo-btn" @click="addWorkOrderRow">
-          + 添加工单
+        <a-button type="dashed" block class="add-batch-btn" @click="addBatchRow">
+          + 添加批次指令
         </a-button>
-        <div v-if="selectedWorkOrders.length" class="selected-tip">
-          已选 {{ selectedWorkOrders.length }} 个工单
-        </div>
-      </div>
-
-      <div v-if="mode === MATERIAL_REQ_MODES.SALES_ORDER" class="section-card">
-        <div class="section-head">
-          <div class="section-title">选择销售订单</div>
-          <a-button
-            type="link"
-            size="small"
-            :disabled="!salesLinkedWorkOrders.length"
-            @click="loadEbomLines"
-          >
-            按 EBOM 刷新明细
-          </a-button>
-        </div>
-        <a-form layout="vertical" class="head-form">
-          <a-row :gutter="16">
-            <a-col :xs="24" :sm="12">
-              <a-form-item label="销售订单" required>
-                <SalesOrderSearchSelect
-                  :value="form.salesOrderNo"
-                  size="middle"
-                  placeholder="请搜索或选择销售订单"
-                  @update:value="onSalesOrderChange"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :xs="24" :sm="12">
-              <a-form-item label="订单产品" required>
-                <a-select
-                  v-model:value="form.salesOrderProductIds"
-                  mode="multiple"
-                  allow-clear
-                  show-search
-                  :options="salesOrderProductOpts"
-                  :disabled="!form.salesOrderNo"
-                  :filter-option="filterProductOption"
-                  placeholder="请选择订单产品（可多选）"
-                  :max-tag-count="2"
-                  @change="onSalesOrderProductsChange"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </a-form>
-
-        <div v-if="form.salesOrderNo" class="sales-wo-block">
-          <div class="sales-wo-title">关联工单（{{ salesLinkedWorkOrders.length }}）</div>
-          <a-table
-            :columns="salesWoColumns"
-            :data-source="salesLinkedWorkOrders"
-            row-key="id"
-            size="small"
-            bordered
-            :pagination="false"
-            :scroll="{ x: 1480 }"
-            :locale="{ emptyText: '该订单下暂无可领料工单' }"
-            class="sales-wo-table"
-          >
-            <template #bodyCell="{ column, record, index }">
-              <template v-if="column.key === 'index'">{{ index + 1 }}</template>
-              <template v-else-if="column.key === 'status'">
-                <a-tag :color="workOrderStatusColor(record.status)">
-                  {{ record.status || '—' }}
-                </a-tag>
-              </template>
-              <template v-else-if="column.key === 'specModel'">
-                {{ record.specModel || record.productSpec || '—' }}
-              </template>
-              <template v-else-if="column.key === 'variantAttr'">
-                {{ record.variantSummary || '—' }}
-              </template>
-              <template v-else-if="column.key === 'dispatchedAt'">
-                {{ record.dispatchedAt || record.submittedAt || '—' }}
-              </template>
-              <template v-else-if="column.dataIndex">
-                {{ displayWoCell(record[column.dataIndex]) }}
-              </template>
-            </template>
-          </a-table>
+        <div v-if="selectedBatches.length" class="selected-tip">
+          已选 {{ selectedBatches.length }} 张批次指令
         </div>
       </div>
 
       <div class="section-card">
         <div class="section-title">申请信息</div>
-        <a-form layout="vertical" class="head-form">
-          <a-row :gutter="16">
-            <a-col :xs="24" :sm="8">
-              <a-form-item label="领用车间" required>
+        <a-form layout="inline" class="head-form horizontal-form">
+          <a-row :gutter="[12, 8]" style="width: 100%">
+            <a-col :span="8">
+              <a-form-item label="申请车间" required>
                 <a-select
                   v-model:value="form.workshop"
                   :options="workshopOpts"
                   show-search
                   allow-clear
+                  size="small"
                   placeholder="请选择"
                   @change="onWorkshopChange"
                 />
               </a-form-item>
             </a-col>
-            <a-col :xs="24" :sm="8">
+            <a-col :span="8">
               <a-form-item label="领入仓库">
                 <a-select
                   v-model:value="form.receiveWarehouse"
                   :options="receiveWarehouseOpts"
                   show-search
                   allow-clear
+                  size="small"
                   placeholder="线边仓（可选）"
                 />
               </a-form-item>
             </a-col>
-            <a-col :xs="24" :sm="8">
-              <a-form-item label="备注">
-                <a-input v-model:value="form.remark" allow-clear placeholder="选填" />
+            <a-col :span="24">
+              <a-form-item label="备注" class="remark-item">
+                <a-input v-model:value="form.remark" allow-clear size="small" placeholder="选填" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -214,8 +118,10 @@
 
       <div class="section-card">
         <div class="section-head">
-          <div class="section-title">领料明细（{{ lines.length }} 项 / 合计 {{ totalQty }}）</div>
-          <a-button type="primary" size="small" @click="pickerOpen = true">+ 添加物料</a-button>
+          <div class="section-title">
+            领料明细（{{ lines.length }} 项 / 合计 {{ totalQtyText }}）
+          </div>
+          <a-button type="primary" size="small" @click="pickerOpen = true">添加物料</a-button>
         </div>
         <a-table
           :columns="lineColumns"
@@ -225,21 +131,26 @@
           bordered
           :pagination="false"
           :scroll="{ x: 1480 }"
-          :locale="{ emptyText: '请添加领料明细，或从工单 / 销售订单带出 EBOM' }"
+          :locale="{ emptyText: mode === 'batch' ? '请选择批次指令，或添加物料' : '请添加物料' }"
         >
           <template #bodyCell="{ column, record, index }">
-            <template v-if="column.key === 'shipQty'">
-              <a-input-number
-                v-model:value="record.shipQty"
-                :min="0"
-                :precision="record.isVariableLength ? 3 : 0"
-                size="small"
-                style="width: 100%"
-                @change="() => onShipQtyChange(record)"
-              />
-              <div v-if="record.isVariableLength" class="vl-hint">
-                需求({{ record.unit || '米' }})·出库时拣批
-                <template v-if="record.blankSizeText"> · 需求=下料尺寸×用量 </template>
+            <template v-if="column.key === 'seq'">{{ index + 1 }}</template>
+            <template v-else-if="column.key === 'specModel'">{{
+              record.specModel || '—'
+            }}</template>
+            <template v-else-if="column.key === 'suggestedQty'">
+              {{ qtyWithUnit(record.suggestedQty, record.unit) }}
+            </template>
+            <template v-else-if="column.key === 'shipQty'">
+              <div class="qty-with-unit">
+                <a-input-number
+                  v-model:value="record.shipQty"
+                  :min="0"
+                  :precision="3"
+                  size="small"
+                  class="qty-input"
+                />
+                <span class="qty-unit">{{ record.unit || '' }}</span>
               </div>
             </template>
             <template v-else-if="column.key === 'shipWarehouse'">
@@ -247,69 +158,14 @@
                 v-model:value="record.shipWarehouse"
                 :options="pickWarehouseOpts"
                 size="small"
-                style="width: 100%"
                 show-search
+                style="width: 100%"
               />
             </template>
-            <template v-else-if="column.key === 'suggestedQty'">
-              {{ record.suggestedQty || '—' }}
+            <template v-else-if="column.key === 'warehouseStockQty'">
+              {{ qtyWithUnit(warehouseQty(record), record.unit) }}
             </template>
-            <template v-else-if="column.key === 'specModel'">
-              <a
-                v-if="isSpuLine(record)"
-                class="variant-field-link"
-                @click.prevent="openVariantConfig(record)"
-              >
-                {{ record.specModel || '点击配置' }}
-              </a>
-              <span v-else>{{ record.specModel || '—' }}</span>
-            </template>
-            <template v-else-if="column.key === 'material'">
-              <a
-                v-if="isSpuLine(record)"
-                class="variant-field-link"
-                @click.prevent="openVariantConfig(record)"
-              >
-                {{ record.material || '点击配置' }}
-              </a>
-              <span v-else>{{ record.material || '—' }}</span>
-            </template>
-            <template v-else-if="column.key === 'variantAttr'">
-              <a
-                v-if="isSpuLine(record)"
-                class="variant-field-link"
-                @click.prevent="openVariantConfig(record)"
-              >
-                {{ lineVariantDisplay(record) || '—' }}
-              </a>
-              <template v-else>
-                <a-tooltip v-if="lineVariantDisplay(record)" :title="lineVariantDisplay(record)">
-                  <span>{{ lineVariantDisplay(record) }}</span>
-                </a-tooltip>
-                <span v-else>—</span>
-              </template>
-            </template>
-            <template v-else-if="column.key === 'drawingNo'">
-              {{ record.drawingNo || '—' }}
-            </template>
-            <template v-else-if="column.key === 'blankSizeText'">
-              <template v-if="record.blankSizeText">
-                {{ record.blankSizeText }}
-                <div v-if="record.blankArea > 0" class="vl-hint">≈ {{ record.blankArea }}㎡/件</div>
-                <div v-else-if="record.blankLength > 0" class="vl-hint">
-                  ≈ {{ record.blankLength }}米/件
-                </div>
-              </template>
-              <span v-else>—</span>
-            </template>
-            <template v-else-if="column.key === 'source'">
-              <template v-if="record.sourceWorkOrders?.length">
-                <a-tag v-for="s in record.sourceWorkOrders" :key="s.workOrderId" color="blue">
-                  {{ s.workOrderCode }} ×{{ s.qty }}
-                </a-tag>
-              </template>
-              <span v-else>{{ record.lineSource === 'EBOM' ? '工单 EBOM' : '手工添加' }}</span>
-            </template>
+            <template v-else-if="column.key === 'source'">{{ sourceText(record) }}</template>
             <template v-else-if="column.key === 'action'">
               <a-button type="link" size="small" danger @click="removeLine(index)">删除</a-button>
             </template>
@@ -320,19 +176,12 @@
 
     <SelectBomMaterialModal
       v-model:open="pickerOpen"
-      title="添加产品/物料"
-      picker-default-item-type="产品"
-      :include-spu-templates="true"
+      title="添加物料"
+      hide-add-material
+      hide-material-drawing
+      picker-default-item-type="物料"
+      :initial-selected-ids="selectedItemIds"
       @selected="onMaterialsPicked"
-    />
-
-    <ConfigureSalesSpuVariantModal
-      v-model:open="variantConfigOpen"
-      :spu-id="variantConfigSpuId"
-      :initial-variant-values="variantConfigInitialValues"
-      :allow-back="false"
-      confirm-text="确定"
-      @confirm="onVariantConfigConfirm"
     />
   </div>
 </template>
@@ -345,250 +194,50 @@ export default { name: 'MaterialRequisitionCreateView' }
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { workCenterOptions } from '@/mock/workOrderOptions'
-import { getWorkOrders } from '@/store/workOrderStore'
-import { findSalesOrderByOrderNo } from '@/store/salesOrderStore'
+import { getWorkCenterSelectOptions } from '@/utils/productionPlanMaterial'
 import { warehouseState } from '@/store/warehouseStore'
+import { getBatchOrder, listBatchOrders } from '@/store/batchInstructionStore'
+import { itemMasterCard, itemUnit } from '@/store/processFormulaStore'
 import { MATERIAL_REQ_MODES, submitMaterialRequisition } from '@/store/mobileMaterialReqStore'
-import { getWorkOrderPlanQty } from '@/utils/workOrderScheduleBatch'
-import {
-  createManualMaterialLine,
-  createMaterialReqSpuLine,
-  resolveBatchWorkOrderMaterialLines,
-} from '@/utils/materialReqEbom'
+import { formatNumber } from '@/utils/numberFormat'
+import { getWarehouseStockQty } from '@/utils/outboundLineHelpers'
 import SelectBomMaterialModal from '@/views/product-process/components/SelectBomMaterialModal.vue'
-import WorkOrderSearchSelect from '@/views/procurement/components/WorkOrderSearchSelect.vue'
-import SalesOrderSearchSelect from '@/views/procurement/components/SalesOrderSearchSelect.vue'
-import ConfigureSalesSpuVariantModal from '@/views/sales/components/ConfigureSalesSpuVariantModal.vue'
-import { useSpuVariantConfig } from '@/composables/useSpuVariantConfig'
-import {
-  applyResolvedSkuToInventoryLine,
-  isSpuLine,
-  lineVariantSummary,
-  validateLinesSkuResolved,
-} from '@/utils/spuLineResolve'
+import BatchInstructionSearchSelect from '@/views/production/components/BatchInstructionSearchSelect.vue'
 
 const route = useRoute()
 const router = useRouter()
 
-/** 从到货跟踪带入的关键件（跨模式保留） */
-const arrivalKeyParts = ref([])
-
-function parseArrivalKeyPartsFromQuery() {
-  const q = route.query || {}
-  const itemCode = String(q.itemCode || '').trim()
-  if (!itemCode) return []
-  const qty = Number(q.qty)
-  const unitUsage = Number(q.unitUsage)
-  return [
-    {
-      itemCode,
-      itemName: String(q.itemName || '').trim(),
-      specModel: String(q.specModel || '').trim(),
-      unit: String(q.unit || '').trim() || '件',
-      qty: qty > 0 ? qty : 1,
-      unitUsage: unitUsage > 0 ? unitUsage : null,
-      warehouse: String(q.warehouse || '').trim() || '原料仓',
-    },
-  ]
-}
-
-function buildArrivalKeyPartLines() {
-  return arrivalKeyParts.value.map((part) => {
-    const line = createManualMaterialLine(
-      {
-        code: part.itemCode,
-        itemCode: part.itemCode,
-        name: part.itemName,
-        itemName: part.itemName,
-        spec: part.specModel,
-        specModel: part.specModel,
-        unit: part.unit,
-        unitUsage: part.unitUsage != null ? part.unitUsage : 1,
-        lineSource: '关键件到货',
-      },
-      part.qty,
-      part.warehouse,
-    )
-    line.fromArrivalKeyPart = true
-    return line
-  })
-}
-
-function seedArrivalKeyPartLines() {
-  if (!arrivalKeyParts.value.length) return
-  lines.value = buildArrivalKeyPartLines()
-}
-
-/**
- * 工单 EBOM 下级物料 + 关键件：
- * - 命中关键件：写入关键件单位用量（有预填用预填，否则用 EBOM 单位用量）并按工单数量重算领料量
- * - 未命中的关键件：追加在明细末尾
- */
-function mergeEbomLinesWithArrivalKeyParts(ebomLines = []) {
-  const prefills = arrivalKeyParts.value
-  if (!prefills.length) return ebomLines
-
-  const prefByCode = new Map(prefills.map((p) => [String(p.itemCode || '').trim(), p]))
-  const hitCodes = new Set()
-
-  const merged = (ebomLines || []).map((line) => {
-    const code = String(line.itemCode || '').trim()
-    const pref = prefByCode.get(code)
-    if (!pref) return line
-
-    hitCodes.add(code)
-    const oldUnitUsage = Number(line.unitUsage) || 1
-    const scheduleQty =
-      oldUnitUsage > 0 ? (Number(line.suggestedQty) || Number(line.shipQty) || 0) / oldUnitUsage : 1
-    const unitUsage =
-      pref.unitUsage != null && Number(pref.unitUsage) > 0 ? Number(pref.unitUsage) : oldUnitUsage
-    const demand = unitUsage * (Number.isFinite(scheduleQty) && scheduleQty > 0 ? scheduleQty : 1)
-    return {
-      ...line,
-      unitUsage,
-      suggestedQty: demand,
-      shipQty: demand,
-      fromArrivalKeyPart: true,
-      lineSource: line.lineSource ? `${line.lineSource}·关键件` : 'EBOM·关键件',
-    }
-  })
-
-  prefills.forEach((pref) => {
-    const code = String(pref.itemCode || '').trim()
-    if (!code || hitCodes.has(code)) return
-    const extra = createManualMaterialLine(
-      {
-        code: pref.itemCode,
-        itemCode: pref.itemCode,
-        name: pref.itemName,
-        itemName: pref.itemName,
-        spec: pref.specModel,
-        specModel: pref.specModel,
-        unit: pref.unit,
-        unitUsage: pref.unitUsage != null ? pref.unitUsage : 1,
-        lineSource: '关键件到货',
-      },
-      pref.qty,
-      pref.warehouse,
-    )
-    extra.fromArrivalKeyPart = true
-    merged.push(extra)
-  })
-
-  return merged
-}
-
-function initFromArrivalTracking() {
-  arrivalKeyParts.value = parseArrivalKeyPartsFromQuery()
-  if (!arrivalKeyParts.value.length) return
-  mode.value = MATERIAL_REQ_MODES.WORK_ORDER
-  workOrderRows.value = [createEmptyWoRow()]
-  form.salesOrderNo = ''
-  form.salesOrderProductIds = []
-  seedArrivalKeyPartLines()
-  const wh = arrivalKeyParts.value[0]?.warehouse
-  if (wh) {
-    /* 到货仓作领料仓候选提示；线边仓仍由车间同步 */
-  }
-  syncReceiveWarehouse()
-}
-
-/** 从齐套跟踪等入口带入工单 */
-function initFromWorkOrderQuery() {
-  const q = route.query || {}
-  const woId = String(q.workOrderId || '').trim()
-  const woCode = String(q.workOrderCode || '').trim()
-  if (!woId && !woCode) return false
-  mode.value = MATERIAL_REQ_MODES.WORK_ORDER
-  form.salesOrderNo = ''
-  form.salesOrderProductIds = []
-  const wo =
-    (woId && allWorkOrders.value.find((o) => o.id === woId)) ||
-    (woCode && allWorkOrders.value.find((o) => o.code === woCode)) ||
-    null
-  if (!wo) {
-    message.warning('未找到该工单')
-    return false
-  }
-  const row = createEmptyWoRow()
-  row.workOrderCode = wo.code
-  row.workOrderId = wo.id
-  row.productName = wo.productName || wo.name || ''
-  row.specModel = wo.specModel || ''
-  row.material = wo.material || ''
-  row.drawingNo = wo.drawingNo || ''
-  workOrderRows.value = [row]
-  syncReceiveWarehouse()
-  loadEbomLines()
-  return true
-}
-
-onMounted(() => {
-  initFromArrivalTracking()
-  if (!arrivalKeyParts.value.length) initFromWorkOrderQuery()
-})
-
-function toReqWorkOrderSnapshot(wo) {
-  return {
-    id: wo.id,
-    code: wo.code,
-    productName: wo.productName || '',
-    productCode: wo.productCode || wo.materialCode || '',
-    specModel: wo.specModel || '',
-    material: wo.material || '',
-    drawingNo: wo.drawingNo || '',
-    bom: wo.bomLabel || wo.bom || '',
-    planQty: getWorkOrderPlanQty(wo) || wo.scheduleQty || 0,
-    scheduleQty: wo.scheduleQty,
-    salesOrderNo: wo.sourceOrderNo || wo.salesOrderNo || '',
-  }
-}
-
-let rowSeq = 1
-function createEmptyWoRow() {
-  return {
-    key: `wo-row-${rowSeq++}`,
-    workOrderCode: '',
-    workOrderId: '',
-    productName: '',
-    specModel: '',
-    material: '',
-    drawingNo: '',
-  }
-}
-
-const mode = ref(MATERIAL_REQ_MODES.WORK_ORDER)
-const workOrderRows = ref([createEmptyWoRow()])
 const lines = ref([])
 const pickerOpen = ref(false)
 const submitting = ref(false)
-
-const {
-  variantConfigOpen,
-  variantConfigSpuId,
-  variantConfigInitialValues,
-  variantConfigTargetLine,
-  openVariantConfig,
-  lineVariantDisplay,
-} = useSpuVariantConfig()
+const mode = ref('quick')
+const batchRows = ref([{ key: 'batch-row-1', batchId: '' }])
+let batchRowSeq = 1
 
 const form = reactive({
-  workshop: '装配车间',
+  workshop: '反应车间',
   receiveWarehouse: '',
   remark: '',
-  salesOrderNo: '',
-  /** 销售订单明细行 id 列表（多选） */
-  salesOrderProductIds: [],
 })
 
-const workshopOpts = workCenterOptions.map((v) => ({ label: v, value: v }))
+const workshopOpts = computed(() => getWorkCenterSelectOptions())
 
-const pickWarehouseOpts = computed(() =>
-  warehouseState.warehouses
-    .filter((w) => w.enabled !== false)
-    .map((w) => ({ label: w.name, value: w.name })),
+const openBatchOrders = computed(() =>
+  listBatchOrders().filter(
+    (row) =>
+      row.status === 'pending_release' ||
+      row.status === 'running' ||
+      batchRows.value.some((item) => item.batchId === row.id),
+  ),
 )
+
+const selectedBatches = computed(() =>
+  batchRows.value.map((row) => getBatchOrder(row.batchId)).filter(Boolean),
+)
+
+function excludeBatchIds(currentId) {
+  return batchRows.value.map((row) => row.batchId).filter((id) => id && id !== currentId)
+}
 
 const receiveWarehouseOpts = computed(() =>
   warehouseState.warehouses
@@ -599,265 +248,56 @@ const receiveWarehouseOpts = computed(() =>
     })),
 )
 
-const allWorkOrders = computed(() =>
-  getWorkOrders().filter((o) => o.status && o.status !== '待下发'),
+const pickWarehouseOpts = computed(() =>
+  warehouseState.warehouses
+    .filter((w) => w.enabled !== false)
+    .map((w) => ({ label: w.name, value: w.name })),
 )
 
-/** 当前销售订单下的产品（来自订单明细，多选） */
-const salesOrderProductOpts = computed(() => {
-  const order = findSalesOrderByOrderNo(form.salesOrderNo)
-  if (!order) return []
-  return (order.lineItems || [])
-    .filter((line) => line?.id)
-    .map((line) => {
-      const code = line.productCode || ''
-      const name = line.productName || ''
-      const spec = line.specModel || ''
-      const parts = [code, name, spec].filter(Boolean)
-      return {
-        value: line.id,
-        label: parts.length ? parts.join(' / ') : `明细 ${line.id}`,
-        productId: line.productId || '',
-        productCode: code,
-        productName: name,
-      }
-    })
-})
-
-function filterProductOption(input, option) {
-  const q = String(input || '')
-    .trim()
-    .toLowerCase()
-  if (!q) return true
-  return String(option?.label || '')
-    .toLowerCase()
-    .includes(q)
-}
-
-function workOrderMatchesOrderProduct(wo, productOpt) {
-  if (!wo || !productOpt) return false
-  if (wo.salesLineId && wo.salesLineId === productOpt.value) return true
-  if (wo.productId && productOpt.productId && wo.productId === productOpt.productId) return true
-  if (wo.materialCode && productOpt.productCode && wo.materialCode === productOpt.productCode) {
-    return true
-  }
-  if (wo.productName && productOpt.productName && wo.productName === productOpt.productName) {
-    return true
-  }
-  return false
-}
-
-const salesLinkedWorkOrders = computed(() => {
-  const so = form.salesOrderNo
-  if (!so) return []
-  const orderWos = allWorkOrders.value.filter((o) => (o.sourceOrderNo || '') === so)
-  const selectedIds = form.salesOrderProductIds || []
-  if (!selectedIds.length) return []
-  const selectedProducts = salesOrderProductOpts.value.filter((o) => selectedIds.includes(o.value))
-  if (!selectedProducts.length) return []
-
-  const matched = orderWos.filter((wo) =>
-    selectedProducts.some((opt) => workOrderMatchesOrderProduct(wo, opt)),
-  )
-  // 有精确关联时按产品过滤；历史/演示数据缺关联字段时回退为订单下全部工单
-  if (matched.length) return matched
-  const canFilterByProduct = orderWos.some(
-    (wo) => wo.salesLineId || wo.productId || wo.materialCode,
-  )
-  if (canFilterByProduct) return matched
-  return orderWos
-})
-
-const selectedWorkOrders = computed(() => {
-  if (mode.value === MATERIAL_REQ_MODES.SALES_ORDER) return salesLinkedWorkOrders.value
-  const codes = workOrderRows.value.map((r) => r.workOrderCode).filter(Boolean)
-  const uniq = [...new Set(codes)]
-  return uniq.map((code) => allWorkOrders.value.find((o) => o.code === code)).filter(Boolean)
-})
-
-const woRowColumns = [
-  { title: '工单编号', key: 'workOrder', width: 320 },
-  { title: '关联产品', key: 'product' },
-  { title: '操作', key: 'action', width: 80, align: 'center' },
+const batchRowColumns = [
+  { title: '批次指令', key: 'batch', width: 320 },
+  { title: '产品', key: 'product' },
+  { title: '批量', key: 'qty', width: 140 },
+  { title: '操作', key: 'action', width: 70 },
 ]
-
-const salesWoColumns = [
-  { title: '序号', key: 'index', width: 56, align: 'center', fixed: 'left' },
-  { title: '状态', key: 'status', width: 90, fixed: 'left' },
-  { title: '工单编号', dataIndex: 'code', key: 'code', width: 150, ellipsis: true, fixed: 'left' },
-  { title: '产品名称', dataIndex: 'productName', key: 'productName', width: 130, ellipsis: true },
-  { title: '规格型号', key: 'specModel', width: 110, ellipsis: true },
-  { title: '材质', dataIndex: 'material', key: 'material', width: 90, ellipsis: true },
-  { title: '变体属性', key: 'variantAttr', width: 120, ellipsis: true },
-  { title: '图号', dataIndex: 'drawingNo', key: 'drawingNo', width: 110, ellipsis: true },
-  {
-    title: '排产数量',
-    dataIndex: 'scheduleQty',
-    key: 'scheduleQty',
-    width: 90,
-    align: 'right',
-  },
-  { title: '加工中心', dataIndex: 'workCenter', key: 'workCenter', width: 110, ellipsis: true },
-  {
-    title: '工艺路线',
-    dataIndex: 'processRouteName',
-    key: 'processRouteName',
-    width: 120,
-    ellipsis: true,
-  },
-  { title: '负责人', dataIndex: 'owner', key: 'owner', width: 90, ellipsis: true },
-  { title: '下发时间', key: 'dispatchedAt', width: 140 },
-]
-
-function displayWoCell(value) {
-  if (value === 0) return '0'
-  const text = String(value ?? '').trim()
-  return text || '—'
-}
-
-function workOrderStatusColor(status) {
-  if (status === '执行中') return 'processing'
-  if (status === '完成') return 'success'
-  if (status === '已下发') return 'blue'
-  if (status === '暂停') return 'warning'
-  if (status === '终止') return 'error'
-  return 'default'
-}
 
 const lineColumns = [
-  { title: '物料编码', dataIndex: 'itemCode', key: 'itemCode', width: 120 },
-  { title: '物料名称', dataIndex: 'itemName', key: 'itemName', width: 140 },
-  { title: '规格型号', key: 'specModel', width: 110 },
-  { title: '材质', key: 'material', width: 90 },
-  { title: '变体属性', key: 'variantAttr', width: 140, ellipsis: true },
-  { title: '图号', key: 'drawingNo', width: 110 },
-  { title: '下料尺寸', key: 'blankSizeText', width: 160, ellipsis: true },
-  { title: 'BOM单位用量', key: 'suggestedQty', width: 110, align: 'right' },
-  { title: '领料数量', key: 'shipQty', width: 110 },
-  { title: '领料仓库', key: 'shipWarehouse', width: 130 },
-  { title: '来源', key: 'source', width: 180 },
+  { title: '序号', key: 'seq', width: 64, align: 'center', fixed: 'left' },
+  { title: '物料编号', dataIndex: 'itemCode', key: 'itemCode', width: 140 },
+  { title: '物料名称', dataIndex: 'itemName', key: 'itemName', width: 160, ellipsis: true },
+  { title: '规格型号', key: 'specModel', width: 120, ellipsis: true },
+  { title: '建议数量', key: 'suggestedQty', width: 130, align: 'right' },
+  { title: '申请数量', key: 'shipQty', width: 180 },
+  { title: '领料仓库', key: 'shipWarehouse', width: 150 },
+  { title: '当前仓库数量', key: 'warehouseStockQty', width: 140, align: 'right' },
+  { title: '来源', key: 'source', width: 160, ellipsis: true },
   { title: '操作', key: 'action', width: 70, fixed: 'right' },
 ]
 
-const totalQty = computed(() =>
-  lines.value.reduce((sum, line) => sum + (Number(line.shipQty) || 0), 0),
+const selectedItemIds = computed(() => lines.value.map((line) => line.itemId).filter(Boolean))
+
+const totalQtyText = computed(() =>
+  formatQty(lines.value.reduce((sum, line) => sum + (Number(line.shipQty) || 0), 0)),
 )
 
-watch(
-  selectedWorkOrders,
-  (list) => {
-    if (
-      mode.value !== MATERIAL_REQ_MODES.WORK_ORDER &&
-      mode.value !== MATERIAL_REQ_MODES.SALES_ORDER
-    ) {
-      return
-    }
-    loadEbomLines()
-    const first = list[0]
-    if (first?.workCenter) {
-      form.workshop = first.workCenter
-      syncReceiveWarehouse()
-    }
-  },
-  { deep: true },
-)
-
-function onModeChange() {
-  workOrderRows.value = [createEmptyWoRow()]
-  form.salesOrderNo = ''
-  form.salesOrderProductIds = []
-  // 切换工单/订单/快速领料时，始终保留到货跟踪带入的关键件
-  seedArrivalKeyPartLines()
-  if (!arrivalKeyParts.value.length) {
-    lines.value = []
-  }
-  syncReceiveWarehouse()
+function formatQty(value) {
+  return formatNumber(value, 3, { empty: '—' })
 }
 
-function onSalesOrderChange(code) {
-  form.salesOrderNo = code || ''
-  form.salesOrderProductIds = []
-  seedArrivalKeyPartLines()
-  if (!arrivalKeyParts.value.length) lines.value = []
-  if (!form.salesOrderNo) return
-  const order = findSalesOrderByOrderNo(form.salesOrderNo)
-  if (!order) {
-    message.warning('未找到该销售订单')
-    return
-  }
-  const productIds = (order.lineItems || []).map((line) => line.id).filter(Boolean)
-  form.salesOrderProductIds = productIds
-  if (!productIds.length) {
-    message.warning('该销售订单暂无产品明细')
-    return
-  }
-  if (!salesLinkedWorkOrders.value.length) {
-    message.warning('所选订单产品下暂无可领料工单')
-  }
+function qtyWithUnit(value, unit) {
+  if (value == null || value === '') return '—'
+  const qty = formatQty(value)
+  return unit ? `${qty} ${unit}` : qty
 }
 
-function onSalesOrderProductsChange() {
-  seedArrivalKeyPartLines()
-  if (!arrivalKeyParts.value.length) lines.value = []
-  if (!form.salesOrderNo) return
-  if (!(form.salesOrderProductIds || []).length) {
-    message.warning('请至少选择一个订单产品')
-    return
-  }
-  if (!salesLinkedWorkOrders.value.length) {
-    message.warning('所选订单产品下暂无可领料工单')
-  }
+function warehouseQty(record) {
+  return getWarehouseStockQty(record.shipWarehouse, record.itemCode)
 }
 
-function addWorkOrderRow() {
-  workOrderRows.value.push(createEmptyWoRow())
-}
-
-function removeWorkOrderRow(index) {
-  if (workOrderRows.value.length <= 1) return
-  workOrderRows.value.splice(index, 1)
-}
-
-function clearWorkOrderProductFields(row) {
-  row.productName = ''
-  row.specModel = ''
-  row.material = ''
-  row.drawingNo = ''
-}
-
-function onWorkOrderCodeChange(index, code) {
-  const row = workOrderRows.value[index]
-  if (!row) return
-  if (!code) {
-    row.workOrderCode = ''
-    row.workOrderId = ''
-    clearWorkOrderProductFields(row)
-    return
-  }
-  const duplicated = workOrderRows.value.some(
-    (r, i) => i !== index && r.workOrderCode && r.workOrderCode === code,
-  )
-  if (duplicated) {
-    message.warning('该工单已添加，请勿重复选择')
-    row.workOrderCode = ''
-    row.workOrderId = ''
-    clearWorkOrderProductFields(row)
-    return
-  }
-  const wo = allWorkOrders.value.find((o) => o.code === code)
-  if (!wo) {
-    message.warning('未找到该工单')
-    row.workOrderCode = ''
-    row.workOrderId = ''
-    clearWorkOrderProductFields(row)
-    return
-  }
-  row.workOrderCode = wo.code
-  row.workOrderId = wo.id
-  row.productName = wo.productName || wo.name || ''
-  row.specModel = wo.specModel || ''
-  row.material = wo.material || ''
-  row.drawingNo = wo.drawingNo || ''
+function sourceText(record) {
+  if (record.lineSource === '手工添加') return '手工添加'
+  if (record.sourceBatchNos?.length) return record.sourceBatchNos.join('、')
+  return '批次指令'
 }
 
 function syncReceiveWarehouse() {
@@ -872,88 +312,127 @@ function onWorkshopChange() {
   syncReceiveWarehouse()
 }
 
-function loadEbomLines() {
-  const selected = selectedWorkOrders.value
-  if (!selected.length) {
-    // 尚未选工单：若有到货关键件则只展示关键件
-    seedArrivalKeyPartLines()
-    if (!arrivalKeyParts.value.length) lines.value = []
-    return
-  }
-  const { lines: merged, emptyWorkOrders } = resolveBatchWorkOrderMaterialLines(selected)
-  lines.value = mergeEbomLinesWithArrivalKeyParts(merged)
-  if (emptyWorkOrders.length) {
-    message.warning(`${emptyWorkOrders.map((w) => w.code).join('、')} 无 EBOM，请手工补料`)
-  }
+function batchOf(id) {
+  return id ? getBatchOrder(id) : null
 }
 
-function onShipQtyChange(record) {
-  if (record.isVariableLength) {
-    record.demandMeters = Number(record.shipQty) || 0
+function batchProductText(id) {
+  const order = batchOf(id)
+  if (!order) return '—'
+  const card = itemMasterCard(order.itemId)
+  const name = `${card.code || ''} ${card.name || ''}`.trim()
+  return [name || '—', order.formulaName].filter(Boolean).join(' · ')
+}
+
+function batchQtyText(id) {
+  const order = batchOf(id)
+  if (!order) return '—'
+  return `${formatQty(order.qty)} ${order.unit || ''}`.trim()
+}
+
+function rebuildBatchLines() {
+  const manual = lines.value.filter((line) => line.lineSource !== '批次指令')
+  const merged = new Map()
+  selectedBatches.value.forEach((order) => {
+    ;(order.theoreticalFeeds || []).forEach((feed) => {
+      if (!feed?.itemId) return
+      const qty = Number(feed.qty) || 0
+      const prev = merged.get(feed.itemId)
+      if (prev) {
+        prev.qty += qty
+        if (order.batchNo && !prev.batchNos.includes(order.batchNo))
+          prev.batchNos.push(order.batchNo)
+      } else {
+        merged.set(feed.itemId, {
+          itemId: feed.itemId,
+          qty,
+          batchNos: order.batchNo ? [order.batchNo] : [],
+        })
+      }
+    })
+  })
+  const fromBatch = []
+  merged.forEach((feed) => {
+    const card = itemMasterCard(feed.itemId)
+    const qty = Number(feed.qty.toFixed(3))
+    fromBatch.push({
+      id: `mr-line-${feed.itemId}`,
+      itemId: feed.itemId,
+      itemCode: card.code,
+      itemName: card.name,
+      specModel: card.specModel || '',
+      unit: itemUnit(feed.itemId),
+      suggestedQty: qty,
+      shipQty: qty,
+      planQty: qty,
+      shipWarehouse: '原料仓',
+      sourceBatchNos: feed.batchNos,
+      lineSource: '批次指令',
+    })
+  })
+  lines.value = [...fromBatch, ...manual.filter((line) => !merged.has(line.itemId))]
+}
+
+function onBatchRowChange(index, id) {
+  const nextId = id || ''
+  if (nextId && batchRows.value.some((row, i) => i !== index && row.batchId === nextId)) {
+    message.warning('该批次指令已选择')
+    batchRows.value[index].batchId = ''
+    rebuildBatchLines()
+    return
   }
+  batchRows.value[index].batchId = nextId
+  const order = nextId ? getBatchOrder(nextId) : null
+  if (order && !(order.theoreticalFeeds || []).length) {
+    message.warning('该批次指令没有计划投料')
+  }
+  rebuildBatchLines()
+}
+
+function addBatchRow() {
+  batchRowSeq += 1
+  batchRows.value.push({ key: `batch-row-${batchRowSeq}`, batchId: '' })
+}
+
+function removeBatchRow(index) {
+  if (batchRows.value.length <= 1) return
+  batchRows.value.splice(index, 1)
+  rebuildBatchLines()
+}
+
+function selectBatchFromRoute(id) {
+  if (!id) return
+  mode.value = 'batch'
+  const row = batchRows.value.find((item) => !item.batchId) || batchRows.value[0]
+  if (!row) return
+  if (batchRows.value.some((item) => item.batchId === id)) return
+  row.batchId = id
+  rebuildBatchLines()
 }
 
 function onMaterialsPicked(items) {
-  const list = Array.isArray(items) ? items : [items]
-  const skuRows = list.filter((r) => r.pickType !== 'spu')
-  const spuRows = list.filter((r) => r.pickType === 'spu')
-  if (skuRows.length) onSkuMaterialsPicked(skuRows)
-  if (spuRows.length) onSpuDraftSelected(spuRows)
-}
-
-function onSkuMaterialsPicked(list) {
-  list.forEach((item) => {
-    const code = item.code || item.itemCode
-    const exists = lines.value.find((l) => l.itemCode && l.itemCode === code)
-    if (exists) {
-      exists.shipQty = Number(exists.shipQty || 0) + 1
-      return
-    }
-    lines.value.push(createManualMaterialLine(item, 1))
-  })
-}
-
-function onSpuDraftSelected(rows) {
+  const list = Array.isArray(items) ? items : []
   let added = 0
-  rows.forEach((payload) => {
-    const spuId = payload.spuId || payload.id
-    if (!spuId) return
-    const dup = lines.value.some(
-      (line) => isSpuLine(line) && line.spuId === spuId && !line.itemId && !line.itemCode,
-    )
-    if (dup) return
-    lines.value.push(createMaterialReqSpuLine(payload))
+  list.forEach((item) => {
+    const itemId = item.id || item.itemId
+    if (!itemId) return
+    if (lines.value.some((line) => line.itemId === itemId)) return
+    lines.value.push({
+      id: `mr-line-${itemId}`,
+      itemId,
+      itemCode: item.code || item.itemCode || '',
+      itemName: item.name || item.itemName || '',
+      specModel: item.specModel || '',
+      unit: item.inventoryUnit || item.unit || 'kg',
+      suggestedQty: null,
+      shipQty: null,
+      planQty: null,
+      shipWarehouse: item.defaultWarehouse || '原料仓',
+      lineSource: '手工添加',
+    })
     added += 1
   })
-  if (!added) {
-    message.info('所选产品族已在明细中（待配置变体），未重复添加')
-    return
-  }
-  message.success(`已添加 ${added} 个产品族，请点击规格型号 / 材质 / 变体属性完成配置`)
-}
-
-function onVariantConfigConfirm(payload) {
-  const { resolved, variantValues } = payload || {}
-  if (!resolved?.sku) {
-    message.warning('未匹配到 SKU')
-    return
-  }
-  const target = variantConfigTargetLine.value
-  if (!target) {
-    message.warning('未找到待配置的明细行')
-    return
-  }
-  const dupSku = lines.value.some(
-    (line) => line.id !== target.id && line.itemCode === resolved.productCode,
-  )
-  if (dupSku) {
-    message.warning(`物料编码「${resolved.productCode}」已在明细中`)
-    return
-  }
-  applyResolvedSkuToInventoryLine(target, resolved)
-  target.variantValues = { ...(variantValues || resolved.variantValues || {}) }
-  target.variantSummary = lineVariantSummary(target)
-  message.success('变体已配置')
+  if (!added && list.length) message.info('所选物料已在明细中')
 }
 
 function removeLine(index) {
@@ -964,106 +443,64 @@ function goBack() {
   router.push('/production/material-requisition')
 }
 
+onMounted(() => {
+  selectBatchFromRoute(String(route.query.batchId || ''))
+})
+
+watch(
+  () => route.query.batchId,
+  (id) => selectBatchFromRoute(String(id || '')),
+)
+
+watch(mode, (value) => {
+  if (value === 'quick') {
+    lines.value = lines.value.filter((line) => line.lineSource !== '批次指令')
+    return
+  }
+  rebuildBatchLines()
+})
+
 function onSubmit() {
   if (submitting.value) return
-  if (mode.value === MATERIAL_REQ_MODES.WORK_ORDER && !selectedWorkOrders.value.length) {
-    message.warning('请至少选择一个工单')
+  if (mode.value === 'batch' && !selectedBatches.value.length) {
+    message.warning('请选择批次指令')
     return
-  }
-  if (mode.value === MATERIAL_REQ_MODES.SALES_ORDER) {
-    if (!form.salesOrderNo) {
-      message.warning('请选择销售订单')
-      return
-    }
-    if (!(form.salesOrderProductIds || []).length) {
-      message.warning('请至少选择一个订单产品')
-      return
-    }
-    if (!selectedWorkOrders.value.length) {
-      message.warning('所选订单产品下暂无可领料工单')
-      return
-    }
   }
   if (!form.workshop) {
-    message.warning('请选择领用车间')
+    message.warning('请选择申请车间')
     return
   }
-  const skuCheck = validateLinesSkuResolved(lines.value)
-  if (!skuCheck.ok) {
-    message.warning(skuCheck.message)
+  if (!lines.value.length) {
+    message.warning('请至少添加一条物料')
     return
+  }
+  for (const line of lines.value) {
+    const qty = Number(line.shipQty)
+    if (!qty || qty <= 0) {
+      message.warning(`「${line.itemName || line.itemCode}」领料数量须大于 0`)
+      return
+    }
   }
 
   submitting.value = true
-  const selected = selectedWorkOrders.value
-  let payload = {
-    mode: mode.value,
+  const batches = mode.value === 'batch' ? selectedBatches.value : []
+  const first = batches[0]
+  const result = submitMaterialRequisition({
+    mode: mode.value === 'batch' ? MATERIAL_REQ_MODES.BATCH_ORDER : MATERIAL_REQ_MODES.QUICK,
     workshop: form.workshop,
     receiveWarehouse: form.receiveWarehouse,
     remark: form.remark,
-    lines: lines.value,
+    lines: lines.value.map((line) => ({
+      ...line,
+      warehouseStockQty: warehouseQty(line),
+    })),
+    workOrderId: first?.id || '',
+    workOrderCode: batches.map((row) => row.batchNo).join('、'),
+    workOrderName: first?.formulaName || '',
+    productName: first ? itemMasterCard(first.itemId).name : lines.value[0]?.itemName || '',
     sourceChannel: 'web',
     applicant: '管理员',
-  }
-
-  if (mode.value === MATERIAL_REQ_MODES.WORK_ORDER) {
-    if (selected.length === 1) {
-      const wo = selected[0]
-      payload = {
-        ...payload,
-        mode: MATERIAL_REQ_MODES.WORK_ORDER,
-        workOrderId: wo.id,
-        workOrderCode: wo.code,
-        workOrderName: wo.name || wo.productName || '',
-        workOrderIds: [wo.id],
-        workOrders: [toReqWorkOrderSnapshot(wo)],
-        salesOrderNo: wo.sourceOrderNo || '',
-        productName: wo.productName || '',
-        orderCategory: wo.orderCategory || '',
-      }
-    } else {
-      const salesSet = [...new Set(selected.map((w) => w.sourceOrderNo).filter(Boolean))]
-      payload = {
-        ...payload,
-        mode: MATERIAL_REQ_MODES.BATCH,
-        workOrderIds: selected.map((w) => w.id),
-        workOrders: selected.map((w) => toReqWorkOrderSnapshot(w)),
-        salesOrderNo: salesSet.length === 1 ? salesSet[0] : salesSet.length > 1 ? 'MULTI' : '',
-        productName: selected
-          .map((w) => w.productName)
-          .filter(Boolean)
-          .slice(0, 2)
-          .join('、'),
-      }
-    }
-  }
-
-  if (mode.value === MATERIAL_REQ_MODES.SALES_ORDER) {
-    const selectedProducts = salesOrderProductOpts.value.filter((o) =>
-      (form.salesOrderProductIds || []).includes(o.value),
-    )
-    payload = {
-      ...payload,
-      mode: MATERIAL_REQ_MODES.SALES_ORDER,
-      salesOrderNo: form.salesOrderNo,
-      salesOrderProductIds: [...(form.salesOrderProductIds || [])],
-      salesOrderProducts: selectedProducts.map((p) => ({
-        lineId: p.value,
-        productId: p.productId,
-        productCode: p.productCode,
-        productName: p.productName,
-      })),
-      workOrderIds: selected.map((w) => w.id),
-      workOrders: selected.map((w) => toReqWorkOrderSnapshot(w)),
-      productName: selectedProducts
-        .map((p) => p.productName)
-        .filter(Boolean)
-        .slice(0, 2)
-        .join('、'),
-    }
-  }
-
-  const result = submitMaterialRequisition(payload)
+  })
   submitting.value = false
   if (!result.ok) {
     message.warning(result.message || '提交失败')
@@ -1071,14 +508,7 @@ function onSubmit() {
   }
   message.success(
     result.record.auditStatus === '审核通过'
-      ? `已提交并自动通过 ${result.record.reqNo}，出库单 ${
-          result.record.outboundDocNo ||
-          result.orders
-            ?.map((o) => o.docNo)
-            .filter(Boolean)
-            .join('、') ||
-          ''
-        }`
+      ? `已提交并自动通过 ${result.record.reqNo}`
       : `已提交 ${result.record.reqNo}，待审核`,
   )
   router.push(`/production/material-requisition/${result.record.id}`)
@@ -1114,18 +544,10 @@ syncReceiveWarehouse()
   background: #fff;
   border: 1px solid #f0f0f0;
   border-radius: 8px;
-  z-index: 30;
-}
-
-.header-left {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
 }
 
 .page-title {
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 600;
   color: rgba(0, 0, 0, 0.88);
 }
@@ -1135,44 +557,22 @@ syncReceiveWarehouse()
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  /* 左右不再加 padding，与上方标题栏同宽 */
-  padding: 0;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  box-sizing: border-box;
 }
 
 .section-card {
-  /* min-width:0 避免宽表格把卡片撑得比「申请信息」更宽 */
   min-width: 0;
   width: 100%;
-  max-width: 100%;
-  flex: 0 0 auto;
-  align-self: stretch;
-  box-sizing: border-box;
   background: #fff;
   border: 1px solid #f0f0f0;
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 8px;
-  overflow-x: auto;
-}
-
-.section-card :deep(.ant-table-wrapper),
-.section-card :deep(.ant-spin-nested-loading),
-.section-card :deep(.ant-table) {
-  max-width: 100%;
-}
-
-.head-form {
-  :deep(.ant-form-item) {
-    margin-bottom: 0;
-  }
 }
 
 .section-title {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   margin-bottom: 8px;
 }
@@ -1189,66 +589,46 @@ syncReceiveWarehouse()
   }
 }
 
+.mode-tabs {
+  margin-bottom: 8px;
+}
+
 .mode-hint {
-  margin-top: 10px;
   font-size: 13px;
   color: rgba(0, 0, 0, 0.45);
 }
 
-.wo-pick-table {
+.batch-pick-table {
   margin-bottom: 8px;
 }
 
-.sales-wo-block {
-  margin-top: 4px;
-}
-
-.sales-wo-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: rgba(0, 0, 0, 0.65);
-  margin-bottom: 8px;
-}
-
-.sales-wo-table {
-  margin-bottom: 0;
-}
-
-.add-wo-btn {
-  margin-top: 4px;
+.add-batch-btn {
+  margin-top: 8px;
 }
 
 .selected-tip {
   margin-top: 8px;
   font-size: 13px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.cell-placeholder {
+  color: rgba(0, 0, 0, 0.25);
+}
+
+.qty-with-unit {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.qty-input {
+  width: 110px;
+}
+
+.qty-unit {
+  flex-shrink: 0;
   color: rgba(0, 0, 0, 0.65);
-}
-
-.variant-field-link {
-  color: #307068;
-  cursor: pointer;
-}
-
-.vl-hint {
-  margin-top: 2px;
-  font-size: 12px;
-  color: rgba(0, 0, 0, 0.45);
-  line-height: 1.2;
-}
-
-.wo-product-cell {
-  line-height: 1.4;
-  padding: 2px 0;
-}
-
-.wo-product-name {
-  font-size: 13px;
-  color: rgba(0, 0, 0, 0.88);
-}
-
-.wo-product-meta {
-  margin-top: 2px;
-  font-size: 12px;
-  color: rgba(0, 0, 0, 0.45);
 }
 </style>

@@ -1,14 +1,10 @@
 import { reactive, watch } from 'vue'
 import dayjs from 'dayjs'
 import {
-  clonePurchaseOrders,
   recalcPurchaseOrderTotals,
   createPoLineItem,
   computePurchaseOrderOverdueStatus,
 } from '@/mock/purchaseOrders'
-import { ensureCrossDemoPurchaseOrders } from '@/mock/crossModuleDemoSeed'
-import { ensureSettleUnitDemoPurchaseOrders } from '@/mock/settleUnitPurchaseDemoSeed'
-import { ensurePeriodSettleDemoPurchaseOrders } from '@/mock/periodSettleDemoSeed'
 import { round4 } from '@/utils/purchaseMerge'
 import { roundNumber } from '@/utils/numberFormat'
 import {
@@ -40,8 +36,8 @@ export function registerPurchaseRequisitionDraftBind(api = {}) {
 
 const STORAGE_KEY = 'i_doms_purchase_orders'
 const SEED_VERSION_KEY = 'i_doms_purchase_orders_seed_v'
-/** v10：入账状态改为对账口径（未入账/入账待确认/已入账） */
-const CURRENT_SEED_VERSION = '10'
+/** v11：清空离散制造演示采购订单 */
+const CURRENT_SEED_VERSION = '11'
 let poSeq = 20
 
 function loadFromStorage() {
@@ -67,10 +63,7 @@ function persist() {
 }
 
 function initPurchaseOrders() {
-  const base = shouldReseed() ? clonePurchaseOrders() : loadFromStorage() || clonePurchaseOrders()
-  const orders = ensurePeriodSettleDemoPurchaseOrders(
-    ensureSettleUnitDemoPurchaseOrders(ensureCrossDemoPurchaseOrders(base)),
-  )
+  const orders = shouldReseed() ? [] : loadFromStorage() || []
   orders.forEach((order) => {
     if (!order || order.status === '草稿') {
       if (order) {
@@ -102,6 +95,8 @@ export function generatePurchaseOrderNo() {
 export const purchaseOrderState = reactive({
   orders: initPurchaseOrders(),
 })
+
+persist()
 
 watch(
   () => purchaseOrderState.orders,

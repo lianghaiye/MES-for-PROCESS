@@ -5,8 +5,6 @@ export const OUTBOUND_OUTSOURCING_ORDER_COLUMNS = [
   { title: '产品', dataIndex: 'productName', key: 'productName', width: 160, ellipsis: true },
   { title: '编号', key: 'productCode', width: 120, ellipsis: true },
   { title: '规格型号', key: 'specModel', width: 120, ellipsis: true },
-  { title: '材质', key: 'material', width: 90, ellipsis: true },
-  { title: '图号', key: 'drawingNo', width: 120, ellipsis: true },
   { title: '关联BOM', key: 'bom', width: 140, ellipsis: true },
   { title: '计划数量', key: 'planQty', width: 100, align: 'right' },
 ]

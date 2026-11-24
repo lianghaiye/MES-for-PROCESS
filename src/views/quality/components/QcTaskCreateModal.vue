@@ -62,7 +62,7 @@
           </a-form-item>
         </a-col>
         <a-col :span="12">
-          <a-form-item label="检验数量" required>
+          <a-form-item :label="inspectQtyLabel" required>
             <a-input-number
               v-model:value="form.inspectQty"
               :min="0.0001"
@@ -126,6 +126,9 @@ const emit = defineEmits(['update:open', 'saved'])
 const INBOUND_SCOPES = new Set(['来料质检', '外协回货检'])
 const isInboundScope = computed(() => INBOUND_SCOPES.has(props.bizScope))
 const isProductionScope = computed(() => !isInboundScope.value)
+const inspectQtyLabel = computed(() =>
+  props.bizScope === '生产过程检' || props.bizScope === '成品检' ? '取样量' : '检验数量',
+)
 
 const sourceDocLabel = computed(() =>
   props.bizScope === '外协回货检' ? '外协收货单号' : '采购收货单号',
@@ -136,10 +139,11 @@ const receiptLines = ref([])
 
 const form = reactive(emptyForm())
 
-const inspectMethodOpts = [
-  { label: '抽检', value: '抽检' },
-  { label: '全检', value: '全检' },
-]
+const inspectMethodOpts = computed(() => {
+  const process = props.bizScope === '生产过程检' || props.bizScope === '成品检'
+  const values = process ? ['取样送检', '在线检测', '留样复验'] : ['抽检', '全检']
+  return values.map((v) => ({ label: v, value: v }))
+})
 
 const templateOpts = computed(() =>
   qcTemplateState.templates
@@ -167,7 +171,8 @@ function emptyForm() {
     specModel: '',
     unit: '件',
     inspectQty: undefined,
-    inspectMethod: '抽检',
+    inspectMethod:
+      props.bizScope === '生产过程检' || props.bizScope === '成品检' ? '取样送检' : '抽检',
     templateCode: undefined,
     remark: '',
   }

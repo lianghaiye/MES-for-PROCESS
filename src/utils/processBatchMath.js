@@ -125,7 +125,7 @@ export function yieldGap(actual, theoretical) {
   return round3((Number(actual) || 0) - (Number(theoretical) || 0))
 }
 
-const ISSUE_OK = new Set(['released', '合格'])
+const ISSUE_OK = new Set(['released', '合格', '已放行'])
 
 /** 旧库存批次没有状态时仍允许出库；有状态则必须合格且未过期。 */
 export function isIssueAllowedBatch(batch, today) {

@@ -327,6 +327,9 @@ const { columnSettings, columnDrawerOpen, displayColumns, tableScrollX, defaultC
   useTableColumnSettings('qc-template-list-v7', baseColumns)
 
 function assayTypeText(record) {
+  if (record?.bizScope === '成品检') {
+    return assayTypeLabel(record.assayType || 'finished', '成品检')
+  }
   if (!isProcessInspectBizScope(record?.bizScope)) return '—'
   const type = String(record?.assayType || '').trim()
   return type ? assayTypeLabel(type, record.bizScope) : '—'

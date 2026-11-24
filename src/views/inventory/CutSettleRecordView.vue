@@ -63,36 +63,6 @@
               />
             </a-form-item>
           </a-col>
-          <a-col :xs="24" :sm="12" :md="6">
-            <a-form-item label="图号">
-              <a-input
-                v-model:value="filters.drawingNo"
-                allow-clear
-                size="small"
-                placeholder="图号"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :sm="12" :md="6">
-            <a-form-item label="材质">
-              <a-input
-                v-model:value="filters.material"
-                allow-clear
-                size="small"
-                placeholder="材质"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :sm="12" :md="6">
-            <a-form-item label="下料尺寸">
-              <a-input
-                v-model:value="filters.blankSizeText"
-                allow-clear
-                size="small"
-                placeholder="下料尺寸"
-              />
-            </a-form-item>
-          </a-col>
           <a-col :xs="24" :sm="12" :md="8">
             <a-form-item label="出库时间">
               <a-range-picker
@@ -275,9 +245,6 @@ const columns = [
   { title: '物料名称', dataIndex: 'itemName', key: 'itemName', width: 150, ellipsis: true },
   { title: '编码', dataIndex: 'itemCode', key: 'itemCode', width: 130 },
   { title: '型号规格', dataIndex: 'specModel', key: 'specModel', width: 110, ellipsis: true },
-  { title: '图号', dataIndex: 'drawingNo', key: 'drawingNo', width: 110, ellipsis: true },
-  { title: '材质', dataIndex: 'material', key: 'material', width: 90 },
-  { title: '下料尺寸', key: 'blankSizeText', width: 150, ellipsis: true },
   { title: '出库数量', key: 'pickedLength', width: 100, align: 'right' },
   { title: '需求数', key: 'demandMeters', width: 100, align: 'right' },
   { title: '实耗', key: 'actualConsumeMeters', width: 100, align: 'right' },

@@ -8,7 +8,6 @@ import {
   PURCHASE_SETTLE_LINE_DISPUTE_STATUS,
   PURCHASE_SETTLE_LINE_DISPUTE_RESULT,
   PURCHASE_SETTLE_LINE_DISPUTE_SCOPE,
-  seedPurchaseSettles,
 } from '@/mock/purchaseSettles'
 import { purchaseOrderState } from '@/store/purchaseOrderStore'
 import { inboundOrderState } from '@/store/inboundOrderStore'
@@ -40,8 +39,6 @@ import {
   refreshAccountStatusForSettle,
   refreshAllPurchaseOrderAccountStatus,
 } from '@/utils/purchaseOrderSettleAccount'
-import { ensurePurchaseSettleDemoInboundOrders } from '@/mock/purchaseSettleDemoInboundSeed'
-
 /** 确认前可编辑/占量状态：草稿、对账中 */
 export function isPurchaseSettlePreConfirm(status) {
   return status === PURCHASE_SETTLE_STATUS.DRAFT || status === PURCHASE_SETTLE_STATUS.RECONCILING
@@ -58,15 +55,8 @@ function hasSettlePreviewQty(row) {
 }
 
 export const purchaseSettleState = reactive({
-  settles: seedPurchaseSettles(),
+  settles: [],
 })
-
-/** 对账 seed 依赖的入库明细补齐（避免确认时「关联入库明细不存在」） */
-try {
-  inboundOrderState.orders = ensurePurchaseSettleDemoInboundOrders(inboundOrderState.orders)
-} catch {
-  /* ignore */
-}
 
 function notifyPoAccountStatus(settle) {
   try {

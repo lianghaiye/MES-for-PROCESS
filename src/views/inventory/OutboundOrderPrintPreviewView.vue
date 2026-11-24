@@ -55,9 +55,6 @@
                     <th>物品编码</th>
                     <th>物品名称</th>
                     <th>规格型号</th>
-                    <th>材质</th>
-                    <th>变体属性</th>
-                    <th>图号</th>
                     <th>出库数量</th>
                     <th>出库重量(kg)</th>
                     <th>出库仓库</th>
@@ -74,9 +71,6 @@
                     <td>{{ row.itemCode }}</td>
                     <td>{{ row.itemName }}</td>
                     <td>{{ row.specModel }}</td>
-                    <td>{{ row.material }}</td>
-                    <td>{{ row.variantAttr }}</td>
-                    <td>{{ row.drawingNo }}</td>
                     <td class="cell-num">{{ row.shipQty }}</td>
                     <td class="cell-num">{{ row.weight }}</td>
                     <td>{{ row.shipWarehouse }}</td>

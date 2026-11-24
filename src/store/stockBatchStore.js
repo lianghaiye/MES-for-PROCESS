@@ -1,19 +1,7 @@
 import { reactive, watch } from 'vue'
 import { roundMeters, shouldInboundManageByPiece } from '@/utils/variableLengthMaterial'
 import { adjustStockQty, getStockQty } from '@/store/stockStore'
-import {
-  cloneStockBatchSeed,
-  STEEL_PIPE_CODE,
-  STEEL_PIPE_NAME,
-  STEEL_PLATE_CODE,
-  STEEL_PLATE_NAME,
-  STEEL_WEIGHT_BAR_CODE,
-  STEEL_WEIGHT_BAR_NAME,
-  CASTING_BLANK_SETTLE_CODE,
-  CASTING_BLANK_SETTLE_NAME,
-  CASTING_NORATE_SETTLE_CODE,
-  CASTING_NORATE_SETTLE_NAME,
-} from '@/mock/stockBatchSeed'
+import { cloneProcessStockBatches } from '@/mock/processInventorySeed'
 import {
   createStockPiecesForBatch,
   getStockPieceById,
@@ -23,28 +11,14 @@ import {
   pickPiecesFifoForPartialQty,
   splitIssueStockPiece,
 } from '@/store/stockPieceStore'
-import { DEDICATED_SHIP_DEMO, ensureDedicatedShipDemoBatches } from '@/mock/dedicatedShipDemoSeed'
-import { ensureMultiUnitFlowBatches } from '@/mock/multiUnitFlowDemoSeed'
-import {
-  ensureCategoryBatchPieceBatches,
-  CBP_INV_STOCK_SYNC_ROWS,
-} from '@/mock/categoryBatchPieceDemoSeed'
-import {
-  ensureOneItemOneCodeInventoryBatches,
-  OIOC_INV_STOCK_SYNC_ROWS,
-} from '@/mock/oneItemOneCodeInventoryDemoSeed'
-import {
-  ensureTransferDualOwnershipBatches,
-  TRANSFER_DUAL_OWNERSHIP_STOCK_SYNC_ROWS,
-} from '@/mock/transferDualOwnershipDemoSeed'
 import { allocateBatchUomConvert } from '@/utils/batchUomConvert'
 import { registerSettleBatchWeightLookup } from '@/utils/settleUnit'
 import { persistJson, safeSetItem } from '@/utils/safeStorage'
 
 const STORAGE_KEY = 'i_doms_stock_batches'
 const SEED_VERSION_KEY = 'i_doms_stock_batches_seed_v'
-/** v30：批次实际成本 unitCost（库存单位） */
-const CURRENT_SEED_VERSION = '30'
+/** v31：流程产品/配方批次，去掉钢管、铸件等离散演示库存 */
+const CURRENT_SEED_VERSION = '31'
 
 function roundMoney4(val) {
   return Math.round((Number(val) || 0) * 10000) / 10000
@@ -90,27 +64,9 @@ function persist() {
 function initBatches() {
   const stored = loadFromStorage()
   if (shouldReseed() || !stored?.length) {
-    return {
-      batches: ensureTransferDualOwnershipBatches(
-        ensureOneItemOneCodeInventoryBatches(
-          ensureCategoryBatchPieceBatches(
-            ensureMultiUnitFlowBatches(ensureDedicatedShipDemoBatches(cloneStockBatchSeed())),
-          ),
-        ),
-      ),
-      reseeded: true,
-    }
+    return { batches: cloneProcessStockBatches(), reseeded: true }
   }
-  return {
-    batches: ensureTransferDualOwnershipBatches(
-      ensureOneItemOneCodeInventoryBatches(
-        ensureCategoryBatchPieceBatches(
-          ensureMultiUnitFlowBatches(ensureDedicatedShipDemoBatches(stored)),
-        ),
-      ),
-    ),
-    reseeded: false,
-  }
+  return { batches: stored, reseeded: false }
 }
 
 function nid(prefix = 'bat') {
@@ -162,43 +118,6 @@ function syncAllSeedBatchStock() {
 
 if (initialBatchLoad.reseeded) {
   syncAllSeedBatchStock()
-  persist()
-} else {
-  // 幂等补演示批后对齐汇总
-  syncAggregateStockFromBatches(
-    DEDICATED_SHIP_DEMO.warehouse,
-    DEDICATED_SHIP_DEMO.productCode,
-    DEDICATED_SHIP_DEMO.productName,
-    '件',
-  )
-  ;[
-    { warehouse: '原料仓', itemCode: STEEL_PIPE_CODE, itemName: STEEL_PIPE_NAME, unit: '米' },
-    { warehouse: '库线边仓', itemCode: STEEL_PIPE_CODE, itemName: STEEL_PIPE_NAME, unit: '米' },
-    { warehouse: '原料仓', itemCode: STEEL_PLATE_CODE, itemName: STEEL_PLATE_NAME, unit: '㎡' },
-    {
-      warehouse: '原料仓',
-      itemCode: STEEL_WEIGHT_BAR_CODE,
-      itemName: STEEL_WEIGHT_BAR_NAME,
-      unit: 'kg',
-    },
-    {
-      warehouse: '原料仓',
-      itemCode: CASTING_BLANK_SETTLE_CODE,
-      itemName: CASTING_BLANK_SETTLE_NAME,
-      unit: '件',
-    },
-    {
-      warehouse: '原料仓',
-      itemCode: CASTING_NORATE_SETTLE_CODE,
-      itemName: CASTING_NORATE_SETTLE_NAME,
-      unit: '件',
-    },
-    ...OIOC_INV_STOCK_SYNC_ROWS,
-    ...CBP_INV_STOCK_SYNC_ROWS,
-    ...TRANSFER_DUAL_OWNERSHIP_STOCK_SYNC_ROWS,
-  ].forEach((row) =>
-    syncAggregateStockFromBatches(row.warehouse, row.itemCode, row.itemName, row.unit),
-  )
   persist()
 }
 

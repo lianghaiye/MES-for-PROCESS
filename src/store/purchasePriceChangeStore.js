@@ -17,7 +17,7 @@ import {
 } from '@/utils/purchasePriceChange'
 
 const STORAGE_KEY = 'i_doms_purchase_price_changes'
-const DATA_VERSION = 1
+const DATA_VERSION = 2
 
 function loadFromStorage() {
   try {
@@ -43,49 +43,13 @@ function persist() {
   )
 }
 
-function buildSeed() {
-  return [
-    normalizePurchasePriceChangeRecord({
-      id: 'ppc-seed-1',
-      changeNo: 'CGJGBG20260810001',
-      purchaseOrderId: 'po-3',
-      purchaseOrderNo: 'CG20260803001',
-      status: PURCHASE_PRICE_CHANGE_STATUS.APPROVED,
-      reasonType: '供应商调价',
-      reason: '钢管原料涨价，未入库部分按新单价执行。',
-      taxModeExcluding: true,
-      lines: [
-        {
-          poLineId: 'po-line-seed-pipe50',
-          productCode: 'MAT-PIPE-50',
-          productName: '无缝钢管',
-          specModel: 'φ50×5',
-          material: '20#',
-          unit: '根',
-          qty: 80,
-          taxRate: 13,
-          oldUnitPriceExTax: 120,
-          oldUnitPriceInTax: 135.6,
-          newUnitPriceExTax: 128,
-          newUnitPriceInTax: 144.64,
-        },
-      ],
-      creator: '采购员A',
-      createdAt: '2026-08-10 10:20',
-      submitter: '采购员A',
-      submittedAt: '2026-08-10 10:20',
-      approver: 'admin1',
-      approvedAt: '2026-08-10 15:05',
-      opinion: '同意按供应商调价',
-    }),
-  ]
-}
-
 const stored = loadFromStorage()
 
 export const purchasePriceChangeState = reactive({
-  orders: stored || buildSeed(),
+  orders: stored || [],
 })
+
+persist()
 
 watch(() => purchasePriceChangeState.orders, persist, { deep: true })
 

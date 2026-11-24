@@ -155,7 +155,7 @@
                     >
                       <label class="line-field-label">
                         <span v-if="field.required !== false" class="req">*</span>
-                        {{ field.name }}
+                        {{ fieldLabel(field) }}
                       </label>
                       <a-select
                         v-if="isQcInspectMethodField(field) || isSelectLike(field)"
@@ -179,7 +179,7 @@
                         style="width: 100%"
                         :formatter="qtyFormatter"
                         :parser="qtyParser"
-                        :placeholder="field.placeholder || `请输入${field.name}`"
+                        :placeholder="field.placeholder || `请输入${fieldLabel(field)}`"
                         @change="() => onFieldChange(record, field)"
                       />
                       <a-input
@@ -289,7 +289,9 @@
                             />
                           </div>
                           <span class="count-by-qty-cap"
-                            >合计 ≤ 质检数量（{{ formatQty(lineInspectQty(record), 4) }}）</span
+                            >合计 ≤ {{ qtyFieldTitle }}（{{
+                              formatQty(lineInspectQty(record), 4)
+                            }}）</span
                           >
                         </div>
                         <template v-else>
@@ -530,6 +532,10 @@ import {
   isQcInspectMethodField,
   isQcInspectQtyField,
   isQcInspectRemarkField,
+  isProcessAssayBizScope,
+  inspectMethodsForBizScope,
+  defaultInspectMethodForBizScope,
+  LOT_INSPECT_METHODS,
   mapConclusionValueToQcResult,
   normalizeConclusionOptionItems,
 } from '@/utils/qcConclusionField'
@@ -791,7 +797,11 @@ function hydrateLineDraft(line, t) {
       return
     }
     if (f.code === 'QC_INSPECT_METHOD') {
-      fieldMap[f.code] = line.inspectMethod || f.defaultValue || '抽检'
+      const scope = task.value?.bizScope || bizScope.value
+      const current = line.inspectMethod || f.defaultValue
+      const allowed = inspectMethodsForBizScope(scope)
+      fieldMap[f.code] =
+        current && allowed.includes(current) ? current : defaultInspectMethodForBizScope(scope)
       return
     }
     if (f.code === 'QC_INSPECT_QTY') {
@@ -967,10 +977,30 @@ function enrichInspectField(field = {}) {
   }
 }
 
+function fieldLabel(field) {
+  const scope = task.value?.bizScope || bizScope.value
+  if (isProcessAssayBizScope(scope) && isQcInspectQtyField(field)) return '取样量'
+  return field.name
+}
+
+const qtyFieldTitle = computed(() =>
+  isProcessAssayBizScope(task.value?.bizScope || bizScope.value) ? '取样量' : '质检数量',
+)
+
 function methodOptsFor(line) {
+  const scope = task.value?.bizScope || bizScope.value
   const fields = resolveLineFields(line, task.value)
   const methodField = fields.find((f) => isQcInspectMethodField(f))
-  const opts = methodField?.options?.length ? methodField.options : ['抽检', '全检']
+  let opts = methodField?.options?.length
+    ? [...methodField.options]
+    : inspectMethodsForBizScope(scope)
+  if (
+    isProcessAssayBizScope(scope) &&
+    opts.length &&
+    opts.every((o) => LOT_INSPECT_METHODS.includes(o))
+  ) {
+    opts = inspectMethodsForBizScope(scope)
+  }
   return opts.map((v) => ({ label: v, value: v }))
 }
 
@@ -1327,7 +1357,9 @@ function multiBucketDispositionHint(line) {
     return `部分通过：请按${capLabel}数量拆分${dispositionLabels.value.accept}、${dispositionLabels.value.concession}及次要处置数量。`
   }
   if (mapped === QC_TASK_RESULT.PASS && !hasAnyDispositionQty(line)) {
-    return `抽检合格时可不填；提交默认按${capLabel}数量全量${dispositionLabels.value.accept}。若需部分处置/让步，请在此拆分。`
+    return isProcessAssayBizScope(task.value?.bizScope || bizScope.value)
+      ? `化验合格时可不填；提交默认按${capLabel}数量整批${dispositionLabels.value.accept}。取样量只记录样品。`
+      : `抽检合格时可不填；提交默认按${capLabel}数量全量${dispositionLabels.value.accept}。若需部分处置/让步，请在此拆分。`
   }
   return ''
 }

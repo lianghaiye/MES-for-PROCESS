@@ -12,9 +12,6 @@ export const inventoryDetailExportFields = [
   { key: 'itemCode', title: '产品编码', getValue: (row) => cell(row, 'itemCode') },
   { key: 'materialType', title: '类型', getValue: (row) => cell(row, 'materialType') },
   { key: 'specModel', title: '规格型号', getValue: (row) => cell(row, 'specModel') },
-  { key: 'material', title: '材质', getValue: (row) => cell(row, 'material') },
-  { key: 'variantSummary', title: '变体属性', getValue: (row) => cell(row, 'variantSummary') },
-  { key: 'drawingNo', title: '图号', getValue: (row) => cell(row, 'drawingNo') },
   {
     key: 'stockQty',
     title: '数量',

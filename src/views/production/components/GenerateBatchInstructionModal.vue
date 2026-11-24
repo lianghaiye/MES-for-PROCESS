@@ -46,18 +46,6 @@
             </a-form-item>
           </a-col>
           <a-col :span="8">
-            <a-form-item label="产线">
-              <a-select
-                v-model:value="productionLineId"
-                size="small"
-                allow-clear
-                :options="lineOptions"
-                placeholder="按配方设备"
-                style="width: 100%"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="8">
             <a-form-item label="基准批量">
               <a-input :value="baseText" size="small" disabled />
             </a-form-item>
@@ -110,7 +98,10 @@
                   v-model:value="demandQty"
                   size="small"
                   :min="0.001"
-                  :precision="3"
+                  :step="0.001"
+                  :formatter="inputNumberFormatter"
+                  :parser="inputNumberParser"
+                  addon-after="kg"
                   style="width: 100%"
                   @change="refreshPreview"
                 />
@@ -168,7 +159,7 @@
             v-model:value="record.batchNo"
             size="small"
             allow-clear
-            placeholder="留空自动生成"
+            placeholder="按编码规则预填"
           />
         </template>
         <template v-else-if="column.key === 'qty'">
@@ -176,7 +167,9 @@
             v-model:value="record.qty"
             size="small"
             :min="0.001"
-            :precision="3"
+            :step="0.001"
+            :formatter="inputNumberFormatter"
+            :parser="inputNumberParser"
             style="width: 100%"
             @change="() => onQtyChange(record)"
           />
@@ -199,9 +192,9 @@
 import { computed, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { round3, splitPlanFeedQty, theoreticalOutput } from '@/utils/processBatchMath'
+import { inputNumberFormatter, inputNumberParser } from '@/utils/numberFormat'
 import { getFormula, itemLabel, itemUnit, listFormulas } from '@/store/processFormulaStore'
-import { listEnabledProductionLineOptions } from '@/store/productionLineStore'
-import { createTankChargeFromPlan } from '@/store/batchInstructionStore'
+import { createTankChargeFromPlan, previewNextBatchNos } from '@/store/batchInstructionStore'
 import {
   executeFeedPlan,
   getFeedPlan,
@@ -229,7 +222,6 @@ const splitMode = ref('by_count')
 const ceil = ref(false)
 const sourceLabel = ref('')
 const remark = ref('')
-const productionLineId = ref(undefined)
 const saving = ref(false)
 const preview = ref([])
 let previewKey = 0
@@ -250,7 +242,6 @@ const formulaOptions = computed(() => {
       }
     })
 })
-const lineOptions = computed(() => listEnabledProductionLineOptions())
 const selectedFormula = computed(() => (formulaId.value ? getFormula(formulaId.value) : null))
 const selectedPlan = computed(() => (feedPlanId.value ? getFeedPlan(feedPlanId.value) : null))
 const planCoverage = computed(() =>
@@ -303,10 +294,10 @@ const hint = computed(() => {
   const planTip = feedPlanId.value ? '将挂到所选生产计划。' : '未选生产计划时按手工需求生成。'
   if (splitMode.value === 'by_qty') {
     return ceil.value
-      ? `${planTip}按投料量拆分，余数不足一个基准批量时向上取整为完整批量。本次合计 ${sumQty.value} kg。批次号留空则自动生成。`
-      : `${planTip}按投料量拆分，整批等于基准批量，余数单独一张。本次合计 ${sumQty.value} kg。批次号留空则自动生成。`
+      ? `${planTip}按投料量拆分，余数不足一个基准批量时向上取整为完整批量。本次合计 ${sumQty.value} kg。批次号已按编码规则预填，可改。`
+      : `${planTip}按投料量拆分，整批等于基准批量，余数单独一张。本次合计 ${sumQty.value} kg。批次号已按编码规则预填，可改。`
   }
-  return `${planTip}按张数拆分。本次合计 ${sumQty.value} kg。批次号留空则按编码规则/系统规则生成。`
+  return `${planTip}按张数拆分。本次合计 ${sumQty.value} kg。批次号已按编码规则预填，可改；清空后提交时再自动生成。`
 })
 
 watch(
@@ -327,7 +318,6 @@ function resetForm() {
   ceil.value = false
   sourceLabel.value = props.presetSource || ''
   remark.value = ''
-  productionLineId.value = undefined
   preview.value = []
 }
 
@@ -354,7 +344,6 @@ function onPlanChange() {
   const formula = getFormula(plan.formulaId)
   itemId.value = plan.itemId || formula?.itemId
   formulaId.value = plan.formulaId
-  productionLineId.value = plan.productionLineId || undefined
   const remaining = planFeedCoverage(plan.id).remaining
   if (remaining > 0) demandQty.value = remaining
   const typeLabel = FEED_PLAN_PERIOD_LABEL[plan.periodType] || '计划'
@@ -390,6 +379,22 @@ function nextPreviewRow(qty, batchNo = '') {
   }
 }
 
+/** 空批次号按编码规则预填；已有内容保留。 */
+function withPrefillBatchNos(rows) {
+  const list = Array.isArray(rows) ? rows : []
+  const emptyIdx = []
+  list.forEach((row, index) => {
+    if (!String(row.batchNo || '').trim()) emptyIdx.push(index)
+  })
+  if (!emptyIdx.length) return list
+  const exclude = list.map((row) => String(row.batchNo || '').trim()).filter(Boolean)
+  const nos = previewNextBatchNos(emptyIdx.length, { exclude })
+  emptyIdx.forEach((index, i) => {
+    list[index].batchNo = nos[i] || ''
+  })
+  return list
+}
+
 function onQtyChange(record) {
   record.qty = round3(record.qty)
 }
@@ -421,7 +426,7 @@ function refreshPreview() {
       nextPreviewRow(row.qty, prev[index]?.batchNo || ''),
     )
   }
-  preview.value = rows
+  preview.value = withPrefillBatchNos(rows)
 }
 
 function submit() {
@@ -461,7 +466,7 @@ function submit() {
       created = executeFeedPlan(feedPlanId.value, {
         qtys,
         batchNos,
-        productionLineId: productionLineId.value || '',
+        productionLineId: '',
         ceil: splitMode.value === 'by_qty' ? ceil.value : false,
         remark: remarkText,
       })
@@ -469,7 +474,7 @@ function submit() {
       created = preview.value.map((row, index) =>
         createTankChargeFromPlan({
           formulaId: formulaId.value,
-          productionLineId: productionLineId.value || '',
+          productionLineId: '',
           sourceLabel: sourceLabel.value || '手工需求',
           plannedQty: row.qty,
           seq: index + 1,

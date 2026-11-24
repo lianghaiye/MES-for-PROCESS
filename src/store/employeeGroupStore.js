@@ -208,14 +208,7 @@ export function deleteEmployeeGroups(ids) {
   return before - employeeGroupState.groups.length
 }
 
-export const workCenterOptions = [
-  '机泵',
-  '组装中心',
-  '默认工厂',
-  '机加车间',
-  '装配车间',
-  '总装车间',
-]
+export { workCenterOptions } from '@/mock/workOrderOptions'
 /** 基础配置「岗位」主数据；工序「默认执行」从此取数 */
 export const positionOptions = [
   '配料岗',

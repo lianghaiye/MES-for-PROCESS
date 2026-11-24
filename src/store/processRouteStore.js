@@ -71,7 +71,7 @@ function normalizeRouteRow(row) {
 
 const STORAGE_KEY = 'i_doms_process_routes'
 const SEED_VERSION_KEY = 'i_doms_process_routes_seed_v'
-const CURRENT_SEED_VERSION = '2'
+const CURRENT_SEED_VERSION = '3'
 
 function getProcessIdByName(name) {
   const proc = processConfigState.processes.find((p) => p.name === name)

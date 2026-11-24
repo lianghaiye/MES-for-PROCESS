@@ -1,12 +1,14 @@
 <template>
   <div class="process-batch-page">
     <div class="table-card">
-      <div class="toolbar"><span>液位 = 罐内批次重量之和，不能超过罐容</span></div>
+      <div class="toolbar">
+        <span
+          >只看运行液位与罐间转移，不当主数据入口。储罐主数据在设备台账（类别「储罐」）维护并自动挂接位置；料仓/堆场/库房不在这里。</span
+        >
+      </div>
       <a-table :columns="columns" :data-source="rows" row-key="id" size="small" :pagination="false">
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'kind'">{{
-            record.kind === 'silo' ? '料仓' : '储罐'
-          }}</template>
+          <template v-if="column.key === 'equipment'">{{ record.equipmentLabel }}</template>
           <template v-else-if="column.key === 'level'"
             >{{ record.level }} / {{ record.capacity }}</template
           >
@@ -51,27 +53,37 @@
 import { computed, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { itemLabel } from '@/store/processFormulaStore'
+import { deviceLabelById } from '@/store/equipmentStore'
 import { listMaterialBatches, listTanks, tankLevel, transferTank } from '@/store/materialBatchStore'
 import '@/styles/process-batch-page.less'
 
 const open = ref(false)
 const form = reactive({ batchId: undefined, toLocationId: undefined, qty: null })
 const columns = [
-  { title: '名称', dataIndex: 'name' },
-  { title: '类型', key: 'kind', width: 100 },
-  { title: '液位 / 罐容', key: 'level', align: 'right' },
+  { title: '储罐', dataIndex: 'name', width: 160 },
+  { title: '编码', dataIndex: 'code', width: 120 },
+  { title: '关联设备', key: 'equipment', width: 180, ellipsis: true },
+  { title: '液位 / 罐容', key: 'level', align: 'right', width: 160 },
   { title: '操作', key: 'action', width: 120 },
 ]
-const rows = computed(() => listTanks().map((tank) => ({ ...tank, level: tankLevel(tank.id) })))
-const tankOptions = computed(() => listTanks().map((t) => ({ value: t.id, label: t.name })))
+const tankRows = computed(() => listTanks().filter((tank) => tank.kind === 'tank'))
+const rows = computed(() =>
+  tankRows.value.map((tank) => ({
+    ...tank,
+    code: tank.code || '—',
+    equipmentLabel: tank.equipmentId ? deviceLabelById(tank.equipmentId) || tank.equipmentId : '—',
+    level: tankLevel(tank.id),
+  })),
+)
+const tankOptions = computed(() => tankRows.value.map((t) => ({ value: t.id, label: t.name })))
 const batchOptions = computed(() =>
   listMaterialBatches()
-    .filter((b) => Number(b.qty) > 0)
+    .filter((b) => Number(b.qty) > 0 && tankRows.value.some((t) => t.id === b.locationId))
     .map((b) => ({ value: b.id, label: `${b.batchNo} ${itemLabel(b.itemId)} ${b.qty}` })),
 )
 
 function openTransfer(record) {
-  form.toLocationId = listTanks().find((t) => t.id !== record.id)?.id
+  form.toLocationId = tankRows.value.find((t) => t.id !== record.id)?.id
   open.value = true
 }
 function save() {

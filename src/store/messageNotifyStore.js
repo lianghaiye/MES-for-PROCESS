@@ -206,10 +206,10 @@ function seedInbox() {
     row({
       id: 'msg-seed-11',
       typeCode: 'MATERIAL_REQ_PENDING',
-      title: '领料待发料 · ML202607200001',
-      body: '领料单 ML202607200001 待发料。',
+      title: '领料待发料 · ML202611180001',
+      body: '领料单 ML202611180001 待发料。',
       linkPath: '/production/material-requisition/mr-seed-001',
-      bizNo: 'ML202607200001',
+      bizNo: 'ML202611180001',
       createdAt: at(6, 'hour'),
     }),
     row({

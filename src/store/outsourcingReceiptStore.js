@@ -1,15 +1,12 @@
 import { reactive, watch } from 'vue'
 import dayjs from 'dayjs'
-import {
-  cloneOutsourcingReceipts,
-  createOutsourcingReceipt,
-  generateOutsourcingReceiptNo,
-} from '@/mock/outsourcingReceipts'
+import { createOutsourcingReceipt, generateOutsourcingReceiptNo } from '@/mock/outsourcingReceipts'
 import { persistJson, safeSetItem } from '@/utils/safeStorage'
 
 const STORAGE_KEY = 'i_doms_outsourcing_receipts'
 const SEED_VERSION_KEY = 'i_doms_outsourcing_receipts_seed_v'
-const CURRENT_SEED_VERSION = '5'
+/** v6：清空离散制造演示外协收货单 */
+const CURRENT_SEED_VERSION = '6'
 
 const UNFINISHED_QC_STATUSES = new Set(['未质检', '质检中'])
 const UNFINISHED_INBOUND_STATUSES = new Set(['入库中', '部分入库'])
@@ -100,15 +97,15 @@ function normalizeReceipt(row) {
 }
 
 function initReceipts() {
-  const list = shouldReseed()
-    ? cloneOutsourcingReceipts()
-    : loadFromStorage() || cloneOutsourcingReceipts()
+  const list = shouldReseed() ? [] : loadFromStorage() || []
   return list.map(normalizeReceipt)
 }
 
 export const outsourcingReceiptState = reactive({
   receipts: initReceipts(),
 })
+
+persist()
 
 watch(
   () => outsourcingReceiptState.receipts,

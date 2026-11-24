@@ -27,18 +27,6 @@
             </a-form-item>
           </a-col>
           <a-col :span="8">
-            <a-form-item label="产线">
-              <a-select
-                v-model:value="productionLineId"
-                size="small"
-                allow-clear
-                :options="lineOptions"
-                placeholder="按配方设备"
-                style="width: 100%"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="8">
             <a-form-item label="基准批量">
               <a-input :value="baseText" size="small" disabled />
             </a-form-item>
@@ -102,7 +90,10 @@
                   v-model:value="feedQty"
                   size="small"
                   :min="0.001"
-                  :precision="3"
+                  :step="0.001"
+                  :formatter="inputNumberFormatter"
+                  :parser="inputNumberParser"
+                  addon-after="kg"
                   :disabled="!coverage.remaining"
                   style="width: 100%"
                   @change="rebuildByQty"
@@ -150,7 +141,7 @@
             v-model:value="record.batchNo"
             size="small"
             allow-clear
-            placeholder="留空自动生成"
+            placeholder="按编码规则预填"
           />
         </template>
         <template v-else-if="column.key === 'qty'">
@@ -158,7 +149,9 @@
             v-model:value="record.qty"
             size="small"
             :min="0.001"
-            :precision="3"
+            :step="0.001"
+            :formatter="inputNumberFormatter"
+            :parser="inputNumberParser"
             style="width: 100%"
           />
         </template>
@@ -184,9 +177,10 @@ import {
   mainRawMaterialIds,
   planFeedCoverage,
 } from '@/store/feedPlanStore'
+import { previewNextBatchNos } from '@/store/batchInstructionStore'
 import { getFormula, itemLabel, itemUnit } from '@/store/processFormulaStore'
-import { listEnabledProductionLineOptions } from '@/store/productionLineStore'
 import { round3, splitPlanFeedQty, theoreticalOutput } from '@/utils/processBatchMath'
+import { inputNumberFormatter, inputNumberParser } from '@/utils/numberFormat'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -207,7 +201,6 @@ const count = ref(1)
 const feedQty = ref(null)
 const ceil = ref(false)
 const remark = ref('')
-const productionLineId = ref(undefined)
 const lines = ref([])
 const saving = ref(false)
 let lineKey = 0
@@ -215,7 +208,6 @@ let lineKey = 0
 const plan = computed(() => (props.planId ? getFeedPlan(props.planId) : null))
 const formula = computed(() => (plan.value ? getFormula(plan.value.formulaId) : null))
 const coverage = computed(() => planFeedCoverage(props.planId))
-const lineOptions = computed(() => listEnabledProductionLineOptions())
 const planLabel = computed(() => {
   const row = plan.value
   if (!row) return '—'
@@ -267,17 +259,17 @@ const hint = computed(() => {
   if (!coverage.value.remaining) return '这张计划的目标投料量已经分完，不能再生成。'
   if (splitMode.value === 'by_qty') {
     if (!coverage.value.base) {
-      return '配方没有基准批量，按投料量会合成一张。可改每张计划投料量；批次号留空则按编码规则/系统规则生成。'
+      return '配方没有基准批量，按投料量会合成一张。可改每张计划投料量；批次号已按编码规则预填，可改。'
     }
     return ceil.value
-      ? `按投料量拆分，余数不足一个基准批量时向上取整为完整批量。本次合计 ${sumQty.value} kg。批次号留空则自动生成。`
-      : `按投料量拆分，整批等于基准批量，余数单独一张。本次合计 ${sumQty.value} kg。批次号留空则自动生成。`
+      ? `按投料量拆分，余数不足一个基准批量时向上取整为完整批量。本次合计 ${sumQty.value} kg。批次号已按编码规则预填，可改。`
+      : `按投料量拆分，整批等于基准批量，余数单独一张。本次合计 ${sumQty.value} kg。批次号已按编码规则预填，可改。`
   }
   if (!coverage.value.base) {
-    return '配方没有基准批量，默认把剩余目标做成一张。可以改张数和每张计划投料量。批次号留空则自动生成。'
+    return '配方没有基准批量，默认把剩余目标做成一张。可以改张数和每张计划投料量。批次号已按编码规则预填，可改。'
   }
   const over = sumQty.value > coverage.value.remaining + 1e-9
-  return `按张数拆分。本次合计 ${sumQty.value} kg${over ? '，已超过剩余目标' : ''}。批次号留空则按编码规则/系统规则生成。`
+  return `按张数拆分。本次合计 ${sumQty.value} kg${over ? '，已超过剩余目标' : ''}。批次号已按编码规则预填，可改；清空后提交时再自动生成。`
 })
 
 function qtyText(value) {
@@ -299,15 +291,30 @@ function nextLine(qty, batchNo = '') {
   return { key: lineKey, qty, batchNo: batchNo || '' }
 }
 
+/** 空批次号按编码规则预填；已有内容保留（用户改过的不覆盖）。 */
+function withPrefillBatchNos(rows) {
+  const list = Array.isArray(rows) ? rows : []
+  const emptyIdx = []
+  list.forEach((row, index) => {
+    if (!String(row.batchNo || '').trim()) emptyIdx.push(index)
+  })
+  if (!emptyIdx.length) return list
+  const exclude = list.map((row) => String(row.batchNo || '').trim()).filter(Boolean)
+  const nos = previewNextBatchNos(emptyIdx.length, { exclude })
+  emptyIdx.forEach((index, i) => {
+    list[index].batchNo = nos[i] || ''
+  })
+  return list
+}
+
 function fillDefault() {
   const remaining = coverage.value.remaining
   feedQty.value = remaining > 0 ? remaining : null
   ceil.value = false
   remark.value = ''
   splitMode.value = 'by_count'
-  productionLineId.value = plan.value?.productionLineId || undefined
   const rows = splitPlanFeedQty(remaining, coverage.value.base, { ceil: false })
-  lines.value = rows.map((row) => nextLine(row.qty))
+  lines.value = withPrefillBatchNos(rows.map((row) => nextLine(row.qty)))
   count.value = Math.max(1, lines.value.length || 1)
 }
 
@@ -333,7 +340,7 @@ function resizeByCount() {
     const keep = prev[i]
     nextLines.push(nextLine(keep?.qty > 0 ? keep.qty : base, keep?.batchNo || ''))
   }
-  lines.value = nextLines
+  lines.value = withPrefillBatchNos(nextLines)
 }
 
 function rebuildByQty() {
@@ -344,7 +351,9 @@ function rebuildByQty() {
   }
   const prev = lines.value.slice()
   const rows = splitPlanFeedQty(qty, coverage.value.base, { ceil: ceil.value })
-  lines.value = rows.map((row, index) => nextLine(row.qty, prev[index]?.batchNo || ''))
+  lines.value = withPrefillBatchNos(
+    rows.map((row, index) => nextLine(row.qty, prev[index]?.batchNo || '')),
+  )
   count.value = Math.max(1, lines.value.length || 1)
 }
 
@@ -369,7 +378,7 @@ function submit() {
     const created = executeFeedPlan(props.planId, {
       qtys,
       batchNos,
-      productionLineId: productionLineId.value || '',
+      productionLineId: '',
       ceil: splitMode.value === 'by_qty' ? ceil.value : false,
       remark: String(remark.value || '').trim(),
     })

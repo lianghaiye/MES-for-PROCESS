@@ -11,6 +11,41 @@ export const QC_INSPECT_METHOD_FIELD_CODE = 'QC_INSPECT_METHOD'
 export const QC_INSPECT_QTY_FIELD_CODE = 'QC_INSPECT_QTY'
 export const QC_INSPECT_REMARK_FIELD_CODE = 'QC_INSPECT_REMARK'
 
+/** 来料 / 外协：按件或按批收货 */
+export const LOT_INSPECT_METHODS = ['抽检', '全检']
+/** 过程检 / 产出化验：取样代表整批，结论不按样品拆件 */
+export const PROCESS_INSPECT_METHODS = ['取样送检', '在线检测', '留样复验']
+
+export function isProcessAssayBizScope(bizScope) {
+  return bizScope === '生产过程检' || bizScope === '成品检'
+}
+
+export function inspectMethodsForBizScope(bizScope) {
+  return isProcessAssayBizScope(bizScope) ? [...PROCESS_INSPECT_METHODS] : [...LOT_INSPECT_METHODS]
+}
+
+export function defaultInspectMethodForBizScope(bizScope) {
+  return isProcessAssayBizScope(bizScope) ? '取样送检' : '抽检'
+}
+
+export function inspectQtyFieldName(bizScope) {
+  return isProcessAssayBizScope(bizScope) ? '取样量' : '质检数量'
+}
+
+function resolveInspectMethodOptions(partial = {}) {
+  const given = Array.isArray(partial.options)
+    ? partial.options.map((o) => String(o).trim()).filter(Boolean)
+    : []
+  if (!partial.bizScope) return given.length ? given : [...LOT_INSPECT_METHODS]
+  const catalog = inspectMethodsForBizScope(partial.bizScope)
+  if (!given.length) return catalog
+  const other = isProcessAssayBizScope(partial.bizScope)
+    ? LOT_INSPECT_METHODS
+    : PROCESS_INSPECT_METHODS
+  if (given.every((o) => other.includes(o))) return catalog
+  return given
+}
+
 /** 结论选项可映射的任务结果 */
 export const QC_CONCLUSION_RESULT_OPTIONS = [
   { label: '质检通过', value: QC_TASK_RESULT.PASS },
@@ -123,7 +158,8 @@ export function isQcInspectQtyField(field = {}) {
     .trim()
     .toUpperCase()
   if (code === QC_INSPECT_QTY_FIELD_CODE) return true
-  return String(field.name || '').trim() === '质检数量'
+  const name = String(field.name || '').trim()
+  return name === '质检数量' || name === '取样量'
 }
 
 /** 判定是否为系统默认「检验备注」 */
@@ -310,14 +346,10 @@ export function extractSheetConclusionOptionItems(fields = [], fallbackItems) {
 
 /** 系统固定：质检方式 */
 export function createPresetInspectMethodField(partial = {}) {
-  const opts =
-    Array.isArray(partial.options) && partial.options.length
-      ? partial.options.map((o) => String(o)).filter(Boolean)
-      : ['抽检', '全检']
-  const def =
-    partial.defaultValue === '全检' || partial.defaultValue === '抽检'
-      ? partial.defaultValue
-      : '抽检'
+  const opts = resolveInspectMethodOptions(partial)
+  const preferred = String(partial.defaultValue || '').trim()
+  const fallback = defaultInspectMethodForBizScope(partial.bizScope)
+  const def = opts.includes(preferred) ? preferred : opts.includes(fallback) ? fallback : opts[0]
   return {
     code: QC_INSPECT_METHOD_FIELD_CODE,
     name: '质检方式',
@@ -345,16 +377,27 @@ export function createPresetInspectMethodField(partial = {}) {
 
 /** 系统固定：质检数量 */
 export function createPresetInspectQtyField(partial = {}) {
+  const name = partial.bizScope
+    ? inspectQtyFieldName(partial.bizScope)
+    : partial.name === '取样量'
+      ? '取样量'
+      : '质检数量'
+  const placeholder =
+    name === '取样量'
+      ? '请输入取样量'
+      : partial.placeholder && partial.placeholder !== '请输入取样量'
+        ? partial.placeholder
+        : '请输入质检数量'
   return {
     code: QC_INSPECT_QTY_FIELD_CODE,
-    name: '质检数量',
+    name,
     type: 'number',
     required: true,
     enabled: partial.enabled !== false,
     allowDecimal: partial.allowDecimal !== false,
     options: [],
     defaultValue: partial.defaultValue ?? '',
-    placeholder: partial.placeholder || '请输入质检数量',
+    placeholder,
     sortOrder: 2,
     isPresetField: true,
     isPresetInspectQty: true,
@@ -413,11 +456,12 @@ function cloneFieldShallow(f = {}) {
  * 规范化模板字段。
  * 默认不自动补齐系统项（由用户从检验项库选用）；传 inject:true 可兼容旧行为补齐方式/数量/结果。
  * @param {object[]} fields
- * @param {{ layout?: 'preserve' | 'default', inject?: boolean }} [options]
+ * @param {{ layout?: 'preserve' | 'default', inject?: boolean, bizScope?: string }} [options]
  */
 export function ensureFieldsWithSystemFixedItems(fields = [], options = {}) {
   const layout = options.layout === 'default' ? 'default' : 'preserve'
   const inject = options.inject === true
+  const bizScope = options.bizScope || ''
   const list = Array.isArray(fields) ? fields.map(cloneFieldShallow) : []
 
   let methodSrc = null
@@ -443,8 +487,8 @@ export function ensureFieldsWithSystemFixedItems(fields = [], options = {}) {
     }
   })
 
-  const method = methodSrc ? createPresetInspectMethodField(methodSrc) : null
-  const qty = qtySrc ? createPresetInspectQtyField(qtySrc) : null
+  const method = methodSrc ? createPresetInspectMethodField({ ...methodSrc, bizScope }) : null
+  const qty = qtySrc ? createPresetInspectQtyField({ ...qtySrc, bizScope }) : null
   const remark = remarkSrc ? createPresetInspectRemarkField(remarkSrc) : null
   const conclusion = conclusionSrc
     ? createPresetConclusionField({
@@ -462,8 +506,8 @@ export function ensureFieldsWithSystemFixedItems(fields = [], options = {}) {
     : null
 
   if (inject) {
-    const m = method || createPresetInspectMethodField()
-    const q = qty || createPresetInspectQtyField()
+    const m = method || createPresetInspectMethodField({ bizScope })
+    const q = qty || createPresetInspectQtyField({ bizScope })
     const c = conclusion || createPresetConclusionField()
     if (layout === 'default') {
       return [m, q, ...(remark ? [remark] : []), ...others, c]
@@ -520,10 +564,14 @@ export function ensureFieldsWithSystemFixedItems(fields = [], options = {}) {
   })
 
   if (inject) {
-    if (!used.method) result.unshift(method || createPresetInspectMethodField())
+    if (!used.method) result.unshift(method || createPresetInspectMethodField({ bizScope }))
     if (!used.qty) {
       const methodIdx = result.findIndex((f) => isQcInspectMethodField(f))
-      result.splice(methodIdx >= 0 ? methodIdx + 1 : 0, 0, qty || createPresetInspectQtyField())
+      result.splice(
+        methodIdx >= 0 ? methodIdx + 1 : 0,
+        0,
+        qty || createPresetInspectQtyField({ bizScope }),
+      )
     }
     if (!used.conclusion) result.push(conclusion || createPresetConclusionField())
   }

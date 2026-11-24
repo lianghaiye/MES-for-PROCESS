@@ -246,6 +246,48 @@ export function createProcessRouteSeed(getProcessIdByName) {
         { stepNo: 4, completionMode: 'all' },
       ],
     },
+    {
+      id: 'route-012',
+      code: 'GYLX0012',
+      name: '酸浸沉锂工碳主线',
+      status: '使用中',
+      applyScope: '单个物品',
+      itemType: '产品',
+      itemId: 'pi-licarbon',
+      itemName: '工业级碳酸锂',
+      itemCode: 'FG-LIC-IND',
+      productDisplay: '工业级碳酸锂',
+      remark:
+        '调研工厂主线：投料浆化→一次酸浸→压滤/洗渣→一次净化→二次浆化→沉锂→锂盐洗涤→离心→包装。前段门禁只记录，后段硬放行。',
+      grid: buildGrid([
+        [1, 1, p('投料浆化'), { equipmentId: EQ.R101, equipmentCategory: '反应设备' }],
+        [2, 1, p('一次酸浸'), { equipmentId: EQ.R201, equipmentCategory: '反应设备' }],
+        [3, 1, p('压滤'), { equipmentId: EQ.F301, equipmentCategory: '分离设备' }],
+        [3, 2, p('洗渣'), { equipmentId: EQ.F301, equipmentCategory: '分离设备' }],
+        [4, 1, p('一次净化'), { equipmentId: EQ.R201, equipmentCategory: '反应设备' }],
+        [5, 1, p('二次浆化'), { equipmentId: EQ.R201, equipmentCategory: '反应设备' }],
+        [6, 1, p('沉锂'), { equipmentId: EQ.R201, equipmentCategory: '反应设备' }],
+        [7, 1, p('锂盐洗涤'), { equipmentId: EQ.F301, equipmentCategory: '分离设备' }],
+        [
+          8,
+          1,
+          p('离心'),
+          { processFileId: 'pdoc-004', equipmentId: EQ.C401, equipmentCategory: '分离设备' },
+        ],
+        [9, 1, p('包装'), { equipmentId: EQ.P701, equipmentCategory: '计量灌装' }],
+      ]),
+      stepPolicies: [
+        { stepNo: 1, completionMode: 'all' },
+        { stepNo: 2, completionMode: 'all' },
+        { stepNo: 3, completionMode: 'all' },
+        { stepNo: 4, completionMode: 'all' },
+        { stepNo: 5, completionMode: 'all' },
+        { stepNo: 6, completionMode: 'all' },
+        { stepNo: 7, completionMode: 'all' },
+        { stepNo: 8, completionMode: 'all' },
+        { stepNo: 9, completionMode: 'all' },
+      ],
+    },
   ]
 
   const creators = ['张工艺', '李工艺', '王工艺', '赵工艺']

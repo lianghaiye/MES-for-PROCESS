@@ -123,7 +123,6 @@ const form = reactive({
 const diffColumns = [
   { title: '物料编码', dataIndex: 'materialCode', key: 'materialCode', width: 120 },
   { title: '物料名称', dataIndex: 'materialName', key: 'materialName', width: 120 },
-  { title: '下料尺寸', key: 'blankSizeText', width: 140, ellipsis: true },
   { title: '原扣减', key: 'original', width: 90, align: 'right' },
   { title: '实际应扣', key: 'actualDeductQty', width: 110 },
   { title: '退回数量', key: 'returnQty', width: 90, align: 'right' },

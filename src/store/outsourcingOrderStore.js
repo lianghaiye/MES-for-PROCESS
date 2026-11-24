@@ -1,10 +1,8 @@
 import { reactive, watch } from 'vue'
 import dayjs from 'dayjs'
 import {
-  cloneOutsourcingOrders,
   computeOutsourcingOverdueStatus,
   createOutsourcingOrder,
-  createOutsourcingLine,
   generateOutsourcingOrderNo,
   recalcOutsourcingTotals,
 } from '@/mock/outsourcingOrders'
@@ -23,8 +21,8 @@ import { persistJson, safeSetItem } from '@/utils/safeStorage'
 
 const STORAGE_KEY = 'i_doms_outsourcing_orders'
 const SEED_VERSION_KEY = 'i_doms_outsourcing_orders_seed_v'
-/** v10：工序外协发料无投料时取工单 EBOM 下级物料 */
-const CURRENT_SEED_VERSION = '9'
+/** v10：清空离散制造演示外协订单 */
+const CURRENT_SEED_VERSION = '10'
 
 function loadFromStorage() {
   try {
@@ -98,43 +96,15 @@ function normalizeOrder(row) {
 }
 
 function initOrders() {
-  const list = shouldReseed()
-    ? cloneOutsourcingOrders()
-    : loadFromStorage() || cloneOutsourcingOrders()
+  const list = shouldReseed() ? [] : loadFromStorage() || []
   return list.map(normalizeOrder)
 }
 
-function ensureEcnCoverDemoOutsourcingOrders(orders) {
-  const demoId = 'wx-ecn-cover-cover'
-  const row = createOutsourcingOrder({
-    id: demoId,
-    orderNo: 'WX-ECN-COVER-01',
-    salesOrderNo: '1-20260512-005',
-    status: '待审核',
-    approvalResult: '待审核',
-    remark: 'ECN演示：泵盖外协订单待审核，执行变更时可作废',
-    lineItems: [
-      createOutsourcingLine({
-        id: 'wx-ecn-cover-line-1',
-        productName: '泵盖',
-        productCode: '010050002',
-        itemCode: '010050002',
-        itemName: '泵盖',
-        specModel: 'ISG50-160',
-        planQty: 3,
-        unit: '件',
-      }),
-    ],
-  })
-  const idx = orders.findIndex((o) => o.id === demoId)
-  if (idx >= 0) Object.assign(orders[idx], normalizeOrder(row))
-  else orders.unshift(normalizeOrder(row))
-  return orders
-}
-
 export const outsourcingOrderState = reactive({
-  orders: ensureEcnCoverDemoOutsourcingOrders(initOrders()),
+  orders: initOrders(),
 })
+
+persist()
 
 watch(
   () => outsourcingOrderState.orders,

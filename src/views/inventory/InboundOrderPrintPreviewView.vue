@@ -55,9 +55,6 @@
                     <th>物品编码</th>
                     <th>物品名称</th>
                     <th>规格型号</th>
-                    <th>材质</th>
-                    <th>变体属性</th>
-                    <th>图号</th>
                     <th>条码类型</th>
                     <th>点收数量</th>
                     <th>入库数量</th>
@@ -76,9 +73,6 @@
                     <td>{{ row.itemCode }}</td>
                     <td>{{ row.itemName }}</td>
                     <td>{{ row.specModel }}</td>
-                    <td>{{ row.material }}</td>
-                    <td>{{ row.variantAttr }}</td>
-                    <td>{{ row.drawingNo }}</td>
                     <td>{{ row.barcodeType }}</td>
                     <td class="cell-num">{{ row.receiveQty }}</td>
                     <td class="cell-num">{{ row.qty }}</td>

@@ -15,6 +15,59 @@ export const EQUIPMENT_STATUS_OPTIONS = Object.values(EQUIPMENT_STATUS).map((v) 
   value: v,
 }))
 
+/** 反应设备和储罐才维护容积与占釜。占釜和设备完好状态分开。 */
+export const VESSEL_CATEGORIES = ['反应设备', '储罐']
+
+export const EQUIPMENT_OCCUPY_STATUS = {
+  CLEAN: '清洁',
+  OCCUPIED: '在用',
+  WAIT_DISCHARGE: '待出料',
+}
+
+export const EQUIPMENT_OCCUPY_STATUS_OPTIONS = Object.values(EQUIPMENT_OCCUPY_STATUS).map((v) => ({
+  label: v,
+  value: v,
+}))
+
+export const CAPACITY_UNIT_OPTIONS = [
+  { label: 'L', value: 'L' },
+  { label: 'm³', value: 'm³' },
+  { label: 'kg', value: 'kg' },
+]
+
+export function isVesselCategory(category) {
+  return VESSEL_CATEGORIES.includes(category)
+}
+
+function positiveOrNull(value) {
+  if (value == null || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+/** 反应设备、储罐：公称容积必填；工作容积可空，有值时不超过公称容积。 */
+export function validateVesselCapacity(payload = {}) {
+  if (!isVesselCategory(payload.category)) return { ok: true }
+  const nominal = positiveOrNull(payload.nominalCapacity)
+  if (!(nominal > 0)) return { ok: false, message: '请填写大于 0 的公称容积' }
+  const unit = String(payload.capacityUnit || '').trim()
+  if (!CAPACITY_UNIT_OPTIONS.some((item) => item.value === unit)) {
+    return { ok: false, message: '请选择容积单位' }
+  }
+  const working = positiveOrNull(payload.workingCapacity)
+  if (payload.workingCapacity != null && payload.workingCapacity !== '' && !(working > 0)) {
+    return { ok: false, message: '工作容积须大于 0' }
+  }
+  if (working != null && working - nominal > 1e-9) {
+    return { ok: false, message: '工作容积不能超过公称容积' }
+  }
+  const occupy = payload.occupyStatus || EQUIPMENT_OCCUPY_STATUS.CLEAN
+  if (!Object.values(EQUIPMENT_OCCUPY_STATUS).includes(occupy)) {
+    return { ok: false, message: '请选择占釜状态' }
+  }
+  return { ok: true }
+}
+
 export const EQUIPMENT_CATEGORY_OPTIONS = [
   { label: '反应设备', value: '反应设备' },
   { label: '分离设备', value: '分离设备' },
@@ -76,6 +129,11 @@ export function createEquipmentDeviceSeed() {
       workshop: '配料车间',
       location: 'A区-配料跨',
       status: EQUIPMENT_STATUS.IN_USE,
+      nominalCapacity: 2000,
+      workingCapacity: 1300,
+      capacityUnit: 'L',
+      occupyStatus: EQUIPMENT_OCCUPY_STATUS.CLEAN,
+      occupiedBatchNo: '',
       responsible: '配料班长',
       manufacturer: '南通反应设备',
       installDate: '2023-05-12',
@@ -94,6 +152,11 @@ export function createEquipmentDeviceSeed() {
       workshop: '反应车间',
       location: 'B区-1号位',
       status: EQUIPMENT_STATUS.IN_USE,
+      nominalCapacity: 5000,
+      workingCapacity: 3300,
+      capacityUnit: 'L',
+      occupyStatus: EQUIPMENT_OCCUPY_STATUS.OCCUPIED,
+      occupiedBatchNo: '',
       responsible: '反应班长',
       manufacturer: '无锡化工设备',
       installDate: '2022-09-18',
@@ -148,6 +211,11 @@ export function createEquipmentDeviceSeed() {
       workshop: '储运车间',
       location: 'D区-中间罐区',
       status: EQUIPMENT_STATUS.IN_USE,
+      nominalCapacity: 3000,
+      workingCapacity: 2000,
+      capacityUnit: 'L',
+      occupyStatus: EQUIPMENT_OCCUPY_STATUS.WAIT_DISCHARGE,
+      occupiedBatchNo: '',
       responsible: '储运班长',
       manufacturer: '自制',
       installDate: '2022-04-15',
@@ -166,6 +234,11 @@ export function createEquipmentDeviceSeed() {
       workshop: '储运车间',
       location: 'D区-成品罐区',
       status: EQUIPMENT_STATUS.IN_USE,
+      nominalCapacity: 5000,
+      workingCapacity: null,
+      capacityUnit: 'L',
+      occupyStatus: EQUIPMENT_OCCUPY_STATUS.CLEAN,
+      occupiedBatchNo: '',
       responsible: '储运班长',
       manufacturer: '自制',
       installDate: '2022-04-16',
@@ -398,15 +471,27 @@ export function createRepairOrderSeed(devices = []) {
 }
 
 export function normalizeDevice(row = {}) {
+  const category = row.category || '公用工程'
+  const vessel = isVesselCategory(category)
+  const occupy = vessel ? row.occupyStatus || EQUIPMENT_OCCUPY_STATUS.CLEAN : ''
+  const holdsBatch =
+    occupy === EQUIPMENT_OCCUPY_STATUS.OCCUPIED || occupy === EQUIPMENT_OCCUPY_STATUS.WAIT_DISCHARGE
   return {
     id: row.id || `eq-d-${Date.now()}`,
     code: String(row.code || '').trim(),
     name: String(row.name || '').trim(),
-    category: row.category || '公用工程',
+    category,
     model: row.model || '',
     workshop: row.workshop || '',
     location: row.location || '',
     status: row.status || EQUIPMENT_STATUS.IN_USE,
+    nominalCapacity: vessel ? positiveOrNull(row.nominalCapacity) : null,
+    workingCapacity: vessel ? positiveOrNull(row.workingCapacity) : null,
+    capacityUnit: vessel ? String(row.capacityUnit || 'L').trim() : '',
+    occupyStatus: occupy,
+    occupiedBatchNo: vessel && holdsBatch ? String(row.occupiedBatchNo || '').trim() : '',
+    /** 类别为储罐时，挂接的库存位置 id（由同步写入） */
+    inventoryLocationId: category === '储罐' ? String(row.inventoryLocationId || '').trim() : '',
     responsible: row.responsible || '',
     manufacturer: row.manufacturer || '',
     installDate: row.installDate || '',

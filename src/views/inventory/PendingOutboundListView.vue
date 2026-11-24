@@ -87,16 +87,6 @@
             </a-form-item>
           </a-col>
           <a-col :xs="24" :sm="12" :md="6">
-            <a-form-item label="材质">
-              <a-input
-                v-model:value="filters.material"
-                allow-clear
-                placeholder="请输入"
-                size="small"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :sm="12" :md="6">
             <a-form-item label="创建时间">
               <a-range-picker
                 v-model:value="filters.createdAtRange"
@@ -138,10 +128,6 @@
         </a-button>
         <a-button size="small" type="primary" ghost @click="handleBatchInitiateQc">
           发起出厂质检
-        </a-button>
-        <a-button size="small" @click="stubAction('生成采购单')">
-          <CheckOutlined />
-          生成采购单
         </a-button>
         <a-button size="small" @click="handleBatchDelete">
           <DeleteOutlined />
@@ -292,10 +278,6 @@
           </a-button>
           <a-button size="small" type="primary" ghost @click="handleBatchInitiateQc">
             发起出厂质检
-          </a-button>
-          <a-button size="small" @click="stubAction('生成采购单')">
-            <CheckOutlined />
-            生成采购单
           </a-button>
           <a-button size="small" @click="handleBatchDelete">
             <DeleteOutlined />
@@ -655,8 +637,6 @@ const baseColumns = [
   { title: '物品编码', key: 'itemCode', dataIndex: 'itemCode', width: 120, ellipsis: true },
   { title: '物品名称', key: 'itemName', dataIndex: 'itemName', width: 140, ellipsis: true },
   { title: '规格型号', key: 'specModel', dataIndex: 'specModel', width: 110, ellipsis: true },
-  { title: '材质', key: 'material', dataIndex: 'material', width: 80, ellipsis: true },
-  { title: '图号', key: 'drawingNo', dataIndex: 'drawingNo', width: 100, ellipsis: true },
   { title: '出库数量', key: 'shipQty', width: 110, align: 'right' },
   { title: '出库仓库', key: 'warehouse', dataIndex: 'warehouse', width: 100 },
   { title: '源单号', key: 'sourceOrderNo', dataIndex: 'sourceOrderNo', width: 140, ellipsis: true },

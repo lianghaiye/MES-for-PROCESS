@@ -613,6 +613,12 @@ function resolveProcessLinks(record) {
 watch(
   () => form.bizScope,
   (val) => {
+    if (Array.isArray(form.fields) && form.fields.length) {
+      form.fields = ensureFieldsWithSystemFixedItems(form.fields, {
+        layout: 'preserve',
+        bizScope: val,
+      })
+    }
     if (!isProcessInspectBizScope(val)) {
       form.processLinks = []
       form.assayType = undefined
@@ -1052,12 +1058,13 @@ function loadEdit(record) {
   form.objects = Array.isArray(record.objects) ? record.objects.map((o) => ({ ...o })) : []
   form.processLinks = resolveProcessLinks(record)
   form.sheetPassRule = normalizeSheetPassRule(record.sheetPassRule)
-  form.fields = ensureFieldsWithSystemFixedItems(record.fields || [], { layout: 'preserve' }).map(
-    (f) => ({
-      ...f,
-      keyForSheetPass: Boolean(f.keyForSheetPass),
-    }),
-  )
+  form.fields = ensureFieldsWithSystemFixedItems(record.fields || [], {
+    layout: 'preserve',
+    bizScope: form.bizScope,
+  }).map((f) => ({
+    ...f,
+    keyForSheetPass: Boolean(f.keyForSheetPass),
+  }))
   form.sheetConclusionOptionItems = extractSheetConclusionOptionItems(
     form.fields,
     record.sheetConclusionOptionItems,
@@ -1473,7 +1480,10 @@ function onPickLibraryFields(ids = []) {
   added.forEach((field) => {
     list = insertFieldBeforeConclusion(list, field)
   })
-  form.fields = list
+  form.fields = ensureFieldsWithSystemFixedItems(list, {
+    layout: 'preserve',
+    bizScope: form.bizScope,
+  })
   const skipTip = skipped.length ? `，跳过 ${skipped.length} 项` : ''
   message.success(`已从检验项库添加 ${added.length} 个字段${skipTip}`)
   captureDraft()
@@ -1484,7 +1494,10 @@ function buildSavePayload() {
   const sheetItems = checked.ok
     ? checked.items
     : normalizeSheetConclusionOptionItems(form.sheetConclusionOptionItems)
-  let fields = ensureFieldsWithSystemFixedItems(form.fields, { layout: 'preserve' })
+  let fields = ensureFieldsWithSystemFixedItems(form.fields, {
+    layout: 'preserve',
+    bizScope: form.bizScope,
+  })
   // 整单结论由模板配置驱动，保存时写入隐藏的质检结果字段供录入使用
   fields = upsertSheetConclusionField(fields, sheetItems)
   let objects = []

@@ -80,8 +80,6 @@ const fields = computed(() => {
     { key: 'deductNo', label: '扣减单号', value: display(r.deductNo) },
     { key: 'productName', label: '产品名称', value: display(r.productName) },
     { key: 'productSpec', label: '规格型号', value: display(r.productSpec) },
-    { key: 'material', label: '材质', value: display(r.material) },
-    { key: 'drawingNo', label: '图号', value: display(r.drawingNo) },
     { key: 'reportQty', label: '报工数量', value: display(r.reportQty) },
     {
       key: 'warehouse',

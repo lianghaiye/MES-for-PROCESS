@@ -264,10 +264,6 @@
           <a-button size="small" type="primary" ghost @click="handleBatchInitiateQc">
             发起出厂质检
           </a-button>
-          <a-button size="small" @click="stubAction('生成采购单')">
-            <CheckOutlined />
-            生成采购单
-          </a-button>
           <a-button size="small" @click="handleBatchDelete">
             <DeleteOutlined />
             删除

@@ -45,24 +45,6 @@
               @press-enter="handleSearch"
             />
           </a-form-item>
-          <a-form-item label="材质">
-            <a-input
-              v-model:value="search.material"
-              allow-clear
-              size="small"
-              placeholder="请输入"
-              @press-enter="handleSearch"
-            />
-          </a-form-item>
-          <a-form-item label="图号">
-            <a-input
-              v-model:value="search.drawingNo"
-              allow-clear
-              size="small"
-              placeholder="请输入"
-              @press-enter="handleSearch"
-            />
-          </a-form-item>
           <a-form-item label="货位号">
             <a-input
               v-model:value="search.locationNo"
@@ -238,14 +220,6 @@ const baseColumns = [
   { title: '产品名称', key: 'itemName', dataIndex: 'itemName', width: 140, ellipsis: true },
   { title: '产品编码', key: 'itemCode', dataIndex: 'itemCode', width: 120 },
   { title: '规格型号', key: 'specModel', dataIndex: 'specModel', width: 110, ellipsis: true },
-  { title: '材质', key: 'material', dataIndex: 'material', width: 80, ellipsis: true },
-  {
-    title: '变体属性',
-    key: 'variantSummary',
-    dataIndex: 'variantSummary',
-    width: 120,
-    ellipsis: true,
-  },
   { title: '库存数量', key: 'qtyText', width: 110, align: 'right' },
   { title: '销售单号', key: 'salesOrderNo', dataIndex: 'salesOrderNo', width: 130 },
 ]

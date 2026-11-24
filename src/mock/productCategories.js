@@ -19,7 +19,9 @@ const DEMO_PRODUCT_CATEGORIES = [
   { key: 'pcat-topcoat', code: '010', title: '面漆' },
   { key: 'pcat-primer', code: '011', title: '底漆' },
   { key: 'pcat-custom', code: '012', title: '定制涂料' },
+  { key: 'pcat-li-salt', code: '015', title: '锂盐成品' },
   { key: 'pcat-intermediate', code: '020', title: '树脂中间体' },
+  { key: 'pcat-li-brine', code: '021', title: '浸出卤水' },
   { key: 'pcat-recycle', code: '030', title: '回收溶剂' },
 ]
 

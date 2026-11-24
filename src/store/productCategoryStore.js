@@ -6,7 +6,7 @@ import { moveCategoryInList } from '@/utils/categoryTreeSort'
 const STORAGE_KEY = 'i_doms_product_categories'
 const SEED_VERSION_KEY = 'i_doms_product_categories_seed_v'
 /** v2：流程型产品分类（面漆 / 中间体 / 回收溶剂等），版本不一致时重种演示树 */
-const CURRENT_SEED_VERSION = '2'
+const CURRENT_SEED_VERSION = '3'
 
 function loadFromStorage() {
   try {

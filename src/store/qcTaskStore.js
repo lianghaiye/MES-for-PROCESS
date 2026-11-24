@@ -3,8 +3,11 @@ import dayjs from 'dayjs'
 import { resolveQcGatePolicy } from '@/utils/qcGatePolicy'
 import { matchQcTemplate } from '@/utils/qcTemplateMatchService'
 import {
+  PROCESS_INSPECT_METHODS,
   aggregateLineConclusions,
+  defaultInspectMethodForBizScope,
   ensureFieldsWithSystemFixedItems,
+  isProcessAssayBizScope,
   normalizeSheetConclusionOptionItems,
   resolveQcResultFromFieldValues,
   upsertSheetConclusionField,
@@ -15,16 +18,18 @@ import { updateOutsourcingReceipt } from '@/store/outsourcingReceiptStore'
 import { QC_TASK_RESULT, QC_TASK_RESULT_OPTIONS } from '@/constants/qcTaskResult'
 import { cloneMockIncomingQcTasks } from '@/mock/qcTasks'
 import { buildSharedQcTaskSeed } from '@/mock/qcSharedDemoSeed'
+import { buildProcessLotIncomingQcTasks } from '@/mock/processInventorySeed'
 import { getQcTemplateByCode } from '@/store/qcTemplateStore'
 import { persistJson, safeSetItem } from '@/utils/safeStorage'
 import { generateCodeByBusiness } from '@/store/codingRuleStore'
+import { OUTPUT_ROLE_LABEL } from '@/store/processFormulaStore'
 
 export { QC_TASK_RESULT, QC_TASK_RESULT_OPTIONS }
 
 const STORAGE_KEY = 'i_doms_qc_tasks'
 const STORAGE_VERSION = 3
 const SEED_VERSION_KEY = 'i_doms_qc_tasks_seed_v'
-const CURRENT_SEED_VERSION = '24'
+const CURRENT_SEED_VERSION = '25'
 
 export const QC_TASK_STATUS = {
   PENDING: '待质检',
@@ -124,8 +129,13 @@ function loadFromStorage() {
 
 function mergeSharedDemoTasks(tasks = []) {
   const shared = buildSharedQcTaskSeed()
-  const rest = (tasks || []).filter((t) => !String(t.id || '').startsWith('shared-'))
-  return [...shared, ...rest]
+  const processLots = buildProcessLotIncomingQcTasks()
+  const rest = (tasks || []).filter(
+    (t) =>
+      !String(t.id || '').startsWith('shared-') &&
+      !String(t.id || '').startsWith('qctask-proc-lot-'),
+  )
+  return [...shared, ...processLots, ...rest]
 }
 
 function initTasks() {
@@ -220,9 +230,9 @@ export function createQcTaskLineItem(partial = {}) {
 }
 
 /** 冻结模板字段快照到质检行（补齐整单结论字段） */
-export function cloneTemplateFieldsSnapshot(fields = [], sheetConclusionOptionItems) {
+export function cloneTemplateFieldsSnapshot(fields = [], sheetConclusionOptionItems, bizScope) {
   const list = upsertSheetConclusionField(
-    ensureFieldsWithSystemFixedItems(fields || []),
+    ensureFieldsWithSystemFixedItems(fields || [], { bizScope }),
     sheetConclusionOptionItems,
   )
   return list.map((f) => ({
@@ -260,11 +270,17 @@ export function bindQcLineTemplate(linePartial = {}, { bizScope, categoryCode, c
     templateCode: template.code,
     templateName: template.name,
     templateMatchSource: matched.matchSource,
-    templateFields: cloneTemplateFieldsSnapshot(template.fields, sheetConclusionOptionItems),
+    templateFields: cloneTemplateFieldsSnapshot(
+      template.fields,
+      sheetConclusionOptionItems,
+      template.bizScope,
+    ),
     sheetPassRule: normalizeSheetPassRule(template.sheetPassRule),
     sheetConclusionOptionItems,
     inspectMethod:
-      linePartial.inspectMethod || resolveInspectMethodFromTemplate(template) || '抽检',
+      linePartial.inspectMethod ||
+      resolveInspectMethodFromTemplate(template) ||
+      defaultInspectMethodForBizScope(template?.bizScope),
   })
   return { ok: true, line, template, matchSource: matched.matchSource }
 }
@@ -300,7 +316,11 @@ function resolveInspectMethodFromTemplate(template) {
   const hit =
     fields.find((f) => f.code === 'QC_INSPECT_METHOD') ||
     fields.find((f) => String(f.name || '').trim() === '质检方式')
-  const def = hit?.defaultValue
+  const def = String(hit?.defaultValue || '').trim()
+  if (isProcessAssayBizScope(template?.bizScope)) {
+    if (PROCESS_INSPECT_METHODS.includes(def)) return def
+    return defaultInspectMethodForBizScope(template.bizScope)
+  }
   if (def === '抽检' || def === '全检') return def
   return ''
 }
@@ -325,7 +345,10 @@ export function createQcTask(partial = {}) {
     templateCode: template?.code || partial.templateCode || '',
     templateName: template?.name || partial.templateName || '',
     gatePolicy,
-    inspectMethod: partial.inspectMethod || resolveInspectMethodFromTemplate(template) || '抽检',
+    inspectMethod:
+      partial.inspectMethod ||
+      resolveInspectMethodFromTemplate(template) ||
+      defaultInspectMethodForBizScope(bizScope),
     inspectDate: partial.inspectDate || dayjs().format('YYYY-MM-DD'),
     sourceType: partial.sourceType || '',
     sourceDocNo: partial.sourceDocNo || '',
@@ -534,6 +557,36 @@ export function submitQcTaskInspection(
   return { ok: true, task: row, qcResult }
 }
 
+/** 批次产品编码：主数据优先，避免中间体/定制漆只剩物料 id 对不上单产品模板 */
+function resolveBatchItemProfile(itemId) {
+  const id = String(itemId || '').trim()
+  if (!id) return null
+  try {
+    const { productInfoState } = require('@/store/productInfoStore')
+    const product = (productInfoState.products || []).find(
+      (row) => row.id === id || row.code === id,
+    )
+    if (product) return product
+  } catch {
+    /* ignore */
+  }
+  try {
+    const { materialInfoState } = require('@/store/materialInfoStore')
+    const material = (materialInfoState.materials || []).find(
+      (row) => row.id === id || row.code === id,
+    )
+    if (material) return material
+  } catch {
+    /* ignore */
+  }
+  try {
+    const { findProcessItem } = require('@/store/materialBatchStore')
+    return findProcessItem(id) || null
+  } catch {
+    return null
+  }
+}
+
 /**
  * 批次指令步骤「化验」：按工序配置的方案生成过程检/成品检，可重复发起
  * @returns {{ ok: boolean, task?: object, created?: boolean, message?: string }}
@@ -587,16 +640,10 @@ export function createProcessQcFromBatchStep({ orderId, stepNo, schemeId, inspec
     return { ok: false, message: `「${scheme.name}」不允许重复发起` }
   }
 
-  let findProcessItem
-  try {
-    ;({ findProcessItem } = require('@/store/materialBatchStore'))
-  } catch {
-    findProcessItem = () => null
-  }
-  const item = findProcessItem?.(order.itemId)
+  const item = resolveBatchItemProfile(order.itemId)
   const itemCode = item?.code || order.itemId || ''
   const itemName = item?.name || ''
-  const unit = item?.unit || order.unit || 'kg'
+  const unit = item?.inventoryUnit || item?.unit || order.unit || 'kg'
   const qty =
     Number(inspectQty) > 0
       ? Number(inspectQty)
@@ -634,10 +681,16 @@ export function createProcessQcFromBatchStep({ orderId, stepNo, schemeId, inspec
     templateCode: template.code,
     templateName: template.name,
     templateMatchSource: matchSource || 'process_scheme',
-    templateFields: cloneTemplateFieldsSnapshot(template.fields, sheetConclusionOptionItems),
+    templateFields: cloneTemplateFieldsSnapshot(
+      template.fields,
+      sheetConclusionOptionItems,
+      bizScope,
+    ),
     sheetPassRule: normalizeSheetPassRule(template.sheetPassRule),
     sheetConclusionOptionItems,
-    inspectMethod: resolveInspectMethodFromTemplate(template) || '抽检',
+    inspectMethod:
+      resolveInspectMethodFromTemplate({ ...template, bizScope }) ||
+      defaultInspectMethodForBizScope(bizScope),
   })
   const summary = summarizeTaskTemplates([line])
   const task = addQcTask({
@@ -666,11 +719,153 @@ export function createProcessQcFromBatchStep({ orderId, stepNo, schemeId, inspec
     templateCode: summary.templateCode,
     templateName: summary.templateName,
     templateFields: summary.templateFields,
-    inspectMethod: summary.inspectMethod || line.inspectMethod || '抽检',
+    inspectMethod:
+      summary.inspectMethod || line.inspectMethod || defaultInspectMethodForBizScope(bizScope),
     lineItems: [line],
     qcStatus: QC_TASK_STATUS.PENDING,
   })
   attachStepQc(order.id, step.stepNo, task, scheme)
+  return { ok: true, task, created: true }
+}
+
+const OUTPUT_INBOUND_ASSAY_SCOPES = new Set(['成品检'])
+
+/**
+ * 产出确认后按勾选生成产出化验单（仅成品检）。
+ * 同一批次、同一阶段、同一物料+角色：默认只保留一张有效检单（待检或已完成均不重复建），
+ * 以便多次产出过账共用一张；传 forceNew 才新建复检。
+ * 过程检在工序化验清单发起；出厂化验走销售出库/发货。
+ */
+export function createOutputInboundQc({
+  orderId,
+  stepNo,
+  itemId,
+  role,
+  inspectQty,
+  bizScope = '成品检',
+  forceNew = false,
+} = {}) {
+  let getBatchOrder
+  let attachOutputInboundQc
+  try {
+    ;({ getBatchOrder, attachOutputInboundQc } = require('@/store/batchInstructionStore'))
+  } catch {
+    return { ok: false, message: '批次指令模块不可用' }
+  }
+  const order = getBatchOrder(orderId)
+  if (!order) return { ok: false, message: '批次指令不存在' }
+  if (order.status !== 'running') return { ok: false, message: '请先下发批次指令后再化验' }
+  if (!OUTPUT_INBOUND_ASSAY_SCOPES.has(bizScope)) {
+    return { ok: false, message: '产出过账仅支持产出化验' }
+  }
+  const step = (order.routeSnapshot || []).find((s) => Number(s.stepNo) === Number(stepNo))
+  if (!step) return { ok: false, message: '步骤不存在' }
+  const output = (order.expectedOutputs || []).find(
+    (line) => line.itemId === itemId && line.role === role,
+  )
+  if (!output) return { ok: false, message: '该物料不在本配方产出里' }
+
+  const records = (order.outputQcRecords || []).filter(
+    (row) =>
+      row.itemId === itemId &&
+      row.role === role &&
+      Number(row.stepNo) === Number(step.stepNo) &&
+      (row.bizScope || '成品检') === bizScope,
+  )
+  const reusable = [...records].reverse().find((row) => {
+    const prev = getQcTaskById(row.taskId)
+    return prev && prev.qcStatus !== QC_TASK_STATUS.CANCELLED
+  })
+  if (reusable && !forceNew) {
+    return { ok: true, task: getQcTaskById(reusable.taskId), created: false }
+  }
+
+  const item = resolveBatchItemProfile(itemId)
+  const itemCode = item?.code || itemId || ''
+  const itemName = item?.name || ''
+  const unit = item?.inventoryUnit || item?.unit || order.unit || 'kg'
+  const planned = Number(output.qty) > 0 ? Number(output.qty) : 1
+  const processAssay = isProcessAssayBizScope(bizScope)
+  const sampleDefault = Math.max(0.1, Number((planned * 0.01).toFixed(3)))
+  const qty = Number(inspectQty) > 0 ? Number(inspectQty) : processAssay ? sampleDefault : planned
+  const assayType = bizScope === '成品检' ? 'finished' : ''
+  const matched = matchQcTemplate({
+    bizScope,
+    itemCode,
+    processCode: step.processCode || '',
+    processName: step.name || step.processName || '',
+    assayType,
+  })
+  if (!matched.ok || !matched.template || matched.template.status === '停用') {
+    return { ok: false, message: matched.message || `未匹配到可用的${bizScope}模板` }
+  }
+  const template = matched.template
+  const sheetConclusionOptionItems = normalizeSheetConclusionOptionItems(
+    template.sheetConclusionOptionItems,
+  )
+  const line = createQcTaskLineItem({
+    sourceLineId: `batch-output-${order.id}-${step.stepNo}-${role}-${bizScope}-${itemId}`,
+    itemCode,
+    itemName,
+    unit,
+    receiptQty: planned,
+    inspectQty: qty,
+    templateId: template.id,
+    templateCode: template.code,
+    templateName: template.name,
+    templateMatchSource: matched.matchSource || 'single',
+    templateFields: cloneTemplateFieldsSnapshot(
+      template.fields,
+      sheetConclusionOptionItems,
+      bizScope,
+    ),
+    sheetPassRule: normalizeSheetPassRule(template.sheetPassRule),
+    sheetConclusionOptionItems,
+    inspectMethod:
+      resolveInspectMethodFromTemplate({ ...template, bizScope }) ||
+      defaultInspectMethodForBizScope(bizScope),
+  })
+  const summary = summarizeTaskTemplates([line])
+  const roleText = OUTPUT_ROLE_LABEL[role] || '产出'
+  const task = addQcTask({
+    bizScope,
+    sourceType: 'batch_output',
+    sourceDocId: order.id,
+    sourceDocNo: order.batchNo,
+    workOrderNo: order.batchNo,
+    workOrderId: order.id,
+    processCode: step.processCode || '',
+    processName: step.name || '',
+    processIndex: step.stepNo,
+    scheduleBatchId: order.id,
+    scheduleBatchNo: order.batchNo,
+    itemCode,
+    itemName,
+    unit,
+    processRouteName: order.equipmentRoute?.routeName || order.formulaName || '',
+    scheduleQty: planned,
+    assayType,
+    assaySchemeName: bizScope,
+    remark: `批次 ${order.batchNo} · ${roleText} ${itemName || itemCode} · ${bizScope}`,
+    multiTemplate: summary.multiTemplate,
+    templateId: summary.templateId,
+    templateCode: summary.templateCode,
+    templateName: summary.templateName,
+    templateFields: summary.templateFields,
+    inspectMethod:
+      summary.inspectMethod || line.inspectMethod || defaultInspectMethodForBizScope(bizScope),
+    lineItems: [line],
+    qcStatus: QC_TASK_STATUS.PENDING,
+  })
+  attachOutputInboundQc(order.id, {
+    role,
+    itemId,
+    stepNo: step.stepNo,
+    bizScope,
+    taskId: task.id,
+    qcNo: task.qcNo,
+    qcStatus: task.qcStatus,
+  })
   return { ok: true, task, created: true }
 }
 
@@ -961,7 +1156,10 @@ export function buildQcTaskFromTemplateMatch({
     processName,
     template,
     templateCode: template.code,
-    inspectMethod: rest.inspectMethod || resolveInspectMethodFromTemplate(template) || '抽检',
+    inspectMethod:
+      rest.inspectMethod ||
+      resolveInspectMethodFromTemplate(template) ||
+      defaultInspectMethodForBizScope(template?.bizScope || rest.bizScope),
   })
   return { ok: true, task, matchSource: matched.matchSource }
 }

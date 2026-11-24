@@ -477,6 +477,38 @@ export function generateCodeByBusiness(business, context = {}) {
   return generateCodeByRule(rule, context)
 }
 
+/**
+ * 预览后续 N 个业务编码（只读模拟流水，不占用、不落库）。
+ * 用于表单预填；提交时仍把预填号当自定义号写入。
+ */
+export function peekCodesByBusiness(business, count = 1, context = {}) {
+  const n = Math.max(0, Math.min(500, Number(count) || 0))
+  if (!n) return []
+  const rule = getEnabledRuleByBusiness(business)
+  if (!rule) return []
+  const at = context.at || dayjs()
+  const seqView = { ...codingRuleState.seqMap }
+  const sep = rule.separator == null ? '-' : String(rule.separator)
+  const codes = []
+  for (let i = 0; i < n; i += 1) {
+    const parts = (rule.segments || []).map((seg) => {
+      if (seg.type !== SEGMENT_TYPE.SERIAL) {
+        return resolveSegmentValue(seg, { ...context, at, ruleId: rule.id })
+      }
+      const period = resetKey(seg.serialReset, at)
+      const key = `${rule.id}::${seg.id || 'serial'}::${period}`
+      const start = Number(seg.serialStart) || 1
+      const current = seqView[key]
+      const next = Number.isFinite(Number(current)) ? Number(current) + 1 : start
+      seqView[key] = next
+      const len = Number(seg.serialLength) || 4
+      return String(next).padStart(len, '0')
+    })
+    codes.push(parts.join(sep))
+  }
+  return codes
+}
+
 /** 预览编码（不消耗流水号） */
 export function previewCodeByRule(rule, context = {}) {
   if (!rule) return ''

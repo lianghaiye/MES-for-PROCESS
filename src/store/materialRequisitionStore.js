@@ -1,7 +1,6 @@
 import { reactive, watch } from 'vue'
 import dayjs from 'dayjs'
 import {
-  createMaterialRequisitionSeed,
   MATERIAL_DEDUCT_STATUS,
   MATERIAL_REQUISITION_STATS_SEED,
   MATERIAL_DEDUCT_SOURCES,
@@ -18,13 +17,12 @@ import {
   isInventoryDeductByActual,
 } from '@/store/functionParamStore'
 import { buildWorkOrderCompletionDeductDraft } from '@/utils/backflushDeduct'
-import { ensureCrossDemoDeductRecords } from '@/mock/crossModuleDemoSeed'
 import { persistJson, safeSetItem } from '@/utils/safeStorage'
 
 const STORAGE_KEY = 'i_doms_material_requisition'
 const SEED_VERSION_KEY = 'i_doms_material_requisition_seed_v'
-/** v12：工单完工扣减 mock（领料+倒冲同单，多状态） */
-const CURRENT_SEED_VERSION = '12'
+/** v13：清空离散制造演示库存扣减记录 */
+const CURRENT_SEED_VERSION = '13'
 
 /** 确认后可撤销 / 作废 / 重试的天数，超时单据锁定 */
 export const MATERIAL_DEDUCT_OPERABLE_DAYS = 30
@@ -248,18 +246,20 @@ function createInitial() {
     const cached = loadFromStorage()
     if (cached) {
       return {
-        records: ensureCrossDemoDeductRecords(cached.records),
+        records: cached.records,
         stats: { ...MATERIAL_REQUISITION_STATS_SEED, ...(cached.stats || {}) },
       }
     }
   }
   return {
-    records: ensureCrossDemoDeductRecords(createMaterialRequisitionSeed()),
+    records: [],
     stats: { ...MATERIAL_REQUISITION_STATS_SEED },
   }
 }
 
 export const materialRequisitionState = reactive(createInitial())
+
+persist()
 
 watch(
   () => [materialRequisitionState.records, materialRequisitionState.stats],

@@ -142,6 +142,31 @@
               下发
             </a-button>
             <a-button
+              v-if="record.status === 'pending_release'"
+              type="link"
+              size="small"
+              @click="openConfirmRelease(record)"
+            >
+              指定下发
+            </a-button>
+            <a-button
+              v-if="record.status === 'pending_release'"
+              type="link"
+              size="small"
+              @click="openEdit(record)"
+            >
+              编辑
+            </a-button>
+            <a-button
+              v-if="record.status === 'pending_release'"
+              type="link"
+              size="small"
+              danger
+              @click="handleDelete(record)"
+            >
+              删除
+            </a-button>
+            <a-button
               v-if="record.status === 'running'"
               type="link"
               size="small"
@@ -149,7 +174,6 @@
             >
               完成
             </a-button>
-            <a-button type="link" size="small" @click="openDetail(record)">详情</a-button>
           </template>
         </template>
       </a-table>
@@ -161,6 +185,8 @@
       :default-settings="defaultColumnSettings"
     />
     <GenerateBatchInstructionModal v-model:open="open" />
+    <ConfirmReleaseBatchModal v-model:open="confirmOpen" :order-id="confirmOrderId" />
+    <PendingBatchEditModal v-model:open="editOpen" :order-id="editOrderId" />
   </div>
 </template>
 
@@ -179,6 +205,7 @@ import {
   batchInstructionState,
   cancelBatchOrder,
   completeOrder,
+  deletePendingOrder,
   releaseOrder,
 } from '@/store/batchInstructionStore'
 import {
@@ -190,10 +217,16 @@ import { getFeedPlan } from '@/store/feedPlanStore'
 import { currentProcessStep } from '@/utils/processRouteBoard'
 import { formatQty } from '@/utils/numberFormat'
 import GenerateBatchInstructionModal from '@/views/production/components/GenerateBatchInstructionModal.vue'
+import ConfirmReleaseBatchModal from '@/views/production/components/ConfirmReleaseBatchModal.vue'
+import PendingBatchEditModal from '@/views/production/components/PendingBatchEditModal.vue'
 
 const router = useRouter()
 const { openTab } = useTabs()
 const open = ref(false)
+const confirmOpen = ref(false)
+const confirmOrderId = ref('')
+const editOpen = ref(false)
+const editOrderId = ref('')
 const selectedRowKeys = ref([])
 
 const rowSelection = computed(() => ({
@@ -271,7 +304,7 @@ const baseColumns = [
   { title: '创建时间', key: 'createdAt', dataIndex: 'createdAt', width: 150 },
   { title: '最近操作人', key: 'updatedBy', dataIndex: 'updatedBy', width: 120 },
   { title: '操作时间', key: 'updatedAt', dataIndex: 'updatedAt', width: 150 },
-  { title: '操作', key: 'action', dataIndex: 'action', width: 150, fixed: 'right' },
+  { title: '操作', key: 'action', dataIndex: 'action', width: 280, fixed: 'right' },
 ]
 
 const { columnSettings, columnDrawerOpen, displayColumns, tableScrollX, defaultColumnSettings } =
@@ -363,6 +396,34 @@ function openDetail(record) {
   const path = `/production/work-orders/${record.id}`
   openTab(path, record.batchNo || '批次指令')
   router.push(path)
+}
+
+function openConfirmRelease(record) {
+  confirmOrderId.value = record.id
+  confirmOpen.value = true
+}
+
+function openEdit(record) {
+  editOrderId.value = record.id
+  editOpen.value = true
+}
+
+function handleDelete(record) {
+  Modal.confirm({
+    title: '删除批次指令',
+    content: `删除「${record.batchNo}」？只有待下发且尚未投料的指令可以删除。`,
+    okText: '删除',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk() {
+      try {
+        deletePendingOrder(record.id)
+        message.success('已删除')
+      } catch (error) {
+        message.error(error.message || '删除失败')
+      }
+    },
+  })
 }
 
 function handleRelease(record) {

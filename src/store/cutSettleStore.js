@@ -10,9 +10,6 @@ import {
 import { adjustStockQty } from '@/store/stockStore'
 import { getOutboundOrderById } from '@/store/outboundStore'
 import { addInboundOrder, generateInboundNo } from '@/store/inboundOrderStore'
-import { createCutSettleSeed } from '@/mock/cutSettleSeed'
-import { ensureMultiUnitFlowCutSettleRecords } from '@/mock/multiUnitFlowDemoSeed'
-import { ensureOneItemOneCodeInventoryCutSettles } from '@/mock/oneItemOneCodeInventoryDemoSeed'
 import {
   getCutSettleCandidateLines,
   isOutboundEligibleForCutSettle,
@@ -20,8 +17,8 @@ import {
 
 const STORAGE_KEY = 'i_doms_cut_settle_records'
 const SEED_VERSION_KEY = 'i_doms_cut_settle_seed_v'
-/** v6：结算余料可留线边 / 退发料仓，支持事后余料退回 */
-const CURRENT_SEED_VERSION = '6'
+/** v7：清空离散制造演示下料结算单 */
+const CURRENT_SEED_VERSION = '7'
 
 /** 结算确认时余料处置 */
 export const CUT_SETTLE_REMNANT_DISPOSITION = {
@@ -73,19 +70,15 @@ function normalizeCutSettleRecord(row) {
 }
 
 function initRecords() {
-  if (shouldReseed() || !loadFromStorage()?.length) {
-    return ensureOneItemOneCodeInventoryCutSettles(
-      ensureMultiUnitFlowCutSettleRecords(createCutSettleSeed()),
-    ).map(normalizeCutSettleRecord)
-  }
-  return ensureOneItemOneCodeInventoryCutSettles(
-    ensureMultiUnitFlowCutSettleRecords(loadFromStorage()),
-  ).map(normalizeCutSettleRecord)
+  if (shouldReseed()) return []
+  return (loadFromStorage() || []).map(normalizeCutSettleRecord)
 }
 
 export const cutSettleState = reactive({
   records: initRecords(),
 })
+
+persist()
 
 watch(
   () => cutSettleState.records,

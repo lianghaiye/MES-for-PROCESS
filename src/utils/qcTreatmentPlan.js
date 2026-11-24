@@ -89,10 +89,10 @@ export function getDispositionFieldLabels(bizScope) {
       concession: '让步合格数',
       secondary: '返工数',
       tertiary: '报废数',
-      tip: '合格数 + 让步合格数 + 返工数 + 报废数 ≤ 排产数量（抽检时按整批排产拆分，非质检数量）',
+      tip: '合格数 + 让步合格数 + 返工数 + 报废数 ≤ 排产数量。取样量只记录样品，结论作用于整批',
       columnReturnExchange: '返工/报废',
-      treatmentTip: '按数量拆分处置；上限为排产数量；处理方案由数量自动汇总，无需单选',
-      passOptionalTip: '合格可不填，默认全量合格；也可按需拆分',
+      treatmentTip: '按整批数量拆分处置；上限为排产数量；取样量不参与拆分',
+      passOptionalTip: '化验合格可不填，默认整批合格；也可按需拆分',
       qtyCapLabel: '排产',
       mode: 'multi_bucket',
     }

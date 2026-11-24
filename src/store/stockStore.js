@@ -1,11 +1,10 @@
 import { reactive, watch } from 'vue'
-import { buildCrossDemoStockRecords } from '@/mock/crossModuleDemoSeed'
 import { persistJson, safeSetItem } from '@/utils/safeStorage'
 
 const STORAGE_KEY = 'i_doms_inventory_stock'
 const SEED_VERSION_KEY = 'i_doms_inventory_stock_seed_v'
-/** v1：跨模块演示台账（螺栓/垫圈/轴承） */
-const CURRENT_SEED_VERSION = '1'
+/** v2：清空螺栓/轴承等离散演示台账，改由流程批次汇总回写 */
+const CURRENT_SEED_VERSION = '2'
 
 function stockKey(warehouse, itemCode) {
   return `${warehouse}::${itemCode}`
@@ -33,19 +32,9 @@ function persist() {
   safeSetItem(SEED_VERSION_KEY, CURRENT_SEED_VERSION)
 }
 
-function mergeDemoStock(records) {
-  const map = new Map((records || []).map((r) => [r.key, { ...r }]))
-  buildCrossDemoStockRecords().forEach((demo) => {
-    map.set(demo.key, { ...demo })
-  })
-  return [...map.values()]
-}
-
 function initStockRecords() {
-  if (shouldReseed()) {
-    return mergeDemoStock([])
-  }
-  return mergeDemoStock(loadFromStorage())
+  if (shouldReseed()) return []
+  return loadFromStorage()
 }
 
 export const stockState = reactive({

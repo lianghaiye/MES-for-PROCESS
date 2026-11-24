@@ -1,11 +1,6 @@
 import { reactive, watch } from 'vue'
 import dayjs from 'dayjs'
-import {
-  cloneTransferSeedOrders,
-  createTransferLine,
-  createTransferOrder,
-  generateTransferNo,
-} from '@/mock/transferOrders'
+import { createTransferLine, createTransferOrder, generateTransferNo } from '@/mock/transferOrders'
 import {
   TRANSFER_SOURCE,
   TRANSFER_STATUS,
@@ -26,8 +21,8 @@ import {
 
 const STORAGE_KEY = 'i_doms_transfer_orders'
 const SEED_VERSION_KEY = 'i_doms_transfer_orders_seed_v'
-/** v5：列表创建人/创建时间 + 确认人/入库方确认人 */
-const CURRENT_SEED_VERSION = '5'
+/** v6：清空离散制造演示调拨单 */
+const CURRENT_SEED_VERSION = '6'
 
 function loadFromStorage() {
   try {
@@ -68,13 +63,13 @@ function shouldReseed() {
   return localStorage.getItem(SEED_VERSION_KEY) !== CURRENT_SEED_VERSION
 }
 
-const initial = shouldReseed()
-  ? cloneTransferSeedOrders()
-  : loadFromStorage() || cloneTransferSeedOrders()
+const initial = shouldReseed() ? [] : loadFromStorage() || []
 
 export const transferOrderState = reactive({
   orders: (initial || []).map(migrateTransferOrder),
 })
+
+persist()
 
 watch(
   () => transferOrderState.orders,

@@ -1,7 +1,6 @@
 import { reactive, watch } from 'vue'
 import dayjs from 'dayjs'
 import {
-  cloneOutsourcingReturns,
   createOutsourcingReturn,
   createOutsourcingReturnOutboundLine,
   createOutsourcingReturnOutboundOrder,
@@ -12,7 +11,8 @@ import {
 
 const STORAGE_KEY = 'i_doms_outsourcing_returns'
 const SEED_VERSION_KEY = 'i_doms_outsourcing_returns_seed_v'
-const CURRENT_SEED_VERSION = '3'
+/** v4：清空离散制造演示外协异常处理单 */
+const CURRENT_SEED_VERSION = '4'
 
 function loadFromStorage() {
   try {
@@ -131,15 +131,15 @@ function normalizeReturn(row) {
 }
 
 function initReturns() {
-  const list = shouldReseed()
-    ? cloneOutsourcingReturns()
-    : loadFromStorage() || cloneOutsourcingReturns()
+  const list = shouldReseed() ? [] : loadFromStorage() || []
   return list.map(normalizeReturn)
 }
 
 export const outsourcingReturnState = reactive({
   returns: initReturns(),
 })
+
+persist()
 
 watch(
   () => outsourcingReturnState.returns,

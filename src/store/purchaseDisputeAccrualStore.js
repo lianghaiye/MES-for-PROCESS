@@ -2,7 +2,6 @@ import { reactive } from 'vue'
 import dayjs from 'dayjs'
 import {
   createDisputeAccrual,
-  seedDisputeAccruals,
   DISPUTE_ACCRUAL_STATUS,
   DISPUTE_DIFF_TYPE_OPTIONS,
 } from '@/mock/purchaseDisputeAccruals'
@@ -16,7 +15,7 @@ import {
   getLineHangAmount,
 } from '@/utils/purchaseSettleDispute'
 export const purchaseDisputeAccrualState = reactive({
-  accruals: seedDisputeAccruals(),
+  accruals: [],
 })
 
 function round4(n) {

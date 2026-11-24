@@ -63,26 +63,6 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :xs="24" :sm="12" :md="6">
-              <a-form-item label="材质">
-                <a-input
-                  v-model:value="filters.material"
-                  allow-clear
-                  placeholder="请输入"
-                  size="small"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :xs="24" :sm="12" :md="6">
-              <a-form-item label="图号">
-                <a-input
-                  v-model:value="filters.drawingNo"
-                  allow-clear
-                  placeholder="请输入"
-                  size="small"
-                />
-              </a-form-item>
-            </a-col>
             <a-col :xs="24" :sm="12" :md="8">
               <a-form-item label="库存数量">
                 <a-space :size="4">
@@ -288,16 +268,6 @@
               </a-form-item>
             </a-col>
             <a-col :xs="24" :sm="12" :md="6">
-              <a-form-item label="材质">
-                <a-input
-                  v-model:value="batchFilters.material"
-                  allow-clear
-                  placeholder="材质"
-                  size="small"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :xs="24" :sm="12" :md="6">
               <a-form-item label="仓库">
                 <a-select
                   v-model:value="batchFilters.warehouse"
@@ -351,6 +321,9 @@
             </template>
             <template v-else-if="column.key === 'currentLength'">
               {{ formatInventoryQty(record.currentLength) }}
+            </template>
+            <template v-else-if="column.key === 'content'">
+              {{ formatBatchContent(record) }}
             </template>
             <template v-else-if="column.key === 'unitCost'">
               {{ formatInventoryMoney(record.unitCost) }}
@@ -408,12 +381,6 @@
         >
         <span
           >规格型号：<b>{{ drawerItemMeta.specModel }}</b></span
-        >
-        <span
-          >材质：<b>{{ drawerItemMeta.material }}</b></span
-        >
-        <span
-          >变体属性：<b>{{ drawerItemMeta.variantSummary }}</b></span
         >
       </div>
 
@@ -520,6 +487,9 @@
                     record.unit || batchDrawerRow?.unit,
                   )
                 }}
+              </template>
+              <template v-else-if="column.key === 'content'">
+                {{ formatBatchContent(record) }}
               </template>
               <template v-else-if="column.key === 'unitCost'">
                 {{ formatInventoryMoney(record.unitCost) }}
@@ -747,34 +717,6 @@ import {
 import { hasBatchUomConvert } from '@/utils/batchUomConvert'
 import { hasSettleUnit } from '@/utils/settleUnit'
 import { formatQtyWithUnit, formatQty } from '@/utils/numberFormat'
-import {
-  CASTING_BLANK_SETTLE_CODE,
-  STEEL_PIPE_CODE,
-  STEEL_PLATE_CODE,
-  STEEL_WEIGHT_BAR_CODE,
-  PIPE_TRIPLE_UNIT_CODE,
-  PIPE_TRIPLE_CAT_CODE,
-} from '@/mock/stockBatchSeed'
-import { CBP_ANGLE_CODE, CBP_SS_PIPE_CODE } from '@/mock/categoryBatchPieceDemoSeed'
-import { TRANSFER_DUAL_OWNERSHIP_ITEMS } from '@/mock/transferDualOwnershipDemoSeed'
-
-/** 库存台账置顶：先按单演示料（第一页可见自由+按单分行），再单位口径演示料 */
-const DEMO_STOCK_PIN_CODES = [
-  ...TRANSFER_DUAL_OWNERSHIP_ITEMS.map((item) => item.code),
-  PIPE_TRIPLE_UNIT_CODE,
-  PIPE_TRIPLE_CAT_CODE,
-  CASTING_BLANK_SETTLE_CODE,
-  STEEL_PIPE_CODE,
-  CBP_ANGLE_CODE,
-  CBP_SS_PIPE_CODE,
-  STEEL_PLATE_CODE,
-  STEEL_WEIGHT_BAR_CODE,
-]
-
-function demoStockPinRank(itemCode) {
-  const i = DEMO_STOCK_PIN_CODES.indexOf(String(itemCode || ''))
-  return i === -1 ? DEMO_STOCK_PIN_CODES.length + 1 : i
-}
 
 const route = useRoute()
 const router = useRouter()
@@ -785,8 +727,6 @@ const filters = reactive({
   itemCode: '',
   itemName: '',
   specModel: '',
-  material: '',
-  drawingNo: '',
   stockQtyMin: undefined,
   stockQtyMax: undefined,
 })
@@ -802,7 +742,6 @@ const batchFilters = reactive({
   itemCode: '',
   itemName: '',
   specModel: '',
-  material: '',
   warehouse: undefined,
   ownership: undefined,
 })
@@ -855,9 +794,6 @@ const allLines = computed(() => {
   })
   // 演示料置顶：结算按批次覆盖（铸件）优先，便于不搜索即可验收
   return rows.sort((a, b) => {
-    const ra = demoStockPinRank(a.itemCode)
-    const rb = demoStockPinRank(b.itemCode)
-    if (ra !== rb) return ra - rb
     const wh = String(a.warehouse || '').localeCompare(String(b.warehouse || ''), 'zh')
     if (wh !== 0) return wh
     return String(a.itemCode || '').localeCompare(String(b.itemCode || ''), 'zh')
@@ -970,9 +906,6 @@ const filteredBatchRows = computed(() => {
   const specKw = String(f.specModel || '')
     .trim()
     .toLowerCase()
-  const materialKw = String(f.material || '')
-    .trim()
-    .toLowerCase()
   return listBatches({ inStockOnly: false }).filter((b) => {
     if (b.status !== BATCH_STATUS.IN_STOCK) return false
     if (f.salesOrderNo && !String(b.salesOrderNo || '').includes(String(f.salesOrderNo).trim())) {
@@ -987,20 +920,12 @@ const filteredBatchRows = computed(() => {
         .includes(nameKw)
     )
       return false
-    if (specKw || materialKw) {
+    if (specKw) {
       const meta = resolveBatchSpecMaterial(b)
       if (
-        specKw &&
         !String(meta.specModel || '')
           .toLowerCase()
           .includes(specKw)
-      )
-        return false
-      if (
-        materialKw &&
-        !String(meta.material || '')
-          .toLowerCase()
-          .includes(materialKw)
       )
         return false
     }
@@ -1035,6 +960,7 @@ const batchQueryColumns = [
   { title: '产品编码', dataIndex: 'itemCode', key: 'itemCode', width: 130 },
   { title: '产品名称', dataIndex: 'itemName', key: 'itemName', width: 140, ellipsis: true },
   { title: '单位', dataIndex: 'unit', key: 'unit', width: 64 },
+  { title: '含量', key: 'content', width: 80, align: 'right' },
   { title: '在库数量', key: 'currentLength', width: 100, align: 'right' },
   { title: '批次成本', key: 'unitCost', width: 100, align: 'right' },
   { title: '状态', dataIndex: 'status', key: 'status', width: 80 },
@@ -1244,6 +1170,7 @@ const drawerBatchColumns = computed(() => {
     { title: '来源类型', dataIndex: 'sourceType', key: 'sourceType', width: 100 },
     { title: '来源单号', dataIndex: 'sourceDocNo', key: 'sourceDocNo', width: 132, ellipsis: true },
     { title: '在库数量', key: 'currentLength', width: 110, align: 'right' },
+    { title: '含量', key: 'content', width: 80, align: 'right' },
     { title: '批次成本', key: 'unitCost', width: 100, align: 'right' },
     { title: '点收数量', key: 'inboundQty', width: 110, align: 'right' },
   )
@@ -1659,15 +1586,6 @@ const baseColumns = [
   { title: '产品编码', key: 'itemCode', dataIndex: 'itemCode', width: 130, ellipsis: true },
   { title: '类型', key: 'materialType', width: 88, align: 'center' },
   { title: '规格型号', key: 'specModel', dataIndex: 'specModel', width: 120, ellipsis: true },
-  { title: '材质', key: 'material', dataIndex: 'material', width: 88 },
-  {
-    title: '变体属性',
-    key: 'variantSummary',
-    dataIndex: 'variantSummary',
-    width: 140,
-    ellipsis: true,
-  },
-  { title: '图号', key: 'drawingNo', dataIndex: 'drawingNo', width: 110, ellipsis: true },
   { title: '数量', key: 'stockQty', width: 110, align: 'right' },
   {
     title: '销售订单号',
@@ -1685,7 +1603,7 @@ const baseColumns = [
 ]
 
 const { columnSettings, columnDrawerOpen, displayColumns, tableScrollX, defaultColumnSettings } =
-  useTableColumnSettings('inventory-detail-list-v8', baseColumns, { minScrollX: 2000 })
+  useTableColumnSettings('inventory-detail-list-v9', baseColumns, { minScrollX: 1600 })
 
 const mergedDisplayColumns = computed(() =>
   displayColumns.value.map((col) => {
@@ -1705,6 +1623,14 @@ function rowIndex(index) {
   return (pagination.current - 1) * pagination.pageSize + index + 1
 }
 
+function formatBatchContent(batch) {
+  const raw = batch?.attrs?.content ?? batch?.content
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return '—'
+  const pct = Math.abs(n) <= 1 ? n * 100 : n
+  return `${Number(pct.toFixed(4))}%`
+}
+
 function handleSearch() {
   appliedFilters.value = { ...filters }
   pagination.current = 1
@@ -1717,8 +1643,6 @@ function handleReset() {
     itemCode: '',
     itemName: '',
     specModel: '',
-    material: '',
-    drawingNo: '',
     stockQtyMin: undefined,
     stockQtyMax: undefined,
   })
@@ -1738,7 +1662,6 @@ function handleBatchReset() {
     itemCode: '',
     itemName: '',
     specModel: '',
-    material: '',
     warehouse: undefined,
     ownership: undefined,
   })

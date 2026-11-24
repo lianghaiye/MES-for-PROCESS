@@ -173,7 +173,7 @@ const tankOptions = computed(() => listTanks().map((t) => ({ value: t.id, label:
 const columns = [
   { title: '批次号', dataIndex: 'batchNo', width: 160 },
   { title: '物料', key: 'item' },
-  { title: '状态', key: 'status', width: 90 },
+  { title: '放行状态', key: 'status', width: 90 },
   { title: '重量', dataIndex: 'qty', align: 'right', width: 90 },
   { title: '含量', dataIndex: 'content', align: 'right', width: 80 },
   { title: '失效日期', key: 'expiryDate', dataIndex: 'expiryDate', width: 120 },

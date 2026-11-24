@@ -14,6 +14,13 @@ import {
   itemUnit,
   stepParamRows,
   OUTPUT_ROLE_LABEL,
+  OUTPUT_DISPOSITION_LABEL,
+  batchStatusForDisposition,
+  createsOutputBatchDisposition,
+  isStockOutputDisposition,
+  locationKindForDisposition,
+  normalizeOutputAssayScopes,
+  normalizeOutputDisposition,
 } from '@/store/processFormulaStore'
 import { getProcessById } from '@/store/processConfigStore'
 import { normalizeProcessGate, PROCESS_GATE_HARD } from '@/mock/processConfigSeed'
@@ -26,8 +33,8 @@ import {
   resolveStepFormTemplate,
 } from '@/utils/processFormTemplateSnapshot'
 import {
+  deriveProcessGateFromAssaySchemes,
   isAssaySchemeHardGate,
-  normalizeProcessQcConfigs,
   resolveAssaySchemesForStep,
 } from '@/utils/qcProcessConfig'
 import {
@@ -35,16 +42,26 @@ import {
   resolveProcessFormSystemValue,
 } from '@/utils/processFormSystemField'
 import {
+  filterTemplateFieldsBeyondFixed,
+  stepConfirmFixedFieldDefs,
+} from '@/utils/stepConfirmFixedFields'
+import {
   addOutputBatch,
   consumeBatchQty,
   getMaterialBatch,
+  listProcessItems,
   listTanks,
+  planFeedFifoAllocations,
   setBatchStatus,
 } from '@/store/materialBatchStore'
 import { addInboundOrder } from '@/store/inboundOrderStore'
 import { createInboundLine } from '@/mock/inboundOrders'
 import { appendOperationLog, currentOperator } from '@/utils/operationLog'
-import { generateCodeByBusiness } from '@/store/codingRuleStore'
+import { getDeviceById, updateDevice } from '@/store/equipmentStore'
+import { getProductionLineById } from '@/store/productionLineStore'
+import { positionOptions } from '@/store/employeeGroupStore'
+import { EQUIPMENT_OCCUPY_STATUS, EQUIPMENT_STATUS } from '@/mock/equipmentSeed'
+import { generateCodeByBusiness, peekCodesByBusiness } from '@/store/codingRuleStore'
 
 const STORAGE_KEY = 'i-doms-batch-instruction-v1'
 
@@ -58,11 +75,16 @@ export const ORDER_STATUS_LABEL = {
 function hydrateFeedSteps(orders) {
   return (orders || []).map((order) => {
     const formula = getFormula(order.formulaId)
+    const outputQcRecords = (order.outputQcRecords || []).filter((row) => {
+      const scope = String(row?.bizScope || '成品检').trim() || '成品检'
+      return scope === '成品检'
+    })
     return {
       ...order,
       formActuals: Array.isArray(order.formActuals) ? order.formActuals : [],
       ebrEntries: Array.isArray(order.ebrEntries) ? order.ebrEntries : [],
       stepQcMap: order.stepQcMap && typeof order.stepQcMap === 'object' ? order.stepQcMap : {},
+      outputQcRecords,
       theoreticalFeeds: (order.theoreticalFeeds || []).map((line) => {
         if (Number(line.stepNo) > 0) return line
         const source = (formula?.lines || []).find((item) => item.itemId === line.itemId)
@@ -120,6 +142,88 @@ watch(
   { deep: true },
 )
 
+/** 演示批次：对应已生效配方，下发后可在保温步发起中控取样、在灌装步发起产出化验。 */
+const DEMO_BATCH_ORDERS = [
+  {
+    id: 'bo-demo-paint',
+    batchNo: 'BO-DEMO-PAINT',
+    formulaId: 'formula-paint',
+    sourceLabel: '演示：醇酸面漆',
+  },
+  {
+    id: 'bo-demo-alkyd',
+    batchNo: 'BO-DEMO-ALKYD',
+    formulaId: 'formula-alkyd',
+    sourceLabel: '演示：醇酸树脂液',
+  },
+  {
+    id: 'bo-demo-custom',
+    batchNo: 'BO-DEMO-CUS',
+    formulaId: 'formula-custom',
+    sourceLabel: '演示：客户指定色漆',
+  },
+]
+
+function buildDemoBatchOrder(demo) {
+  const formula = getFormula(demo.formulaId)
+  if (!formula || formula.status !== 'active') return null
+  const order = {
+    id: demo.id,
+    batchNo: demo.batchNo,
+    status: 'running',
+    seq: 1,
+    batchCount: 1,
+    qty: formula.baseBatchQty,
+    qtyConfirmed: true,
+    unit: 'kg',
+    formulaId: formula.id,
+    formulaVersion: formula.version,
+    formulaName: formula.name,
+    itemId: formula.itemId,
+    theoreticalOutput: theoreticalOutput(formula.baseBatchQty, formula.theoreticalYield),
+    theoreticalFeeds: snapshotFeeds(formula),
+    expectedOutputs: snapshotOutputs(formula),
+    routeSnapshot: snapshotSteps(formula.steps),
+    equipmentRoute: snapshotEquipmentRoute(formula),
+    feeds: [],
+    paramActuals: [],
+    formActuals: [],
+    ebrEntries: [],
+    stepQcMap: {},
+    confirmedSteps: [],
+    outputs: [],
+    actualOutput: null,
+    yieldGap: null,
+    deviation: '',
+    remark: '演示批次，可直接发起中控取样和产出化验',
+    reworkOfBatchId: '',
+    feedPlanId: '',
+    productionLineId: '',
+    executeBy: 'formula',
+    sourceLabel: demo.sourceLabel,
+    demandQty: formula.baseBatchQty,
+    createdAt: '2026-11-18 09:30',
+    createdBy: '系统管理员',
+  }
+  appendOperationLog(order, '生成批次指令', demo.sourceLabel, '系统管理员')
+  appendOperationLog(order, '下发', '演示链路', '系统管理员')
+  return order
+}
+
+function ensureDemoBatchOrders() {
+  DEMO_BATCH_ORDERS.forEach((demo) => {
+    if (
+      batchInstructionState.orders.some((row) => row.id === demo.id || row.batchNo === demo.batchNo)
+    ) {
+      return
+    }
+    const order = buildDemoBatchOrder(demo)
+    if (order) batchInstructionState.orders.push(order)
+  })
+}
+
+ensureDemoBatchOrders()
+
 let seq = 1
 
 /** 系统默认批次号：BO + 日期 + 流水。 */
@@ -147,6 +251,37 @@ export function nextBatchNo(custom) {
     candidate = nextSystemBatchNo()
   }
   return candidate
+}
+
+/**
+ * 预览后续 N 个批次号（按编码规则；无规则则按系统 BO+日期+流水），不占用正式流水。
+ * @param {number} count
+ * @param {{ exclude?: string[] }} [options]
+ */
+export function previewNextBatchNos(count, options = {}) {
+  const n = Math.max(0, Math.min(200, Number(count) || 0))
+  if (!n) return []
+  const taken = new Set([
+    ...(batchInstructionState.orders || []).map((row) => row.batchNo),
+    ...(options.exclude || []).map((v) => String(v || '').trim()).filter(Boolean),
+  ])
+  const result = []
+  const peeked = peekCodesByBusiness('batch_instruction', n + 40)
+  for (const code of peeked) {
+    if (result.length >= n) break
+    if (!code || taken.has(code)) continue
+    result.push(code)
+    taken.add(code)
+  }
+  let localSeq = seq
+  while (result.length < n) {
+    localSeq += 1
+    const candidate = `BO${dayjs().format('YYYYMMDD')}${String(localSeq).padStart(3, '0')}`
+    if (taken.has(candidate)) continue
+    result.push(candidate)
+    taken.add(candidate)
+  }
+  return result
 }
 
 function assertBatchNoAvailable(batchNo) {
@@ -185,6 +320,7 @@ function snapshotOutputs(formula) {
       qty: o.expectedQty,
       stepNo,
       stepName: o.stepName || step?.name || '',
+      assayScopes: normalizeOutputAssayScopes(o.assayScopes),
     }
   })
 }
@@ -192,7 +328,8 @@ function snapshotOutputs(formula) {
 function snapshotSteps(steps) {
   return (steps || []).map((step) => {
     const proc = step.processId ? getProcessById(step.processId) : null
-    const assaySchemes = normalizeProcessQcConfigs(proc?.qcConfigs || [])
+    // 配方阶段若已改过化验/门禁，用配方快照；否则回落到工序默认
+    const assaySchemes = resolveAssaySchemesForStep(step, proc)
     const equipmentIds = Array.isArray(step.equipmentIds)
       ? step.equipmentIds.map((id) => String(id || '').trim()).filter(Boolean)
       : []
@@ -201,7 +338,9 @@ function snapshotSteps(steps) {
       ...JSON.parse(JSON.stringify(step)),
       processCode: step.processCode || proc?.code || '',
       processName: step.name || proc?.name || '',
-      gateMode: normalizeProcessGate(step.gateMode || proc?.gateMode),
+      gateMode: normalizeProcessGate(
+        step.gateMode || deriveProcessGateFromAssaySchemes(assaySchemes) || proc?.gateMode,
+      ),
       transferCondition: step.transferCondition || proc?.transferCondition || '',
       equipmentIds,
       equipmentId,
@@ -304,6 +443,35 @@ export function attachStepQc(orderId, stepNo, task, scheme = {}) {
   return bucket
 }
 
+/** 主产品、副产品的产出化验单挂在批次上，按角色、物料和阶段区分（仅成品检/产出化验）。 */
+export function attachOutputInboundQc(orderId, record = {}) {
+  const order = getBatchOrder(orderId)
+  if (!order) throw new Error('批次指令不存在')
+  if (!Array.isArray(order.outputQcRecords)) order.outputQcRecords = []
+  const bizScope = String(record.bizScope || '成品检').trim() || '成品检'
+  if (bizScope !== '成品检') {
+    throw new Error('产出关联化验仅支持产出化验（成品检），过程检请在工序化验清单发起')
+  }
+  // 清洗历史误写入的过程检记录
+  order.outputQcRecords = order.outputQcRecords.filter((row) => {
+    const scope = String(row?.bizScope || '成品检').trim() || '成品检'
+    return scope === '成品检'
+  })
+  const row = {
+    role: record.role || '',
+    itemId: record.itemId || '',
+    stepNo: Number(record.stepNo) || null,
+    bizScope: '成品检',
+    taskId: record.taskId || '',
+    qcNo: record.qcNo || '',
+    qcStatus: record.qcStatus || '待质检',
+    updatedAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+  }
+  order.outputQcRecords.push(row)
+  appendOperationLog(order, '发起入库化验', row.qcNo || '')
+  return row
+}
+
 /** 质检提交后回写到批次步骤，并记一条 EBR */
 export function syncBatchStepQcFromTask(task) {
   if (!task || task.sourceType !== 'batch_instruction' || !task.sourceDocId) return false
@@ -318,6 +486,7 @@ export function syncBatchStepQcFromTask(task) {
     qcNo: task.qcNo || '',
     qcStatus: task.qcStatus || '',
     qcResult: task.qcResult || '',
+    inspector: task.inspector || '',
     inspectedAt: task.inspectedAt || '',
     processName: task.processName || '',
     schemeId: task.assaySchemeId || (idx >= 0 ? bucket.records[idx].schemeId : ''),
@@ -375,6 +544,22 @@ export function syncBatchStepQcFromTask(task) {
     `${label} ${task.qcResult || task.qcStatus || ''}`.trim(),
     task.inspector || undefined,
   )
+  // 过程检完成后：尝试把含量回填到本步「含量待化验」的投料行
+  if (String(task.bizScope || '') === '生产过程检' && task.qcStatus === '已完成') {
+    const frac = extractContentFractionFromQcTask(task)
+    if (frac != null) {
+      const code = String(task.itemCode || '').trim()
+      const byCode = code
+        ? listProcessItems().find((item) => String(item.code || '') === code)
+        : null
+      const itemId =
+        byCode?.id ||
+        (order.feeds || []).find((feed) => Number(feed.stepNo) === stepNo && feed.contentPending)
+          ?.itemId ||
+        ''
+      backfillFeedContentFromAssay(order.id, { stepNo, itemId, content: frac })
+    }
+  }
   return true
 }
 
@@ -399,8 +584,12 @@ function assertHardGateAllowsConfirm(order, step) {
   const gate = resolveStepGateMode(step)
   if (gate !== PROCESS_GATE_HARD) return
   const proc = step?.processId ? getProcessById(step.processId) : null
-  const schemes = resolveAssaySchemesForStep(step, proc)
+  // 确认本步只卡「过程检」硬门禁；成品检/产出化验挂在「产出」过账，不在此拦截
+  const schemes = resolveAssaySchemesForStep(step, proc).filter(
+    (s) => (s.bizScope || '生产过程检') === '生产过程检',
+  )
   const hardSchemes = schemes.filter((s) => isAssaySchemeHardGate(s))
+  if (!hardSchemes.length && !schemes.length) return
   const records = getStepQcRecords(order, step.stepNo)
   const getTask = (id) => {
     try {
@@ -625,12 +814,274 @@ export function releaseOrder(id) {
   return order
 }
 
+/** 数量还没确认的指令按槽次处理，指定下发时必须占用本产线上的一台反应设备。 */
+export function isTankChargeOrder(order) {
+  if (!order) return false
+  return order.qtyConfirmed === false || order.qty == null || order.qty === ''
+}
+
+function sameMeasureUnit(left, right) {
+  return (
+    String(left || '')
+      .trim()
+      .toLowerCase() ===
+    String(right || '')
+      .trim()
+      .toLowerCase()
+  )
+}
+
+function reactorHeldBy(tankId, exceptOrderId) {
+  return (
+    batchInstructionState.orders.find(
+      (row) => row.id !== exceptOrderId && row.status === 'running' && row.reactorTankId === tankId,
+    ) || null
+  )
+}
+
+function releaseReactorHold(order) {
+  const tankId = order?.reactorTankId
+  if (!tankId) return
+  const device = getDeviceById(tankId)
+  if (!device) return
+  if (device.occupiedBatchNo && device.occupiedBatchNo !== order.batchNo) return
+  updateDevice(tankId, {
+    occupyStatus: EQUIPMENT_OCCUPY_STATUS.CLEAN,
+    occupiedBatchNo: '',
+  })
+}
+
+/** 指定下发前看这台反应设备能不能占。ok 为 false 时不能下发。 */
+export function inspectReactorForRelease(order, tankId) {
+  if (!tankId) {
+    if (isTankChargeOrder(order)) {
+      return { ok: false, level: 'error', message: '槽次请选择本产线上的反应设备' }
+    }
+    return { ok: true, level: 'info', message: '' }
+  }
+  const device = getDeviceById(tankId)
+  if (!device || device.category !== '反应设备') {
+    return { ok: false, level: 'error', message: '请选择类别为反应设备的设备' }
+  }
+  if (device.status === EQUIPMENT_STATUS.REPAIRING || device.status === EQUIPMENT_STATUS.SCRAPPED) {
+    return { ok: false, level: 'error', message: `${device.name} 当前${device.status}，不能占用` }
+  }
+  const holder = reactorHeldBy(tankId, order?.id)
+  if (holder) {
+    return {
+      ok: false,
+      level: 'error',
+      message: `${device.name} 已被执行中批次 ${holder.batchNo} 占用。该批次完成或作废后才能再占用，某一道工序点确认不会释放这台设备。`,
+    }
+  }
+  const occupy = device.occupyStatus || EQUIPMENT_OCCUPY_STATUS.CLEAN
+  const markedBusy =
+    occupy === EQUIPMENT_OCCUPY_STATUS.OCCUPIED || occupy === EQUIPMENT_OCCUPY_STATUS.WAIT_DISCHARGE
+  if (markedBusy && device.occupiedBatchNo && device.occupiedBatchNo !== order?.batchNo) {
+    const named = batchInstructionState.orders.find((row) => row.batchNo === device.occupiedBatchNo)
+    if (named && named.status === 'running' && named.id !== order?.id) {
+      return {
+        ok: false,
+        level: 'error',
+        message: `${device.name} 已被执行中批次 ${named.batchNo} 占用。该批次完成或作废后才能再占用，某一道工序点确认不会释放这台设备。`,
+      }
+    }
+  }
+  const nominal = Number(device.nominalCapacity)
+  const working =
+    device.workingCapacity == null || device.workingCapacity === ''
+      ? null
+      : Number(device.workingCapacity)
+  const unit = device.capacityUnit || ''
+  const summary = `${device.name} · 公称 ${nominal > 0 ? nominal : '—'} ${unit} · 工作 ${
+    working > 0 ? working : '—'
+  } ${unit} · 占釜 ${occupy}`
+  const staleLedger =
+    markedBusy &&
+    !batchInstructionState.orders.some(
+      (row) =>
+        row.id !== order?.id &&
+        row.status === 'running' &&
+        (row.reactorTankId === tankId || row.batchNo === device.occupiedBatchNo),
+    )
+  const holdNote = staleLedger
+    ? `台账占釜是${occupy}，但没有执行中批次占用，可以指定。`
+    : '当前没有执行中批次占用。'
+  const releaseNote = '设备要等占用它的批次完成或作废后才释放，不是某一道工序点确认就释放。'
+  const qty = Number(order?.qty)
+  const qtyKnown = !isTankChargeOrder(order) && qty > 0
+  if (!qtyKnown) {
+    return {
+      ok: true,
+      level: 'info',
+      message: `${summary}。${holdNote}数量未确认，下发后按实投累加，转出或完结时再卡罐容。${releaseNote}`,
+    }
+  }
+  if (!sameMeasureUnit(order.unit, unit)) {
+    return {
+      ok: true,
+      level: 'info',
+      message: `${summary}。${holdNote}下达数量 ${qty} ${order.unit || ''}，与容积单位不同，不按数量拦截。${releaseNote}`,
+    }
+  }
+  if (nominal > 0 && qty - nominal > 1e-9) {
+    return {
+      ok: false,
+      level: 'error',
+      message: `${summary}。下达数量 ${qty} 超过公称容积，不能下发。`,
+    }
+  }
+  if (working > 0 && qty - working > 1e-9) {
+    return {
+      ok: true,
+      level: 'warning',
+      message: `${summary}。${holdNote}下达数量 ${qty} 超过工作容积，仍可下发。${releaseNote}`,
+    }
+  }
+  return { ok: true, level: 'info', message: `${summary}。${holdNote}${releaseNote}` }
+}
+
+function cleanNameList(values) {
+  const names = (Array.isArray(values) ? values : [])
+    .map((name) => String(name || '').trim())
+    .filter(Boolean)
+  return [...new Set(names)]
+}
+
+function cleanIdList(values) {
+  const ids = (Array.isArray(values) ? values : [])
+    .map((id) => String(id || '').trim())
+    .filter(Boolean)
+  return [...new Set(ids)]
+}
+
+/** 下发前把每步选定的设备和岗位写进配方快照。设备须在工序允许范围内。 */
+function applyReleaseStepAssignments(order, steps) {
+  if (!Array.isArray(steps)) return
+  const allowedPositions = new Set(positionOptions)
+  const byNo = new Map(steps.map((row) => [Number(row.stepNo), row]))
+  for (const step of order.routeSnapshot || []) {
+    const patch = byNo.get(Number(step.stepNo))
+    if (!patch) continue
+    const equipmentIds = cleanIdList(patch.equipmentIds)
+    const proc = step.processId ? getProcessById(step.processId) : null
+    const allow = Array.isArray(proc?.equipmentIds) ? proc.equipmentIds.filter(Boolean) : []
+    const stepLabel = step.name || step.processName || `步骤${step.stepNo}`
+    if (allow.length) {
+      const outside = equipmentIds.find((id) => !allow.includes(id))
+      if (outside) {
+        throw new Error(`${stepLabel} 的设备不在该工序允许的设备里`)
+      }
+    }
+    for (const id of equipmentIds) {
+      const device = getDeviceById(id)
+      if (
+        !device ||
+        device.status === EQUIPMENT_STATUS.SCRAPPED ||
+        device.status === EQUIPMENT_STATUS.REPAIRING
+      ) {
+        throw new Error(`${stepLabel} 的设备不可用`)
+      }
+    }
+    const positionNames = cleanNameList(patch.positionNames)
+    const unknown = positionNames.find((name) => !allowedPositions.has(name))
+    if (unknown) throw new Error(`${stepLabel} 的岗位「${unknown}」不在岗位主数据中`)
+    step.equipmentIds = equipmentIds
+    step.equipmentId = equipmentIds[0] || ''
+    step.equipmentName = equipmentIds
+      .map((id) => deviceLabelById(id))
+      .filter(Boolean)
+      .join('、')
+    step.positionNames = positionNames
+  }
+}
+
+/** 记下每步设备和岗位后下发。产线和反应设备未传入时不改原值，也不强制填写。 */
+export function confirmReleaseOrder(id, { productionLineId, reactorTankId, steps } = {}) {
+  const order = getBatchOrder(id)
+  if (!order) throw new Error('批次指令不存在')
+  if (order.status !== 'pending_release') throw new Error('只有待下发指令可以下发')
+  const lineId =
+    productionLineId === undefined
+      ? String(order.productionLineId || '').trim()
+      : String(productionLineId || '').trim()
+  const line = lineId ? getProductionLineById(lineId) : null
+  if (lineId && !line) throw new Error('产线不存在')
+  const tankId =
+    reactorTankId === undefined
+      ? String(order.reactorTankId || '').trim()
+      : String(reactorTankId || '').trim()
+  if (tankId && line && !(line.equipmentIds || []).includes(tankId)) {
+    throw new Error('请选择这条产线上的反应设备')
+  }
+  if (tankId) {
+    const inspection = inspectReactorForRelease(order, tankId)
+    if (!inspection.ok) throw new Error(inspection.message)
+  }
+  applyReleaseStepAssignments(order, steps)
+  if (line) {
+    order.productionLineId = lineId
+    order.executeBy = 'line'
+  } else if (!order.productionLineId) {
+    order.executeBy = 'formula'
+  }
+  if (tankId) {
+    const saved = updateDevice(tankId, {
+      occupyStatus: EQUIPMENT_OCCUPY_STATUS.OCCUPIED,
+      occupiedBatchNo: order.batchNo,
+    })
+    if (!saved.ok) throw new Error(saved.message || '占用反应设备失败')
+    order.reactorTankId = tankId
+  }
+  order.status = 'running'
+  appendOperationLog(
+    order,
+    '指定下发',
+    tankId ? getDeviceById(tankId)?.name || '' : line?.name || '',
+  )
+  return order
+}
+
+/** 待下发可改批次号、产线和备注。配方与数量仍用生成时的快照。 */
+export function updatePendingOrder(id, { batchNo, productionLineId, remark } = {}) {
+  const order = getBatchOrder(id)
+  if (!order) throw new Error('批次指令不存在')
+  if (order.status !== 'pending_release') throw new Error('只有待下发指令可以编辑')
+  const nextNo = String(batchNo || '').trim()
+  if (!nextNo) throw new Error('请填写批次号')
+  if (batchInstructionState.orders.some((row) => row.id !== id && row.batchNo === nextNo)) {
+    throw new Error('批次号已存在')
+  }
+  const lineId = String(productionLineId || '').trim()
+  if (lineId && !getProductionLineById(lineId)) throw new Error('产线不存在')
+  order.batchNo = nextNo
+  order.productionLineId = lineId
+  order.executeBy = lineId ? 'line' : order.executeBy || 'formula'
+  order.remark = String(remark || '').trim()
+  appendOperationLog(order, '编辑')
+  return order
+}
+
+/** 待下发且尚未投料、产出时可以删除。 */
+export function deletePendingOrder(id) {
+  const order = getBatchOrder(id)
+  if (!order) throw new Error('批次指令不存在')
+  if (order.status !== 'pending_release') throw new Error('只有待下发指令可以删除')
+  if ((order.feeds || []).length || (order.outputs || []).length) {
+    throw new Error('已有投料或产出，不能删除')
+  }
+  const index = batchInstructionState.orders.findIndex((row) => row.id === id)
+  if (index >= 0) batchInstructionState.orders.splice(index, 1)
+  return true
+}
+
 /** 停产 / 作废：待下发与执行中均可作废；已完成不可。 */
 export function cancelBatchOrder(id) {
   const order = getBatchOrder(id)
   if (!order) throw new Error('批次指令不存在')
   if (order.status === 'done') throw new Error('已完成的指令不能作废')
   if (order.status === 'cancelled') return order
+  releaseReactorHold(order)
   order.status = 'cancelled'
   order.cancelledAt = dayjs().format('YYYY-MM-DD HH:mm')
   appendOperationLog(order, '终止')
@@ -668,10 +1119,11 @@ export function confirmStep(id, stepNo, actuals, formValues = {}) {
   })
 
   const formTemplate = resolveStepFormTemplate(step)
-  // 实投量改由投料过账按明细填写；旧模板快照里若仍带 OP_ACTUAL_FEED 则忽略
-  const fields = (formTemplate?.fields || []).filter(
-    (field) => String(field.code || '').toUpperCase() !== 'OP_ACTUAL_FEED',
-  )
+  // 固定项（出料量/备注/系统项）始终采集；模板只追加其余字段。实投量仍走投料过账。
+  const fields = [
+    ...stepConfirmFixedFieldDefs(),
+    ...filterTemplateFieldsBeyondFixed(formTemplate?.fields || []),
+  ]
   const operatedAt = dayjs().format('YYYY-MM-DD HH:mm:ss')
   const systemCtx = {
     operatedAt,
@@ -694,6 +1146,12 @@ export function confirmStep(id, stepNo, actuals, formValues = {}) {
       throw new Error(`请填写「${field.name || field.code}」`)
     }
     if (empty && !isProcessFormSystemField(field)) return
+    const code = String(field.code || '').toUpperCase()
+    // 批记录时间戳：优先用补录的操作时间
+    const rowAt =
+      code === 'OP_OPERATED_AT' && String(value || '').trim()
+        ? String(value).trim()
+        : String(formValues?.OP_OPERATED_AT || '').trim() || operatedAt
     resolvedFormRows.push({
       stepNo: step.stepNo,
       stepName: step.name || '',
@@ -703,9 +1161,13 @@ export function confirmStep(id, stepNo, actuals, formValues = {}) {
       value,
       displayValue: formatFormDisplayValue(value),
       valueSource: isProcessFormSystemField(field) ? 'system' : 'manual',
-      at: operatedAt,
+      at: rowAt,
     })
   })
+  const recordAt = String(formValues?.OP_OPERATED_AT || '').trim() || operatedAt
+  const recordOperator =
+    String(formValues?.OP_OPERATOR || '').trim() ||
+    resolveProcessFormSystemValue('operator', systemCtx)
 
   order.paramActuals = (order.paramActuals || []).filter((p) => p.stepNo !== step.stepNo)
   const paramRows = []
@@ -741,8 +1203,8 @@ export function confirmStep(id, stepNo, actuals, formValues = {}) {
       value: row.displayValue,
       valueSource: row.valueSource,
     })),
-    operator: resolveProcessFormSystemValue('operator', systemCtx),
-    at: operatedAt,
+    operator: recordOperator,
+    at: recordAt,
   })
 
   if (!order.confirmedSteps.includes(step.stepNo)) order.confirmedSteps.push(step.stepNo)
@@ -752,52 +1214,177 @@ export function confirmStep(id, stepNo, actuals, formValues = {}) {
   return order
 }
 
-export function postFeed(id, { batchId, qty, stepNo, contentUsed }) {
+export function postFeed(id, { batchId, qty, stepNo, contentUsed, feedSource, allowEmptyContent }) {
   const order = getBatchOrder(id)
   if (!order || order.status !== 'running') throw new Error('执行中的指令才能投料')
   const batch = getMaterialBatch(batchId)
   if (!batch) throw new Error('原料批次不存在')
   const line = (order.theoreticalFeeds || []).find((f) => f.itemId === batch.itemId)
-  if (!line && !order.reworkOfBatchId) throw new Error('该原料不在本配方投料明细里')
+  if (!line && !order.reworkOfBatchId && !order.reextractOfBatchId) {
+    throw new Error('该原料不在本配方投料明细里')
+  }
   const take = round3(qty)
   if (!(take > 0)) throw new Error('实投量须大于 0')
-  const content =
-    contentUsed != null && contentUsed !== ''
-      ? Number(contentUsed)
-      : batch.content != null && batch.content !== ''
-        ? Number(batch.content)
-        : null
-  if (line?.convertByContent && !(content > 0)) {
+  const hasUserContent = contentUsed != null && contentUsed !== ''
+  let content = null
+  if (hasUserContent) content = Number(contentUsed)
+  else if (!allowEmptyContent && batch.content != null && batch.content !== '') {
+    content = Number(batch.content)
+  }
+  if (line?.convertByContent && !(content > 0) && !allowEmptyContent) {
     throw new Error(`${itemLabel(batch.itemId)} 按含量折算，请填写含量`)
   }
-  consumeBatchQty(batchId, take, { orderId: order.id, orderNo: order.batchNo })
+  const source =
+    feedSource ||
+    (order.reextractOfBatchId ? 'reextract' : batch.status === 'await_reuse' ? 'recycle' : 'fresh')
+  if (source === 'recycle') {
+    const donor = batchInstructionState.orders.find((o) =>
+      (o.outputs || []).some((x) => x.batchId === batch.id),
+    )
+    const donorOutput = donor?.outputs?.find((x) => x.batchId === batch.id)
+    if (donor && donorOutput) assertSideOutputAssayAllowsUse(donor, donorOutput)
+  }
+  consumeBatchQty(batchId, take, { orderId: order.id, orderNo: order.batchNo }, order, source)
+  const isRecycle = source === 'recycle' || batch.status === 'await_reuse'
+  const isReextract = source === 'reextract' || Boolean(order.reextractOfBatchId)
+  const contentPending = Boolean(allowEmptyContent) && !(Number(content) > 0)
   order.feeds.push({
+    id: `feed-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     materialBatchId: batch.id,
     batchNo: batch.batchNo,
     itemId: batch.itemId,
     qty: take,
     stepNo: Number(stepNo) || 1,
     contentUsed: content,
+    contentPending,
+    locationId: batch.locationId || '',
+    isRecycle,
+    isReextract,
+    feedSource: source,
     operator: currentOperator(),
     at: dayjs().format('YYYY-MM-DD HH:mm'),
   })
-  appendOperationLog(order, '投料', `${itemLabel(batch.itemId)} ${take}`)
+  appendOperationLog(
+    order,
+    isReextract ? '再提投料' : isRecycle ? '回流投料' : '投料',
+    `${itemLabel(batch.itemId)} ${take}${contentPending ? '（含量待化验回填）' : ''}`,
+  )
   return order
 }
 
-/** 按投料明细一次过账多行（实投 + 含量），扣库存 */
+/** 按投料明细一次过账多行（实投 + 含量），扣库存；fifo 行按指定库位先进先出拆批 */
 export function postFeeds(id, lines = []) {
-  const rows = (lines || []).filter((row) => row && row.batchId && Number(row.qty) > 0)
-  if (!rows.length) throw new Error('请至少填写一行实投量')
-  rows.forEach((row) => {
+  const order = getBatchOrder(id)
+  if (!order) throw new Error('批次指令不存在')
+  const expanded = []
+  ;(lines || []).forEach((row) => {
+    if (!row || !(Number(row.qty) > 0)) return
+    if (row.fifo && row.itemId) {
+      const locationId = String(row.locationId || '').trim()
+      if (!locationId) throw new Error(`${itemLabel(row.itemId)} 请选择来源库位（储罐/仓库）`)
+      const allocs = planFeedFifoAllocations(row.itemId, row.qty, order, {
+        source: row.feedSource || 'fresh',
+        locationId,
+      })
+      const allowEmpty = Boolean(row.allowEmptyContent)
+      const hasUserContent = row.contentUsed != null && row.contentUsed !== ''
+      allocs.forEach((alloc) => {
+        expanded.push({
+          batchId: alloc.batchId,
+          qty: alloc.qty,
+          stepNo: row.stepNo,
+          // FIFO 盲投：不把批次含量塞回去，留给化验回填
+          contentUsed: hasUserContent ? row.contentUsed : null,
+          allowEmptyContent: allowEmpty || !hasUserContent,
+          feedSource: row.feedSource || 'fresh',
+        })
+      })
+      return
+    }
+    if (row.batchId) {
+      expanded.push({
+        batchId: row.batchId,
+        qty: row.qty,
+        stepNo: row.stepNo,
+        contentUsed: row.contentUsed,
+        allowEmptyContent: false,
+        feedSource: row.feedSource,
+      })
+    }
+  })
+  if (!expanded.length) throw new Error('请至少填写一行实投量')
+  expanded.forEach((row) => {
     postFeed(id, {
       batchId: row.batchId,
       qty: row.qty,
       stepNo: row.stepNo,
       contentUsed: row.contentUsed,
+      feedSource: row.feedSource,
+      allowEmptyContent: row.allowEmptyContent,
     })
   })
   return getBatchOrder(id)
+}
+
+/**
+ * 回填/补录投料含量。content 按 0~1 小数存储（与 contentUsed 一致）。
+ * 可按 feedId 精确补录，或按步骤/物料批量回填待补行。
+ */
+export function backfillFeedContentFromAssay(orderId, { stepNo, itemId, content, feedId } = {}) {
+  const order = getBatchOrder(orderId)
+  if (!order) return { ok: false, updated: 0, message: '批次指令不存在' }
+  const frac = Number(content)
+  if (!Number.isFinite(frac) || !(frac > 0)) {
+    return { ok: false, updated: 0, message: '请填写有效含量' }
+  }
+  const step = Number(stepNo)
+  const targetId = String(feedId || '').trim()
+  let updated = 0
+  ;(order.feeds || []).forEach((feed) => {
+    if (targetId) {
+      if (String(feed.id || '') !== targetId) return
+    } else {
+      if (step > 0 && Number(feed.stepNo) !== step) return
+      if (itemId && feed.itemId !== itemId) return
+      if (!feed.contentPending && feed.contentUsed != null && feed.contentUsed !== '') return
+    }
+    feed.contentUsed = frac
+    feed.contentPending = false
+    updated += 1
+  })
+  if (updated) {
+    appendOperationLog(
+      order,
+      '含量回填',
+      targetId ? `补录投料含量 ${updated} 行` : `步骤 ${step || '—'} 回填 ${updated} 行投料含量`,
+    )
+  }
+  return { ok: true, updated }
+}
+
+function extractContentFractionFromQcTask(task) {
+  for (const line of task?.lineItems || []) {
+    if (line.content != null && line.content !== '') {
+      const n = Number(line.content)
+      if (Number.isFinite(n) && n > 0) return Math.abs(n) <= 1 ? n : n / 100
+    }
+  }
+  const bags = []
+  if (Array.isArray(task?.templateFields)) bags.push(task.templateFields)
+  ;(task?.lineItems || []).forEach((line) => {
+    if (Array.isArray(line.templateFields)) bags.push(line.templateFields)
+  })
+  for (const fields of bags) {
+    for (const field of fields) {
+      const label = `${field?.name || ''}${field?.code || ''}${field?.label || ''}`
+      if (!/含量|content|品位|浓度|assay/i.test(label)) continue
+      const raw = field.value ?? field.actual ?? field.result
+      const n = Number(raw)
+      if (!Number.isFinite(n) || !(n > 0)) continue
+      return Math.abs(n) <= 1 ? n : n / 100
+    }
+  }
+  return null
 }
 
 export function postOutput(id, { rows, locationId, deviation, stepNo }) {
@@ -812,7 +1399,7 @@ export function postOutput(id, { rows, locationId, deviation, stepNo }) {
     const plan = expected.find(
       (line) => line.itemId === row.itemId && (!row.role || line.role === row.role),
     )
-    if (expected.length && !plan && !order.reworkOfBatchId) {
+    if (expected.length && !plan && !order.reworkOfBatchId && !order.reextractOfBatchId) {
       throw new Error(`${itemLabel(row.itemId)} 不在本配方产出明细里`)
     }
     if (step > 0 && plan?.stepNo && Number(plan.stepNo) !== step) {
@@ -821,32 +1408,90 @@ export function postOutput(id, { rows, locationId, deviation, stepNo }) {
       )
     }
     const role = row.role || plan?.role || 'by'
+    const disposition = normalizeOutputDisposition(row.disposition)
+    if (!disposition) throw new Error(`${itemLabel(row.itemId)} 请选择处理方式`)
+    const makeBatch = createsOutputBatchDisposition(disposition)
+    const rowLocation = makeBatch ? row.locationId || locationId : ''
+    if (makeBatch && !rowLocation) {
+      const tip =
+        disposition === 'tank' ? '储罐' : disposition === 'warehouse' ? '仓库' : '去向位置'
+      throw new Error(`${itemLabel(row.itemId)} 请选择${tip}`)
+    }
+    if (makeBatch) {
+      const tank = listTanks().find((item) => item.id === rowLocation)
+      if (!tank) throw new Error(`${itemLabel(row.itemId)} 去向位置不存在`)
+      const needKind = locationKindForDisposition(disposition)
+      const actualKind = tank.kind === 'tank' ? 'tank' : 'silo'
+      if (needKind && actualKind !== needKind) {
+        throw new Error(
+          disposition === 'tank'
+            ? `${itemLabel(row.itemId)} 入储罐请选择储罐`
+            : `${itemLabel(row.itemId)} 入仓库请选择仓库或料仓`,
+        )
+      }
+    }
     const roleCode = { main: 'FG', co: 'CO', by: 'BY', recycle: 'RC', waste: 'WS' }[role] || 'BY'
-    const seq = (order.outputs || []).filter((o) => o.role === role).length + 1
-    const batch = addOutputBatch({
-      itemId: row.itemId,
-      qty,
-      locationId,
-      batchNo: `${order.batchNo}-${roleCode}${seq > 1 ? `-${seq}` : ''}`,
-      sourceId: order.id,
-      previousBatchId: order.reworkOfBatchId || '',
-    })
+    const seq =
+      (order.outputs || []).filter((o) => o.role === role).length +
+      created.filter((o) => o.role === role).length +
+      1
+    const batchNo = `${order.batchNo}-${roleCode}${seq > 1 ? `-${seq}` : ''}`
+    const batchStatus = batchStatusForDisposition(disposition)
+    const movementType =
+      disposition === 'reuse'
+        ? '产出回用'
+        : disposition === 'reextract'
+          ? '产出再提'
+          : disposition === 'pending_decide'
+            ? '产出待判定'
+            : disposition === 'scrap'
+              ? '产出废弃'
+              : '产出入库'
+    const batch = makeBatch
+      ? addOutputBatch({
+          itemId: row.itemId,
+          qty,
+          locationId: rowLocation,
+          batchNo,
+          status: batchStatus,
+          disposition,
+          sourceType:
+            disposition === 'reuse' ||
+            disposition === 'reextract' ||
+            disposition === 'pending_decide' ||
+            disposition === 'scrap'
+              ? disposition
+              : 'output',
+          movementType,
+          sourceId: order.id,
+          previousBatchId: order.reworkOfBatchId || order.reextractOfBatchId || '',
+        })
+      : null
+    const assayScopes = normalizeOutputAssayScopes(row.assayScopes)
     created.push({
+      id: `out-${Date.now()}-${created.length}`,
       role,
       itemId: row.itemId,
       qty,
-      batchId: batch.id,
-      batchNo: batch.batchNo,
+      disposition,
+      batchId: batch?.id || '',
+      batchNo: batch?.batchNo || '',
+      locationId: rowLocation,
       stepNo: step > 0 ? step : plan?.stepNo || null,
+      assayScopes,
+      assayHardGate: Boolean(row.assayHardGate) || assayScopes.length > 0,
       at: dayjs().format('YYYY-MM-DD HH:mm'),
     })
   })
   if (!created.length) throw new Error('请至少填写一行实际产出')
-  const inbound = createOutputInboundOrder(order, created, locationId)
-  created.forEach((row) => {
-    row.inboundOrderId = inbound.id
-    row.inboundOrderNo = inbound.docNo
-  })
+  const inboundRows = created.filter((row) => isStockOutputDisposition(row.disposition))
+  const inbound = inboundRows.length ? createOutputInboundOrder(order, inboundRows) : null
+  if (inbound) {
+    inboundRows.forEach((row) => {
+      row.inboundOrderId = inbound.id
+      row.inboundOrderNo = inbound.docNo
+    })
+  }
   order.outputs = [...(order.outputs || []), ...created]
   const mainQty = round3(
     order.outputs.filter((r) => r.role === 'main').reduce((sum, r) => sum + Number(r.qty || 0), 0),
@@ -854,13 +1499,26 @@ export function postOutput(id, { rows, locationId, deviation, stepNo }) {
   order.actualOutput = mainQty > 0 ? mainQty : order.actualOutput || 0
   order.yieldGap = yieldGap(order.actualOutput, order.theoreticalOutput)
   if (deviation != null && deviation !== '') order.deviation = deviation
-  appendOperationLog(order, '产出入库', `${created.length} 行，入库单 ${inbound.docNo}`)
+  const dispositionText = ['pending_decide', 'warehouse', 'tank', 'reuse', 'reextract', 'scrap']
+    .map((key) => {
+      const count = created.filter((row) => row.disposition === key).length
+      return count ? `${OUTPUT_DISPOSITION_LABEL[key]} ${count} 行` : ''
+    })
+    .filter(Boolean)
+    .join('，')
+  appendOperationLog(
+    order,
+    inbound ? '产出入库' : '产出登记',
+    inbound ? `${dispositionText}，入库单 ${inbound.docNo}` : dispositionText,
+  )
   return order
 }
 
-/** 产出过账同时记一张已入库单。去向批号是罐内物料批，入库单号是这张单据。 */
-function createOutputInboundOrder(order, created, locationId) {
-  const warehouse = listTanks().find((row) => row.id === locationId)?.name || ''
+/** 产出过账同时记一张已入库单。每行可以进不同罐或仓。 */
+function createOutputInboundOrder(order, created) {
+  const locationName = (id) => listTanks().find((row) => row.id === id)?.name || ''
+  const names = [...new Set(created.map((row) => locationName(row.locationId)).filter(Boolean))]
+  const warehouse = names.length === 1 ? names[0] : names.join('、')
   const who = currentOperator()
   const hasMain = created.some((row) => row.role === 'main')
   return addInboundOrder({
@@ -891,7 +1549,7 @@ function createOutputInboundOrder(order, created, locationId) {
         specModel: card.specModel || '',
         qty: row.qty,
         unit: itemUnit(row.itemId) || order.unit || 'kg',
-        warehouse,
+        warehouse: locationName(row.locationId) || warehouse,
         lineSource: '生产',
         lineStatus: '已入库',
         barcodeBatchNo: row.batchNo,
@@ -948,16 +1606,138 @@ export function completeOrder(id) {
   const order = getBatchOrder(id)
   const errors = completionErrors(order)
   if (errors.length) throw new Error(errors.join('；'))
+  releaseReactorHold(order)
   order.status = 'done'
   order.completedAt = dayjs().format('YYYY-MM-DD HH:mm')
   appendOperationLog(order, '完成')
   return order
 }
 
+/** 产出化验硬门禁：有关联待检或不合格时，不能回流投料 / 开再提。 */
+export function assertSideOutputAssayAllowsUse(order, outputRow) {
+  if (!order || !outputRow) return
+  const hard =
+    outputRow.assayHardGate === true ||
+    (Array.isArray(outputRow.assayScopes) && outputRow.assayScopes.length > 0) ||
+    (order.outputQcRecords || []).some(
+      (row) =>
+        row.itemId === outputRow.itemId &&
+        row.role === outputRow.role &&
+        Number(row.stepNo) === Number(outputRow.stepNo),
+    )
+  if (!hard) return
+  const records = (order.outputQcRecords || []).filter(
+    (row) =>
+      row.itemId === outputRow.itemId &&
+      (!outputRow.role || row.role === outputRow.role) &&
+      (!outputRow.stepNo || Number(row.stepNo) === Number(outputRow.stepNo)),
+  )
+  if (!records.length) {
+    throw new Error(`${itemLabel(outputRow.itemId)} 已勾选产出化验，请先完成化验再回用或再提`)
+  }
+  const { getQcTaskById: loadQc } = require('@/store/qcTaskStore')
+  for (const row of records) {
+    const task = row.taskId ? loadQc(row.taskId) : null
+    const status = task?.qcStatus || row.qcStatus || ''
+    const result = task?.qcResult || row.qcResult || ''
+    if (!status || /待|draft|pending/i.test(String(status))) {
+      throw new Error(`${itemLabel(outputRow.itemId)} 产出化验未完成，不能回用或再提`)
+    }
+    if (/不通过|不合格|FAIL/i.test(String(result))) {
+      throw new Error(`${itemLabel(outputRow.itemId)} 产出化验不合格，不能回用或再提`)
+    }
+  }
+}
+
+/**
+ * 待判定批次确认最终去向：入仓库 / 入储罐 / 回用 / 再提 / 废弃。
+ */
+export function confirmOutputDisposition(orderId, { outputId, batchId, disposition, locationId }) {
+  const order = getBatchOrder(orderId)
+  if (!order) throw new Error('指令不存在')
+  const output =
+    (order.outputs || []).find((row) => row.id === outputId) ||
+    (order.outputs || []).find((row) => row.batchId === batchId)
+  if (!output) throw new Error('产出行不存在')
+  const batch = getMaterialBatch(output.batchId || batchId)
+  if (!batch) throw new Error('产出批次不存在')
+  if (batch.status !== 'await_decide' && output.disposition !== 'pending_decide') {
+    throw new Error('只有待判定产出才能确认去向')
+  }
+  const next = normalizeOutputDisposition(disposition)
+  if (!next || next === 'pending_decide') throw new Error('请选择最终处理方式')
+  if (!createsOutputBatchDisposition(next) || next === 'pending_decide') {
+    throw new Error('处理方式不正确')
+  }
+  const loc = locationId || output.locationId || batch.locationId
+  if (!loc) throw new Error('请选择去向位置')
+  const tank = listTanks().find((item) => item.id === loc)
+  if (!tank) throw new Error('去向位置不存在')
+  const needKind = locationKindForDisposition(next)
+  const actualKind = tank.kind === 'tank' ? 'tank' : 'silo'
+  if (needKind && actualKind !== needKind) {
+    throw new Error(next === 'tank' ? '入储罐请选择储罐' : '入仓库请选择仓库或料仓')
+  }
+  // 回用/再提去向可先确认；硬门禁在回流投料列表 / 开再提指令时拦截。
+  output.disposition = next
+  output.locationId = loc
+  batch.disposition = next
+  batch.locationId = loc
+  batch.status = batchStatusForDisposition(next)
+  batch.sourceType =
+    next === 'warehouse' || next === 'tank' ? 'output' : next === 'scrap' ? 'scrap' : next
+  let inbound = null
+  if (isStockOutputDisposition(next)) {
+    inbound = createOutputInboundOrder(order, [output])
+    output.inboundOrderId = inbound.id
+    output.inboundOrderNo = inbound.docNo
+  }
+  appendOperationLog(
+    order,
+    '确认产出去向',
+    `${itemLabel(output.itemId)} → ${OUTPUT_DISPOSITION_LABEL[next]}${
+      inbound ? `，入库单 ${inbound.docNo}` : ''
+    }`,
+  )
+  return { order, batch, inbound }
+}
+
+/** 待判定 / 待回用 / 待再提产出汇总，供待处置菜单。 */
+export function listPendingDispositionOutputs() {
+  const statuses = new Set(['await_decide', 'await_reuse', 'await_reextract'])
+  const rows = []
+  batchInstructionState.orders.forEach((order) => {
+    ;(order.outputs || []).forEach((output) => {
+      const batch = getMaterialBatch(output.batchId)
+      if (!batch || !statuses.has(batch.status)) return
+      if (!(Number(batch.qty) > 0)) return
+      rows.push({
+        key: `${order.id}-${output.id || output.batchId}`,
+        orderId: order.id,
+        orderNo: order.batchNo,
+        outputId: output.id,
+        batchId: batch.id,
+        batchNo: batch.batchNo,
+        itemId: output.itemId || batch.itemId,
+        role: output.role,
+        disposition: output.disposition || batch.disposition,
+        locationId: batch.locationId || output.locationId,
+        qty: batch.qty,
+        unit: batch.unit,
+        status: batch.status,
+        stepNo: output.stepNo,
+        at: output.at,
+        assayHardGate: Boolean(output.assayHardGate),
+      })
+    })
+  })
+  return rows.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
+}
+
 export function createRework({ sourceBatchId, qty }) {
   const src = getMaterialBatch(sourceBatchId)
   if (!src) throw new Error('原批次不存在')
-  if (src.status !== 'released') throw new Error('只能对合格批次返工')
+  if (src.status !== 'released') throw new Error('只能对已放行批次返工')
   const take = round3(qty)
   if (!(take > 0) || take > Number(src.qty) + 1e-9)
     throw new Error('返工批量不能超过原批次剩余重量')
@@ -995,12 +1775,70 @@ export function createRework({ sourceBatchId, qty }) {
     deviation: '',
     remark: '',
     reworkOfBatchId: src.id,
+    reextractOfBatchId: '',
     sourceLabel: `返工 ${src.batchNo}`,
     demandQty: take,
     createdAt: dayjs().format('YYYY-MM-DD HH:mm'),
     createdBy: currentOperator(),
   }
   appendOperationLog(order, '生成返工指令', src.batchNo || '')
+  batchInstructionState.orders.unshift(order)
+  return order
+}
+
+/** 对待再提批次开再提指令：投料扣这批，产出记前后批次。 */
+export function createReextract({ sourceBatchId, qty }) {
+  const src = getMaterialBatch(sourceBatchId)
+  if (!src) throw new Error('原批次不存在')
+  if (src.status !== 'await_reextract') throw new Error('只能对待再提批次开再提指令')
+  if (!(Number(src.qty) > 0)) throw new Error('待再提批次已无剩余量')
+  const take = round3(qty != null && qty !== '' ? qty : src.qty)
+  if (!(take > 0) || take > Number(src.qty) + 1e-9) {
+    throw new Error('再提批量不能超过待再提批次剩余量')
+  }
+  const origin = batchInstructionState.orders.find((o) =>
+    o.outputs?.some((x) => x.batchId === src.id),
+  )
+  const originOutput = origin?.outputs?.find((x) => x.batchId === src.id)
+  if (origin && originOutput) assertSideOutputAssayAllowsUse(origin, originOutput)
+  const formula = origin ? getFormula(origin.formulaId) : null
+  const batchNo = nextBatchNo()
+  const order = {
+    id: `bo-rx-${Date.now()}`,
+    batchNo,
+    status: 'running',
+    seq: 1,
+    batchCount: 1,
+    qty: take,
+    unit: src.unit || 'kg',
+    formulaId: formula?.id || '',
+    formulaVersion: formula?.version || '',
+    formulaName: formula ? `${formula.name} 再提` : '再提',
+    itemId: origin?.itemId || src.itemId,
+    theoreticalOutput: formula ? round3(take * Number(formula.theoreticalYield || 1)) : take,
+    theoreticalFeeds: [{ itemId: src.itemId, qty: take, feedSequence: 1, convertByContent: false }],
+    expectedOutputs: [{ role: 'main', itemId: origin?.itemId || src.itemId, qty: take }],
+    routeSnapshot: snapshotSteps(formula?.steps || [{ stepNo: 1, name: '再提', setpoints: {} }]),
+    equipmentRoute: snapshotEquipmentRoute(formula),
+    feeds: [],
+    paramActuals: [],
+    formActuals: [],
+    ebrEntries: [],
+    stepQcMap: {},
+    confirmedSteps: [],
+    outputs: [],
+    actualOutput: null,
+    yieldGap: null,
+    deviation: '',
+    remark: '',
+    reworkOfBatchId: '',
+    reextractOfBatchId: src.id,
+    sourceLabel: `再提 ${src.batchNo}`,
+    demandQty: take,
+    createdAt: dayjs().format('YYYY-MM-DD HH:mm'),
+    createdBy: currentOperator(),
+  }
+  appendOperationLog(order, '生成再提指令', src.batchNo || '')
   batchInstructionState.orders.unshift(order)
   return order
 }
@@ -1027,5 +1865,6 @@ export function traceByBatch(batchId) {
     (o.outputs || []).some((x) => x.batchId === batchId),
   )
   const rework = batchInstructionState.orders.filter((o) => o.reworkOfBatchId === batchId)
-  return { batch, asFeed, asOutput, rework }
+  const reextract = batchInstructionState.orders.filter((o) => o.reextractOfBatchId === batchId)
+  return { batch, asFeed, asOutput, rework, reextract }
 }

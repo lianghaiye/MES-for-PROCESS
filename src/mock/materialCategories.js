@@ -13,8 +13,11 @@ const DEMO_MATERIAL_CATEGORIES = [
   { key: 'cat-solvent', code: '011', title: '溶剂', count: 0 },
   { key: 'cat-pigment', code: '012', title: '颜填料', count: 0 },
   { key: 'cat-additive', code: '013', title: '助剂辅料', count: 0 },
+  { key: 'cat-li-raw', code: '014', title: '含锂原料', count: 0 },
+  { key: 'cat-wet-aux', code: '015', title: '湿法辅料', count: 0 },
   { key: 'cat-intermediate', code: '020', title: '中间体', count: 0 },
   { key: 'cat-recycle', code: '030', title: '回收料', count: 0 },
+  { key: 'cat-byproduct', code: '031', title: '副产品', count: 0 },
   { key: 'cat-waste', code: '040', title: '废弃物', count: 0 },
 ]
 

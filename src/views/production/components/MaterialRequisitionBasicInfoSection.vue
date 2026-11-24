@@ -53,12 +53,13 @@ const fields = computed(() => {
   return [
     { key: 'reqNo', label: '申请单号' },
     { key: 'modeLabel', label: '领料方式' },
+    { key: 'workOrderCode', label: '批次指令' },
     {
       key: 'salesOrderNo',
       label: '销售订单',
       format: () => (r.salesOrderNo && r.salesOrderNo !== 'MULTI' ? display(r.salesOrderNo) : '—'),
     },
-    { key: 'workshop', label: '领用车间' },
+    { key: 'workshop', label: '申请车间' },
     { key: 'receiveWarehouse', label: '领入仓库' },
     ...(r.auditStatus === MATERIAL_REQ_AUDIT.REJECTED && r.rejectReason
       ? [{ key: 'rejectReason', label: '驳回原因', fullRow: true }]

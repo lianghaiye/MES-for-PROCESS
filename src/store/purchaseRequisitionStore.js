@@ -1,7 +1,6 @@
 import { reactive, watch } from 'vue'
 import dayjs from 'dayjs'
 import {
-  clonePurchaseRequisitions,
   recalcRequisitionTotals,
   createLineItem,
   stampRequisitionLineSalesOrderNos,
@@ -14,13 +13,6 @@ import {
   reconcilePurchaseRequisitionDraftStatuses,
 } from '@/store/purchaseOrderStore'
 import { writeDefaultSuppliersFromMergedLines } from '@/utils/defaultSupplierWriteback'
-import {
-  ensureProductionPlanOrderTreeDemoRequisitions,
-  createProductionPlanOrderTreeDemoRequisitions,
-} from '@/mock/productionPlanOrderTreeSeed'
-import { ensureCrossDemoPurchaseRequisitions } from '@/mock/crossModuleDemoSeed'
-import { ensureSettleUnitDemoPurchaseRequisitions } from '@/mock/settleUnitPurchaseDemoSeed'
-import { ensurePackageConvertDemoPurchaseRequisitions } from '@/mock/packageConvertPurchaseDemoSeed'
 import { materialInfoState } from '@/store/materialInfoStore'
 import { convertStockDemandToPurchase } from '@/utils/purchaseUomConvert'
 import { persistJson, safeSetItem } from '@/utils/safeStorage'
@@ -40,8 +32,8 @@ function resolveEarliestDeliveryDate(lineItems, fallback) {
 
 const STORAGE_KEY = 'i_doms_purchase_requisitions'
 const SEED_VERSION_KEY = 'i_doms_purchase_requisitions_seed_v'
-/** v9：包装换算演示申请单 CGSQ-PKG-CONVERT-001（105个→2盒） */
-const CURRENT_SEED_VERSION = '9'
+/** v10：清空离散制造演示采购申请 */
+const CURRENT_SEED_VERSION = '10'
 let reqSeq = 20
 
 function loadFromStorage() {
@@ -79,109 +71,15 @@ function normalizeRequisitionLinePoStatus(requisitions) {
 }
 
 function initRequisitions() {
-  const base = shouldReseed()
-    ? clonePurchaseRequisitions()
-    : loadFromStorage() || clonePurchaseRequisitions()
-  const list = ensurePackageConvertDemoPurchaseRequisitions(
-    ensureSettleUnitDemoPurchaseRequisitions(
-      ensureCrossDemoPurchaseRequisitions(ensureProductionPlanOrderTreeDemoRequisitions(base)),
-    ),
-  )
+  const list = shouldReseed() ? [] : loadFromStorage() || []
   list.forEach((req) => stampRequisitionLineSalesOrderNos(req))
   normalizeRequisitionLinePoStatus(list)
-  return ensureCgsq2026060001InList(list)
+  return list
 }
 
-/** 保证演示单 CGSQ2026060001 始终在列表中（按单号/id 去重后置顶） */
-function buildCgsq2026060001Demo() {
-  try {
-    const demos = createProductionPlanOrderTreeDemoRequisitions()
-    if (demos?.[0]) return demos[0]
-  } catch {
-    /* ignore */
-  }
-  // 硬编码兜底，避免生产计划 store 未就绪时演示单丢失
-  return {
-    id: 'pr-pp-tree-demo-1',
-    reqNo: 'CGSQ2026060001',
-    salesOrderNo: '1-20260512-005',
-    docStatus: '待处理',
-    overdueStatus: '未逾期',
-    purchaseOrderNo: '',
-    urgency: '正常',
-    plannedQty: 2,
-    amountWan: 0,
-    deliveryDate: '2026-08-17',
-    estimatedArrivalDate: '2026-08-17',
-    orderDate: '2026-06-06',
-    source: '生产计划',
-    receivingWarehouse: '原材料仓',
-    operator: 'admin1',
-    creator: 'admin1',
-    createdAt: '2026-08-07 19:32:30',
-    updatedAt: dayjs().format('YYYY-MM-DD HH:mm'),
-    remark: '生产计划演示：外购件采购申请',
-    lineItems: [
-      {
-        id: 'pr-pp-tree-demo-line-1',
-        inventoryName: '立式多级离心泵',
-        inventoryCode: 'CP2610002',
-        productName: '立式多级离心泵',
-        productCode: 'CP2610002',
-        specModel: 'ISG50-160',
-        materialType: '零部件',
-        supplyType: '外购件',
-        unit: '台',
-        purchaseUnit: '台',
-        inventoryUnit: '台',
-        stockQty: 0,
-        demandQty: 2,
-        planPurchaseQty: 2,
-        supplierName: '',
-        deliveryDate: '2026-08-17',
-        expectedArrivalDate: '2026-08-17',
-        receivingWarehouse: '原材料仓',
-        salesOrderNo: '1-20260512-005',
-        poGenStatus: '未生成采购',
-        purchaseOrderNos: '',
-      },
-    ],
-  }
-}
-
-function ensureCgsq2026060001InList(list) {
-  const rows = Array.isArray(list) ? [...list] : []
-  const idx = rows.findIndex((r) => r.id === 'pr-pp-tree-demo-1' || r.reqNo === 'CGSQ2026060001')
-  const demo = buildCgsq2026060001Demo()
-  if (idx >= 0) {
-    const existing = rows[idx]
-    rows[idx] = {
-      ...demo,
-      ...existing,
-      id: 'pr-pp-tree-demo-1',
-      reqNo: 'CGSQ2026060001',
-      lineItems: existing.lineItems?.length > 0 ? existing.lineItems : demo.lineItems,
-    }
-    return rows
-  }
-  rows.unshift(demo)
-  return rows
-}
-
-/** 运行时补齐：列表页挂载时可调用 */
+/** 演示申请单已停用，列表页挂载时不再回灌 */
 export function ensureDemoPurchaseRequisitionCgsq2026060001() {
-  if (!purchaseRequisitionState?.requisitions) return null
-  const next = ensureCgsq2026060001InList(purchaseRequisitionState.requisitions)
-  const missing = !purchaseRequisitionState.requisitions.some((r) => r.reqNo === 'CGSQ2026060001')
-  if (missing || next.length !== purchaseRequisitionState.requisitions.length) {
-    purchaseRequisitionState.requisitions.splice(
-      0,
-      purchaseRequisitionState.requisitions.length,
-      ...next,
-    )
-    persist()
-  }
-  return purchaseRequisitionState.requisitions.find((r) => r.reqNo === 'CGSQ2026060001') || null
+  return null
 }
 
 export function generateReqNo() {
@@ -213,6 +111,8 @@ export { generatePurchaseOrderNo } from '@/store/purchaseOrderStore'
 export const purchaseRequisitionState = reactive({
   requisitions: initRequisitions(),
 })
+
+persist()
 
 watch(
   () => purchaseRequisitionState.requisitions,

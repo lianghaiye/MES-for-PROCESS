@@ -62,9 +62,18 @@ export function qcTemplateScopeTypeLabel(scopeType) {
   return hit?.label || '—'
 }
 
+/** 过程检保留化验类型；成品检固定为产出化验，其它业务类型不挂化验类型 */
+function resolveStoredAssayType(partial = {}) {
+  const bizScope = partial.bizScope
+  const raw = String(partial.assayType || '').trim()
+  if (isProcessInspectBizScope(bizScope)) return raw
+  if (bizScope === '成品检') return raw || 'finished'
+  return ''
+}
+
 export function createQcTemplate(partial = {}) {
   const rawFields = Array.isArray(partial.fields) ? partial.fields : []
-  let fields = ensureFieldsWithSystemFixedItems(rawFields)
+  let fields = ensureFieldsWithSystemFixedItems(rawFields, { bizScope: partial.bizScope })
   const resolvedScopeType =
     partial.scopeType ||
     (Array.isArray(partial.objects) && partial.objects.length
@@ -99,9 +108,7 @@ export function createQcTemplate(partial = {}) {
     sheetPassRule,
     sheetConclusionOptionItems,
     /** 过程化验：投料前核对 / 中控取样 / 转序放行；其它业务类型为空 */
-    assayType: isProcessInspectBizScope(partial.bizScope)
-      ? String(partial.assayType || '').trim()
-      : '',
+    assayType: resolveStoredAssayType(partial),
     processLinks: isProcessInspectBizScope(partial.bizScope)
       ? normalizeTemplateProcessLinks(partial)
       : [],
@@ -154,15 +161,22 @@ function buildTemplateFields({
   qty = true,
   remark = false,
   conclusion = true,
-  methodDefault = '抽检',
+  methodDefault,
+  bizScope,
   extras = [],
 } = {}) {
   const list = []
   if (method) {
-    list.push(createPresetInspectMethodField({ defaultValue: methodDefault, sortOrder: 1 }))
+    list.push(
+      createPresetInspectMethodField({
+        bizScope,
+        defaultValue: methodDefault,
+        sortOrder: 1,
+      }),
+    )
   }
   if (qty) {
-    list.push(createPresetInspectQtyField({ sortOrder: 2 }))
+    list.push(createPresetInspectQtyField({ bizScope, sortOrder: 2 }))
   }
   ;(extras || []).forEach((f, idx) => {
     list.push(mapCustomField(f, idx))
@@ -189,6 +203,313 @@ const SHEET_CONCLUSION_MANUAL_DEMO = [
   { value: '特采放行', result: '质检通过', locked: false },
 ]
 
+/**
+ * 有配方、可下批次指令的产品：单产品模板。
+ * 中控取样挂在保温工序（配方步骤「保温 / 合成保温 / 调色」都走该工序）；
+ * 产出化验按成品检 + 单产品匹配灌装步骤。
+ */
+const FORMULA_ASSAY_PRODUCTS = [
+  {
+    code: 'FG-PAINT',
+    name: '醇酸面漆',
+    specModel: '白漆 固体分 55%',
+    itemId: 'pi-paint',
+    categoryKey: 'pcat-topcoat',
+    categoryName: '面漆',
+    inProcess: [
+      {
+        code: 'QC_VISCOSITY',
+        name: '粘度',
+        type: 'number',
+        allowDecimal: true,
+        withUnit: true,
+        unit: 's',
+        unitPosition: QC_UNIT_POSITION.SUFFIX,
+        judgeRule: QC_FIELD_JUDGE_RULE.RANGE,
+        standardMin: 70,
+        standardMax: 130,
+        keyForSheetPass: true,
+        sortOrder: 10,
+      },
+      {
+        code: 'QC_FINENESS',
+        name: '细度',
+        type: 'number',
+        allowDecimal: true,
+        withUnit: true,
+        unit: 'μm',
+        unitPosition: QC_UNIT_POSITION.SUFFIX,
+        judgeRule: QC_FIELD_JUDGE_RULE.RANGE,
+        standardMax: 40,
+        keyForSheetPass: true,
+        sortOrder: 11,
+      },
+    ],
+    finished: [
+      {
+        code: 'QC_VISCOSITY',
+        name: '粘度',
+        type: 'number',
+        allowDecimal: true,
+        withUnit: true,
+        unit: 's',
+        unitPosition: QC_UNIT_POSITION.SUFFIX,
+        judgeRule: QC_FIELD_JUDGE_RULE.RANGE,
+        standardMin: 80,
+        standardMax: 120,
+        keyForSheetPass: true,
+        sortOrder: 10,
+      },
+      {
+        code: 'QC_FINENESS',
+        name: '细度',
+        type: 'number',
+        allowDecimal: true,
+        withUnit: true,
+        unit: 'μm',
+        unitPosition: QC_UNIT_POSITION.SUFFIX,
+        judgeRule: QC_FIELD_JUDGE_RULE.RANGE,
+        standardMax: 30,
+        keyForSheetPass: true,
+        sortOrder: 11,
+      },
+      {
+        code: 'QC_SOLID_CONTENT',
+        name: '固含量',
+        type: 'number',
+        allowDecimal: true,
+        withUnit: true,
+        unit: '%',
+        unitPosition: QC_UNIT_POSITION.SUFFIX,
+        judgeRule: QC_FIELD_JUDGE_RULE.RANGE,
+        standardMin: 52,
+        standardMax: 58,
+        keyForSheetPass: true,
+        sortOrder: 12,
+      },
+    ],
+  },
+  {
+    code: 'SF-ALKYD',
+    name: '醇酸树脂液',
+    specModel: '固体分 50%',
+    itemId: 'pi-alkyd-base',
+    categoryKey: 'pcat-intermediate',
+    categoryName: '树脂中间体',
+    inProcess: [
+      {
+        code: 'QC_ACID_VALUE',
+        name: '酸值',
+        type: 'number',
+        allowDecimal: true,
+        withUnit: true,
+        unit: 'mgKOH/g',
+        unitPosition: QC_UNIT_POSITION.SUFFIX,
+        judgeRule: QC_FIELD_JUDGE_RULE.RANGE,
+        standardMax: 12,
+        keyForSheetPass: true,
+        sortOrder: 10,
+      },
+      {
+        code: 'QC_REACT_TEMP',
+        name: '反应温度',
+        type: 'number',
+        allowDecimal: true,
+        withUnit: true,
+        unit: '℃',
+        unitPosition: QC_UNIT_POSITION.SUFFIX,
+        judgeRule: QC_FIELD_JUDGE_RULE.RANGE,
+        standardMin: 210,
+        standardMax: 230,
+        sortOrder: 11,
+      },
+    ],
+    finished: [
+      {
+        code: 'QC_ACID_VALUE',
+        name: '酸值',
+        type: 'number',
+        allowDecimal: true,
+        withUnit: true,
+        unit: 'mgKOH/g',
+        unitPosition: QC_UNIT_POSITION.SUFFIX,
+        judgeRule: QC_FIELD_JUDGE_RULE.RANGE,
+        standardMax: 10,
+        keyForSheetPass: true,
+        sortOrder: 10,
+      },
+      {
+        code: 'QC_SOLID_CONTENT',
+        name: '固体分',
+        type: 'number',
+        allowDecimal: true,
+        withUnit: true,
+        unit: '%',
+        unitPosition: QC_UNIT_POSITION.SUFFIX,
+        judgeRule: QC_FIELD_JUDGE_RULE.RANGE,
+        standardMin: 48,
+        standardMax: 52,
+        keyForSheetPass: true,
+        sortOrder: 11,
+      },
+    ],
+  },
+  {
+    code: 'FG-PAINT-CUS',
+    name: '客户指定色漆',
+    specModel: '按色卡定制',
+    itemId: 'pi-custom-paint',
+    categoryKey: 'pcat-custom',
+    categoryName: '定制涂料',
+    inProcess: [
+      {
+        code: 'QC_COLOR_DIFF',
+        name: '色差ΔE',
+        type: 'number',
+        allowDecimal: true,
+        judgeRule: QC_FIELD_JUDGE_RULE.RANGE,
+        standardMax: 1.5,
+        keyForSheetPass: true,
+        sortOrder: 10,
+      },
+      {
+        code: 'QC_VISCOSITY',
+        name: '粘度',
+        type: 'number',
+        allowDecimal: true,
+        withUnit: true,
+        unit: 's',
+        unitPosition: QC_UNIT_POSITION.SUFFIX,
+        judgeRule: QC_FIELD_JUDGE_RULE.RANGE,
+        standardMin: 60,
+        standardMax: 140,
+        sortOrder: 11,
+      },
+    ],
+    finished: [
+      {
+        code: 'QC_COLOR_DIFF',
+        name: '色差ΔE',
+        type: 'number',
+        allowDecimal: true,
+        judgeRule: QC_FIELD_JUDGE_RULE.RANGE,
+        standardMax: 1,
+        keyForSheetPass: true,
+        sortOrder: 10,
+      },
+      {
+        code: 'QC_SOLID_CONTENT',
+        name: '固含量',
+        type: 'number',
+        allowDecimal: true,
+        withUnit: true,
+        unit: '%',
+        unitPosition: QC_UNIT_POSITION.SUFFIX,
+        judgeRule: QC_FIELD_JUDGE_RULE.RANGE,
+        standardMin: 45,
+        standardMax: 55,
+        keyForSheetPass: true,
+        sortOrder: 11,
+      },
+      {
+        code: 'QC_APPEARANCE',
+        name: '外观检查',
+        type: 'radio',
+        options: ['合格', '不合格'],
+        judgeRule: QC_FIELD_JUDGE_RULE.OPTION_PASS,
+        passOptions: ['合格'],
+        keyForSheetPass: true,
+        sortOrder: 12,
+      },
+    ],
+  },
+]
+
+/** 保温工序。配方里步骤名可能是保温、合成保温、调色，工序编码一致即可命中。 */
+const HOLD_PROCESS_LINKS = [
+  { code: 'GX00000003', name: '保温' },
+  { code: 'GX00000003', name: '合成保温' },
+  { code: 'GX00000003', name: '调色' },
+]
+
+function formulaProductObject(product) {
+  return {
+    type: 'item',
+    value: product.code,
+    label: product.name,
+    specModel: product.specModel,
+    itemId: product.itemId,
+    categoryKey: product.categoryKey,
+    categoryName: product.categoryName,
+  }
+}
+
+function buildFormulaAssayTemplates() {
+  const list = []
+  FORMULA_ASSAY_PRODUCTS.forEach((product, index) => {
+    const seq = String(index + 1).padStart(3, '0')
+    const object = formulaProductObject(product)
+    list.push(
+      createQcTemplate({
+        id: `qct-assay-ip-${product.itemId}`,
+        code: `QCT-IP-${seq}`,
+        name: `${product.name}中控取样`,
+        status: '启用',
+        type: '自定义模板',
+        isSystem: false,
+        scopeType: QC_TEMPLATE_SCOPE_TYPE.SINGLE,
+        bizScope: '生产过程检',
+        assayType: 'in_process',
+        objects: [object],
+        processLinks: HOLD_PROCESS_LINKS.map((row) => ({ ...row })),
+        fields: buildTemplateFields({
+          bizScope: '生产过程检',
+          method: true,
+          qty: true,
+          remark: true,
+          conclusion: true,
+          extras: product.inProcess,
+        }),
+        sheetPassRule: QC_TEMPLATE_SHEET_PASS_RULE.KEY_FIELDS,
+        sheetConclusionOptionItems: SHEET_CONCLUSION_STRICT.map((o) => ({ ...o })),
+        creator: '质检员A',
+        createdAt: '2026-11-18 09:00:00',
+        updater: '质检员A',
+        updatedAt: '2026-11-18 09:00:00',
+      }),
+    )
+    list.push(
+      createQcTemplate({
+        id: `qct-assay-fg-${product.itemId}`,
+        code: `QCT-FG-${seq}`,
+        name: `${product.name}产出化验`,
+        status: '启用',
+        type: '自定义模板',
+        isSystem: false,
+        scopeType: QC_TEMPLATE_SCOPE_TYPE.SINGLE,
+        bizScope: '成品检',
+        assayType: 'finished',
+        objects: [{ ...object }],
+        fields: buildTemplateFields({
+          bizScope: '成品检',
+          method: true,
+          qty: true,
+          remark: true,
+          conclusion: true,
+          extras: product.finished,
+        }),
+        sheetPassRule: QC_TEMPLATE_SHEET_PASS_RULE.KEY_FIELDS,
+        sheetConclusionOptionItems: SHEET_CONCLUSION_STRICT.map((o) => ({ ...o })),
+        creator: '质检员A',
+        createdAt: '2026-11-18 09:10:00',
+        updater: '质检员A',
+        updatedAt: '2026-11-18 09:10:00',
+      }),
+    )
+  })
+  return list
+}
+
 /** 新规则演示模板：字段由用户配置；系统项从检验项库选用 */
 export const mockQcTemplates = [
   (() => {
@@ -214,6 +535,7 @@ export const mockQcTemplates = [
   })(),
   (() => {
     const fields = buildTemplateFields({
+      bizScope: '成品检',
       method: true,
       qty: true,
       remark: true,
@@ -276,6 +598,7 @@ export const mockQcTemplates = [
   })(),
   (() => {
     const fields = buildTemplateFields({
+      bizScope: '生产过程检',
       method: true,
       qty: true,
       remark: true,
@@ -327,6 +650,7 @@ export const mockQcTemplates = [
   })(),
   (() => {
     const fields = buildTemplateFields({
+      bizScope: '来料质检',
       method: true,
       qty: true,
       remark: false,
@@ -378,6 +702,7 @@ export const mockQcTemplates = [
   })(),
   (() => {
     const fields = buildTemplateFields({
+      bizScope: '生产过程检',
       method: true,
       qty: true,
       remark: true,
@@ -427,6 +752,7 @@ export const mockQcTemplates = [
       updatedAt: '2026-11-01 10:30:00',
     })
   })(),
+  ...buildFormulaAssayTemplates(),
 ]
 
 export function cloneQcTemplates() {
@@ -446,6 +772,7 @@ export function cloneQcTemplates() {
             matrixAllowAddRow: f.matrixAllowAddRow,
           }))
         : [],
+      { bizScope: t.bizScope },
     )
     return {
       ...t,

@@ -17,7 +17,7 @@ import {
 } from '@/utils/outsourcingPriceChange'
 
 const STORAGE_KEY = 'i_doms_outsourcing_price_changes'
-const DATA_VERSION = 1
+const DATA_VERSION = 2
 
 function loadFromStorage() {
   try {
@@ -43,51 +43,13 @@ function persist() {
   )
 }
 
-function buildSeed() {
-  return [
-    normalizeOutsourcingPriceChangeRecord({
-      id: 'opc-seed-1',
-      changeNo: 'WXJGBG20260810001',
-      outsourcingOrderId: 'wx-2',
-      outsourcingOrderNo: 'WX-260807001',
-      status: OUTSOURCING_PRICE_CHANGE_STATUS.APPROVED,
-      reasonType: '供应商调价',
-      reason: '外协加工费上调，未回货部分按新单价执行。',
-      taxModeExcluding: true,
-      lines: [
-        {
-          ooLineId: 'wx-2-line-1',
-          productCode: 'MAT-BRG-SLEEVE',
-          productName: '轴承套',
-          specModel: 'φ50',
-          material: '45#',
-          unit: '件',
-          qty: 30,
-          taxRate: 13,
-          oldBillingMethod: '按件数',
-          billingMethod: '按件数',
-          oldUnitPriceExTax: 22,
-          oldUnitPriceInTax: 24.86,
-          newUnitPriceExTax: 24,
-          newUnitPriceInTax: 27.12,
-        },
-      ],
-      creator: '采购员A',
-      createdAt: '2026-08-10 11:20',
-      submitter: '采购员A',
-      submittedAt: '2026-08-10 11:20',
-      approver: 'admin1',
-      approvedAt: '2026-08-10 16:05',
-      opinion: '同意按供应商调价',
-    }),
-  ]
-}
-
 const stored = loadFromStorage()
 
 export const outsourcingPriceChangeState = reactive({
-  orders: stored || buildSeed(),
+  orders: stored || [],
 })
+
+persist()
 
 watch(() => outsourcingPriceChangeState.orders, persist, { deep: true })
 

@@ -11,7 +11,7 @@ import { getUser } from '@/utils/auth'
 
 const STORAGE_KEY = 'i_doms_process_field_library_v1'
 const SEED_VERSION_KEY = 'i_doms_process_field_library_seed_v'
-const CURRENT_SEED_VERSION = '2'
+const CURRENT_SEED_VERSION = '3'
 
 const SYSTEM_CODES = new Set(['OP_OPERATOR', 'OP_OPERATED_AT', 'OP_EQUIPMENT', 'OP_BATCH_NO'])
 

@@ -205,14 +205,6 @@ export function filterInventoryDetailLines(rows, filters = {}) {
       return false
     }
 
-    if (filters.material && !String(row.material).includes(String(filters.material).trim())) {
-      return false
-    }
-
-    if (filters.drawingNo && !String(row.drawingNo).includes(String(filters.drawingNo).trim())) {
-      return false
-    }
-
     const qty = Number(row.stockQty) || 0
     if (filters.stockQtyMin != null && filters.stockQtyMin !== '') {
       if (qty < Number(filters.stockQtyMin)) return false

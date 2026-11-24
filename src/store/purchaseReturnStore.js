@@ -1,7 +1,6 @@
 import { reactive, watch } from 'vue'
 import dayjs from 'dayjs'
 import {
-  clonePurchaseReturns,
   createPurchaseReturn,
   createPurchaseReturnOutboundLine,
   createPurchaseReturnOutboundOrder,
@@ -18,7 +17,8 @@ import {
 
 const STORAGE_KEY = 'i_doms_purchase_returns'
 const SEED_VERSION_KEY = 'i_doms_purchase_returns_seed_v'
-const CURRENT_SEED_VERSION = '7'
+/** v8：清空离散制造演示采购退货单 */
+const CURRENT_SEED_VERSION = '8'
 
 function loadFromStorage() {
   try {
@@ -148,13 +148,15 @@ function normalizeReturn(row) {
 }
 
 function initReturns() {
-  const list = shouldReseed() ? clonePurchaseReturns() : loadFromStorage() || clonePurchaseReturns()
+  const list = shouldReseed() ? [] : loadFromStorage() || []
   return list.map(normalizeReturn)
 }
 
 export const purchaseReturnState = reactive({
   returns: initReturns(),
 })
+
+persist()
 
 watch(
   () => purchaseReturnState.returns,

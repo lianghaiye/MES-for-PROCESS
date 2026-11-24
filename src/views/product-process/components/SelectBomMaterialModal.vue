@@ -16,7 +16,7 @@
         class="filter-form horizontal-form ecn-filter-form"
       >
         <ListFilterBar
-          :field-count="7"
+          :field-count="searchFieldCount"
           search-text="搜索"
           reset-text="清空"
           @search="handleEcnSearch"
@@ -68,7 +68,7 @@
               @press-enter="handleEcnSearch"
             />
           </a-form-item>
-          <a-form-item label="材质">
+          <a-form-item v-if="!hideMaterialDrawing" label="材质">
             <a-input
               v-model:value="ecnFilters.material"
               allow-clear
@@ -77,7 +77,7 @@
               @press-enter="handleEcnSearch"
             />
           </a-form-item>
-          <a-form-item label="图号">
+          <a-form-item v-if="!hideMaterialDrawing" label="图号">
             <a-input
               v-model:value="ecnFilters.drawingNo"
               allow-clear
@@ -90,7 +90,7 @@
       </a-form>
       <a-form v-else layout="inline" class="filter-form horizontal-form ecn-filter-form">
         <ListFilterBar
-          :field-count="includeSpuTemplates ? 8 : 7"
+          :field-count="searchFieldCount"
           search-text="搜索"
           reset-text="清空"
           @search="handleEcnSearch"
@@ -151,7 +151,7 @@
               @press-enter="handleEcnSearch"
             />
           </a-form-item>
-          <a-form-item label="材质">
+          <a-form-item v-if="!hideMaterialDrawing" label="材质">
             <a-input
               v-model:value="ecnFilters.material"
               allow-clear
@@ -160,7 +160,7 @@
               @press-enter="handleEcnSearch"
             />
           </a-form-item>
-          <a-form-item label="图号">
+          <a-form-item v-if="!hideMaterialDrawing" label="图号">
             <a-input
               v-model:value="ecnFilters.drawingNo"
               allow-clear
@@ -311,10 +311,12 @@
     <BomSubItemColumnSettingDrawer
       v-model:open="columnDrawerOpen"
       v-model:settings="columnSettings"
+      :default-settings="buildDefaultColumnSettings()"
     />
     <BomSubItemFilterModal
       v-model:open="filterModalOpen"
       :conditions="appliedFilterConditions"
+      :exclude-field-keys="hideMaterialDrawing ? ['material', 'drawingNo'] : []"
       @confirm="onFilterConfirm"
     />
   </a-modal>
@@ -364,6 +366,8 @@ const props = defineProps({
   spuCanSellOnly: { type: Boolean, default: true },
   /** 打开时预勾选的主数据 id（产品/物料），配合 multiple 回显已选 */
   initialSelectedIds: { type: Array, default: () => [] },
+  /** 领料选品不展示材质、图号 */
+  hideMaterialDrawing: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:open', 'selected'])
@@ -398,8 +402,18 @@ const ecnFilters = reactive(emptyEcnFilters())
 const appliedEcnFilters = reactive(emptyEcnFilters())
 
 function buildDefaultColumnSettings() {
-  return defaultBomSubItemPickerColumns.filter((c) => c.key !== 'subItemCount')
+  return defaultBomSubItemPickerColumns.filter((c) => {
+    if (c.key === 'subItemCount') return false
+    if (props.hideMaterialDrawing && (c.key === 'material' || c.key === 'drawingNo')) return false
+    return true
+  })
 }
+
+const searchFieldCount = computed(() => {
+  let count = props.includeSpuTemplates ? 8 : 7
+  if (props.hideMaterialDrawing) count -= 2
+  return count
+})
 
 const columnSettings = ref(JSON.parse(JSON.stringify(buildDefaultColumnSettings())))
 const selectedRowKeys = ref([])

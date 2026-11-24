@@ -11,7 +11,7 @@ import { createOutboundLine } from '@/mock/outboundOrders'
 
 const STORAGE_KEY = 'i_doms_scrap_orders'
 const SEED_VERSION_KEY = 'i_doms_scrap_orders_seed_v'
-const CURRENT_SEED_VERSION = '3'
+const CURRENT_SEED_VERSION = '4'
 
 function loadFromStorage() {
   try {

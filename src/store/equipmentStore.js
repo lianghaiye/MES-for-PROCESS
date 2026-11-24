@@ -9,6 +9,7 @@ import {
   normalizeDevice,
   normalizeInspectionStandard,
   EQUIPMENT_STATUS,
+  validateVesselCapacity,
   INSPECTION_TASK_STATUS,
   MAINTAIN_ORDER_STATUS,
   REPAIR_STATUS,
@@ -16,7 +17,13 @@ import {
 
 const STORAGE_KEY = 'i_doms_equipment_v1'
 const SEED_VERSION_KEY = 'i_doms_equipment_seed_v'
-const CURRENT_SEED_VERSION = '2'
+const CURRENT_SEED_VERSION = '4'
+
+/** 运行时再取，避免与 materialBatchStore 顶层互相引用导致 eslint/打包异常 */
+function tankLocationApi() {
+  // eslint-disable-next-line global-require
+  return require('@/store/materialBatchStore')
+}
 
 function nowText() {
   return dayjs().format('YYYY-MM-DD HH:mm:ss')
@@ -90,6 +97,26 @@ function persist() {
 watch(equipmentState, persist, { deep: true })
 persist()
 
+/** 储罐设备 ↔ 库存位置挂接；启动时把已有储罐设备同步一遍。 */
+function syncDeviceStockLocation(device, previousCategory = '') {
+  if (!device) return
+  const { upsertTankLocationFromEquipment, detachTankLocationFromEquipment } = tankLocationApi()
+  if (device.category === '储罐') {
+    const loc = upsertTankLocationFromEquipment(device)
+    if (loc) device.inventoryLocationId = loc.id
+    return
+  }
+  if (previousCategory === '储罐' || device.inventoryLocationId) {
+    detachTankLocationFromEquipment(device.id)
+    device.inventoryLocationId = ''
+  }
+}
+
+queueMicrotask(() => {
+  equipmentState.devices.forEach((device) => syncDeviceStockLocation(device))
+  persist()
+})
+
 let deviceSeq = equipmentState.devices.length + 1
 let standardSeq = equipmentState.standards.length + 1
 let taskSeq = equipmentState.inspectionTasks.length + 1
@@ -146,6 +173,8 @@ export function addDevice(payload = {}, operator = 'admin1') {
     return { ok: false, message: `设备编码「${code}」已存在` }
   }
   if (!String(payload.name || '').trim()) return { ok: false, message: '请输入设备名称' }
+  const capacityCheck = validateVesselCapacity(payload)
+  if (!capacityCheck.ok) return capacityCheck
   const t = nowText()
   const row = normalizeDevice({
     ...payload,
@@ -157,16 +186,20 @@ export function addDevice(payload = {}, operator = 'admin1') {
     updatedAt: t,
   })
   equipmentState.devices.unshift(row)
+  syncDeviceStockLocation(row)
   return { ok: true, device: row }
 }
 
 export function updateDevice(id, payload = {}, operator = 'admin1') {
   const row = getDeviceById(id)
   if (!row) return { ok: false, message: '设备不存在' }
+  const previousCategory = row.category
   const nextCode = payload.code != null ? String(payload.code).trim() : row.code
   if (nextCode && equipmentState.devices.some((d) => d.id !== id && d.code === nextCode)) {
     return { ok: false, message: `设备编码「${nextCode}」已存在` }
   }
+  const capacityCheck = validateVesselCapacity({ ...row, ...payload, code: nextCode })
+  if (!capacityCheck.ok) return capacityCheck
   Object.assign(row, normalizeDevice({ ...row, ...payload, code: nextCode }), {
     id: row.id,
     creator: row.creator,
@@ -174,6 +207,7 @@ export function updateDevice(id, payload = {}, operator = 'admin1') {
     updater: operator,
     updatedAt: nowText(),
   })
+  syncDeviceStockLocation(row, previousCategory)
   return { ok: true, device: row }
 }
 
@@ -189,6 +223,7 @@ export function deleteDevice(id) {
     ) ||
     equipmentState.repairOrders.some((t) => t.deviceId === id && t.status !== REPAIR_STATUS.CLOSED)
   if (linked) return { ok: false, message: '存在未完成的点检/保养/维修任务，无法删除' }
+  tankLocationApi().detachTankLocationFromEquipment(id)
   equipmentState.devices.splice(idx, 1)
   return { ok: true }
 }

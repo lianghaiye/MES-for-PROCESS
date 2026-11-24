@@ -47,11 +47,11 @@
             </a-form-item>
           </a-col>
           <a-col :xs="24" :sm="12" :md="6">
-            <a-form-item label="工单号">
+            <a-form-item label="批次指令">
               <a-input
                 v-model:value="filters.workOrderNo"
                 allow-clear
-                placeholder="关联工单"
+                placeholder="批次指令"
                 size="small"
               />
             </a-form-item>
@@ -251,10 +251,8 @@ const pagination = reactive({
 const selectedRowKeys = ref([])
 
 const modeOptions = [
-  { label: '工单领料', value: MATERIAL_REQ_MODES.WORK_ORDER },
-  { label: '工单领料（多工单）', value: MATERIAL_REQ_MODES.BATCH },
-  { label: '订单领料', value: MATERIAL_REQ_MODES.SALES_ORDER },
   { label: '快速领料', value: MATERIAL_REQ_MODES.QUICK },
+  { label: '批次领料', value: MATERIAL_REQ_MODES.BATCH_ORDER },
 ]
 
 const auditStatusOptions = MATERIAL_REQ_AUDIT_OPTIONS
@@ -276,9 +274,9 @@ const columns = [
   { title: '申请状态', key: 'auditStatus', width: 110, fixed: 'left' },
   { title: '申请单号', key: 'reqNo', width: 150, fixed: 'left' },
   { title: '领料方式', key: 'mode', width: 110 },
-  { title: '关联工单', key: 'workOrder', width: 180, ellipsis: true },
+  { title: '批次指令', key: 'workOrder', width: 180, ellipsis: true },
   { title: '产品/摘要', key: 'product', width: 160, ellipsis: true },
-  { title: '领用车间', dataIndex: 'workshop', key: 'workshop', width: 110 },
+  { title: '申请车间', dataIndex: 'workshop', key: 'workshop', width: 120 },
   { title: '出库单号', key: 'outboundDocNo', width: 200 },
   { title: '出库状态', key: 'outboundStatus', width: 110 },
   { title: '申请人', dataIndex: 'applicant', key: 'applicant', width: 90 },
@@ -497,6 +495,7 @@ function onReject(record) {
 
 function modeColor(mode) {
   if (mode === MATERIAL_REQ_MODES.QUICK) return 'purple'
+  if (mode === MATERIAL_REQ_MODES.BATCH_ORDER) return 'blue'
   if (mode === MATERIAL_REQ_MODES.SALES_ORDER) return 'geekblue'
   if (mode === MATERIAL_REQ_MODES.BATCH) return 'blue'
   return 'cyan'

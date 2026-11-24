@@ -97,7 +97,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import {
   bomSubItemFilterFields,
@@ -109,12 +109,18 @@ import {
 const props = defineProps({
   open: Boolean,
   conditions: { type: Array, default: () => [] },
+  excludeFieldKeys: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(['update:open', 'confirm'])
 
 const logicOptions = bomSubItemFilterLogicOptions
-const fieldOptions = bomSubItemFilterFields.map((f) => ({ label: f.label, value: f.key }))
+const fieldOptions = computed(() => {
+  const excluded = new Set(props.excludeFieldKeys || [])
+  return bomSubItemFilterFields
+    .filter((field) => !excluded.has(field.key))
+    .map((field) => ({ label: field.label, value: field.key }))
+})
 const localConditions = ref([])
 
 watch(

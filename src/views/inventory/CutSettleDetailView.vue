@@ -174,9 +174,6 @@ const lineColumns = computed(() => {
     { title: '物料名称', dataIndex: 'itemName', key: 'itemName', width: 140, ellipsis: true },
     { title: '编码', dataIndex: 'itemCode', key: 'itemCode', width: 120 },
     { title: '型号规格', key: 'specModel', width: 100, ellipsis: true },
-    { title: '图号', key: 'drawingNo', width: 100, ellipsis: true },
-    { title: '材质', key: 'material', width: 80 },
-    { title: '下料尺寸', key: 'blankSizeText', width: 140, ellipsis: true },
     { title: '出库数量', key: 'pickedLength', width: 100, align: 'right' },
     { title: '需求数', key: 'demandMeters', width: 100, align: 'right' },
     {

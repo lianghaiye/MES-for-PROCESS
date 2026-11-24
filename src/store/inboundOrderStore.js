@@ -1,11 +1,6 @@
 import { reactive, watch } from 'vue'
 import dayjs from 'dayjs'
-import { cloneInboundSeedOrders, createInboundLine, createInboundOrder } from '@/mock/inboundOrders'
-import { ensureCrossDemoInboundOrders } from '@/mock/crossModuleDemoSeed'
-import { ensureMultiUnitFlowInboundOrders } from '@/mock/multiUnitFlowDemoSeed'
-import { ensureOneItemOneCodeInventoryInboundOrders } from '@/mock/oneItemOneCodeInventoryDemoSeed'
-import { ensurePeriodSettleDemoInboundOrders } from '@/mock/periodSettleDemoSeed'
-import { ensurePurchaseSettleDemoInboundOrders } from '@/mock/purchaseSettleDemoInboundSeed'
+import { createInboundLine, createInboundOrder } from '@/mock/inboundOrders'
 import {
   purchaseOrderState,
   syncPurchaseOrderInboundStatus,
@@ -74,8 +69,8 @@ function resolveInboundSalesOrder(order) {
 
 const STORAGE_KEY = 'i_doms_inbound_orders'
 const SEED_VERSION_KEY = 'i_doms_inbound_orders_seed_v'
-/** v13：补外协入库、客供料入库演示单 */
-const CURRENT_SEED_VERSION = '13'
+/** v15：清空采购对账回灌的演示入库单 */
+const CURRENT_SEED_VERSION = '15'
 
 function loadFromStorage() {
   try {
@@ -125,18 +120,8 @@ function normalizeLegacyOrder(order) {
 }
 
 function initOrders() {
-  const stored = loadFromStorage()
-  const base =
-    shouldReseed() || !stored?.length
-      ? cloneInboundSeedOrders().map(normalizeLegacyOrder)
-      : stored.map(normalizeLegacyOrder)
-  return ensureOneItemOneCodeInventoryInboundOrders(
-    ensureMultiUnitFlowInboundOrders(
-      ensurePurchaseSettleDemoInboundOrders(
-        ensurePeriodSettleDemoInboundOrders(ensureCrossDemoInboundOrders(base)),
-      ),
-    ),
-  )
+  if (shouldReseed()) return []
+  return (loadFromStorage() || []).map(normalizeLegacyOrder)
 }
 
 export function generateInboundNo() {
@@ -156,6 +141,8 @@ export function generateInboundNo() {
 export const inboundOrderState = reactive({
   orders: initOrders(),
 })
+
+persist()
 
 watch(
   () => inboundOrderState.orders,

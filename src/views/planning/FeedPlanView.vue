@@ -303,17 +303,6 @@
               </a-form-item>
             </a-col>
             <a-col :span="8">
-              <a-form-item label="产线">
-                <FeedPlanSearchSelect
-                  v-model="form.productionLineId"
-                  title="选择产线"
-                  placeholder="不选则按配方设备执行"
-                  :options="productionLineOptions"
-                  :disabled="Boolean(editingId)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
               <a-form-item label="目标投料量" required>
                 <a-input-number
                   v-model:value="form.targetQty"
@@ -550,11 +539,7 @@ import {
   listOrdersByFeedPlan,
   ORDER_STATUS_LABEL,
 } from '@/store/batchInstructionStore'
-import {
-  formatPlanLineLabel,
-  listEnabledProductionLineOptions,
-  productionLineState,
-} from '@/store/productionLineStore'
+import { formatPlanLineLabel } from '@/store/productionLineStore'
 import {
   buildFeedPlanPeriod,
   FEED_PLAN_PERIOD,
@@ -703,11 +688,6 @@ const form = reactive({
   sourceRef: '',
   splitTo: FEED_PLAN_SPLIT.NONE,
   remark: '',
-})
-
-const productionLineOptions = computed(() => {
-  void productionLineState.lines
-  return listEnabledProductionLineOptions()
 })
 
 const splitOpen = ref(false)

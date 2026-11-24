@@ -1,10 +1,6 @@
 import { reactive, watch } from 'vue'
 import dayjs from 'dayjs'
-import { cloneOutboundOrders, createOutboundLine, createOutboundOrder } from '@/mock/outboundOrders'
-import { ensureCrossDemoOutboundOrders } from '@/mock/crossModuleDemoSeed'
-import { ensureMaterialReqOutboundOrders } from '@/mock/materialReqOutboundSeed'
-import { ensureMultiUnitFlowOutboundOrders } from '@/mock/multiUnitFlowDemoSeed'
-import { ensureOneItemOneCodeInventoryOutboundOrders } from '@/mock/oneItemOneCodeInventoryDemoSeed'
+import { createOutboundLine, createOutboundOrder } from '@/mock/outboundOrders'
 import {
   needsOutboundApproval,
   normalizeOutboundStatus,
@@ -48,8 +44,8 @@ import {
 
 const STORAGE_KEY = 'i_doms_outbound_orders'
 const SEED_VERSION_KEY = 'i_doms_outbound_orders_seed_v'
-/** v14：补出库类型「外协退货」及演示单 CKWXTH-260805-001 */
-const CURRENT_SEED_VERSION = '14'
+/** v15：清空离散制造演示出库单，库存单据从空列表开始 */
+const CURRENT_SEED_VERSION = '15'
 
 /** 领料/发料出库不再审批：历史「待处理」升为「待出库」；拒绝领料→已拒绝；来源归一 */
 function migrateSkipApprovalStatuses(orders) {
@@ -109,16 +105,8 @@ function shouldReseedOutbound() {
 }
 
 function initOutboundOrders() {
-  const base = shouldReseedOutbound()
-    ? cloneOutboundOrders()
-    : loadFromStorage() || cloneOutboundOrders()
-  return ensureOneItemOneCodeInventoryOutboundOrders(
-    ensureMultiUnitFlowOutboundOrders(
-      ensureMaterialReqOutboundOrders(
-        ensureCrossDemoOutboundOrders(migrateSkipApprovalStatuses(base)),
-      ),
-    ),
-  )
+  if (shouldReseedOutbound()) return []
+  return loadFromStorage() || []
 }
 
 export function generateOutboundNo() {
@@ -131,6 +119,8 @@ export function generateOutboundNo() {
 export const outboundState = reactive({
   orders: initOutboundOrders(),
 })
+
+persist()
 
 watch(
   () => outboundState.orders,
