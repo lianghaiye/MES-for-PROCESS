@@ -2,6 +2,7 @@ export const inboundTypeOptions = [
   '采购入库',
   '外协入库',
   '客供料入库',
+  '生产入库',
   '成品入库',
   '半成品入库',
   '盘点入库',

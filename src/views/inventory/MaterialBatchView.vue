@@ -84,7 +84,7 @@
               </a-form-item>
             </a-col>
             <a-col :span="12">
-              <a-form-item label="含量">
+              <a-form-item label="有效含量">
                 <a-input-number
                   v-model:value="form.content"
                   size="small"
@@ -175,7 +175,7 @@ const columns = [
   { title: '物料', key: 'item' },
   { title: '放行状态', key: 'status', width: 90 },
   { title: '重量', dataIndex: 'qty', align: 'right', width: 90 },
-  { title: '含量', dataIndex: 'content', align: 'right', width: 80 },
+  { title: '有效含量', dataIndex: 'content', align: 'right', width: 80 },
   { title: '失效日期', key: 'expiryDate', dataIndex: 'expiryDate', width: 120 },
   { title: '效期预警', key: 'expiryAlert', width: 120 },
   { title: '位置', key: 'loc', width: 120 },

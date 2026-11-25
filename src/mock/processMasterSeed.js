@@ -30,6 +30,7 @@ function alertOf({ min, max, expiry = true, days = 30, defect = 2 }) {
   }
 }
 
+/** 液体：库存 kg + 密度 → 辅助单位「升」（采购角色），1 升 = density kg */
 function withVolumeAux(row) {
   const density = Number(row.density)
   const base = row.inventoryUnit
@@ -51,6 +52,87 @@ function withVolumeAux(row) {
       },
     ],
   }
+}
+
+/**
+ * 从包装规格推导固态辅助单位（袋 / 吨包 / 吨袋等）。
+ * rate = 1 个包装单位对应多少库存单位（kg）。
+ * 「采购」角色全局只能挂一个：已有升采购则包装行不抢角色；否则首个非散装包装挂采购。
+ */
+function packAuxFromSpecs(row) {
+  const packs = (row.packSpecs || []).filter((p) => !p.isBulk && p.packUnit && Number(p.qty) > 0)
+  if (!packs.length) return []
+
+  const hasPurchaseRole = (row.auxUnits || []).some(
+    (a) => a.enabled !== false && (a.roles || []).includes('purchase'),
+  )
+  const seen = new Set()
+  const aux = []
+  packs.forEach((p) => {
+    const unit = String(p.packUnit).trim()
+    if (!unit || seen.has(unit)) return
+    seen.add(unit)
+    const isFirst = aux.length === 0
+    // 可采购物料：无体积采购时，第一个包装单位挂采购角色
+    const roles = !hasPurchaseRole && isFirst && row.canPurchase !== false ? ['purchase'] : []
+    aux.push({
+      id: `aux-${row.id}-pack-${unit}`,
+      unit,
+      convertType: 'fixed',
+      rate: Number(p.qty),
+      allowDecimal: false,
+      roles,
+      enabled: true,
+    })
+  })
+  return aux
+}
+
+/**
+ * 补齐库存单位与采购单位扁平字段。
+ * 流程型入库已不走 isVariableLength 按件填法，标志固定为 false。
+ */
+function withDualUnitFlags(row) {
+  const inv = String(row.inventoryUnit || '').trim()
+  const pur = String(row.purchaseUnit || inv || '').trim()
+  return {
+    ...row,
+    isVariableLength: false,
+    stockUnit: inv,
+    purchaseUnit: pur || inv,
+  }
+}
+
+/** 体积辅助 + 包装辅助合并；补齐采购单位与双单位标志 */
+function enrichMasterUnits(row) {
+  const withVol = withVolumeAux(row)
+  const packAux = packAuxFromSpecs(withVol)
+
+  let merged = withVol
+  if (packAux.length) {
+    const existing = Array.isArray(withVol.auxUnits) ? [...withVol.auxUnits] : []
+    const existingUnits = new Set(existing.map((a) => String(a.unit || '').trim()))
+    packAux.forEach((a) => {
+      if (!existingUnits.has(a.unit)) existing.push(a)
+    })
+
+    // 采购单位：优先已有（升），否则取首个带采购角色的包装单位
+    const purchaseFromAux = existing.find(
+      (a) => a.enabled !== false && (a.roles || []).includes('purchase'),
+    )
+    const purchaseUnit = withVol.purchaseUnit || purchaseFromAux?.unit || withVol.inventoryUnit
+    const packageContent =
+      withVol.packageContent ?? (purchaseFromAux ? Number(purchaseFromAux.rate) : undefined)
+
+    merged = {
+      ...withVol,
+      purchaseUnit,
+      packageContent,
+      auxUnits: existing,
+    }
+  }
+
+  return withDualUnitFlags(merged)
 }
 
 function supplier(name, price, days) {
@@ -437,7 +519,8 @@ const PROCESS_MASTER_ROWS = [
       { name: '1000kg吨袋', unit: '吨袋', qty: 1000 },
     ]),
     techParams: '客户来料。不产生采购订单，到货后建批次再投料。',
-    remark: '供应型态为客供：有批次、有效期，没有采购单价。',
+    remark:
+      '供应型态为客供：有批次、有效期，没有采购单价。库存 kg，辅助单位袋/吨袋（25kg、1000kg）。',
     purchaseUnitPrice: 0,
     canSell: false,
     canProduce: false,
@@ -478,7 +561,7 @@ const PROCESS_MASTER_ROWS = [
       { name: '800kg吨袋', unit: '袋', qty: 800, salesPrice: 90000 },
     ]),
     techParams: '主产品工碳，纯度 ≥98.5%。成品只有一种包装：800kg/袋。',
-    remark: '酸浸沉锂主线产出。一车约 32 吨 / 40 袋。电碳本厂暂不做。',
+    remark: '酸浸沉锂主线产出。库存 kg，包装袋 800kg；一车约 32 吨 / 40 袋。电碳本厂暂不做。',
     unitPrice: 90000,
     purchaseUnitPrice: 0,
     canSell: true,
@@ -560,7 +643,8 @@ const PROCESS_MASTER_ROWS = [
       { name: '吨包', unit: '吨包', qty: 1000, purchasePrice: 8000 },
     ]),
     techParams: '按含量结算。一车一批、一批一码；混堆会导致成本偏差。',
-    remark: '酸浸主原料。日计划约 150 吨，单槽一次进料约 100 吨。',
+    remark:
+      '酸浸主原料。库存 kg，采购按吨包（1 吨包=1000kg）。日计划约 150 吨，单槽一次进料约 100 吨。',
     purchaseUnitPrice: 8000,
     canSell: false,
     canProduce: false,
@@ -633,7 +717,7 @@ const PROCESS_MASTER_ROWS = [
     storageCondition: ['线边仓'],
     packSpecs: packRows('pi-defluor', [{ name: '25kg袋', unit: '袋', qty: 25, purchasePrice: 12 }]),
     techParams: '一次净化加药，氟沉为固体后压滤。',
-    remark: '后段除氟辅料。',
+    remark: '后段除氟辅料。库存 kg，采购按袋（1 袋=25kg）。',
     purchaseUnitPrice: 12,
     canSell: false,
     canProduce: false,
@@ -672,7 +756,7 @@ const PROCESS_MASTER_ROWS = [
       { name: '吨袋', unit: '吨袋', qty: 1000, purchasePrice: 2.0 },
     ]),
     techParams: '沉锂剂。加碳酸钠得碳酸锂；若改氢氧化锂则用氢氧化钠。',
-    remark: '沉锂关键辅料。',
+    remark: '沉锂关键辅料。库存 kg；采购默认 50kg 袋，另可按吨袋（1000kg）。',
     purchaseUnitPrice: 2.1,
     canSell: false,
     canProduce: false,
@@ -710,7 +794,7 @@ const PROCESS_MASTER_ROWS = [
       { name: '25kg袋', unit: '袋', qty: 25, purchasePrice: 3.5 },
     ]),
     techParams: '调 pH、除钙镁及后段净化用。',
-    remark: '湿法辅料。',
+    remark: '湿法辅料。库存 kg，采购按袋（1 袋=25kg）。',
     purchaseUnitPrice: 3.5,
     canSell: false,
     canProduce: false,
@@ -913,7 +997,7 @@ const PROCESS_MASTER_ROWS = [
   },
 ]
 
-export const PROCESS_MASTER_ITEMS = PROCESS_MASTER_ROWS.map(withVolumeAux)
+export const PROCESS_MASTER_ITEMS = PROCESS_MASTER_ROWS.map(enrichMasterUnits)
 
 export const PROCESS_PRODUCTS = PROCESS_MASTER_ITEMS.filter(
   (row) =>

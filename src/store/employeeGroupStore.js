@@ -1,8 +1,27 @@
 import { reactive, watch } from 'vue'
 import dayjs from 'dayjs'
+import {
+  getWorkCenterById,
+  getWorkCenterByName,
+  listWorkCenterNames,
+} from '@/store/workCenterStore'
 
 const STORAGE_KEY = 'i_doms_employee_groups'
+const GROUP_SEED_VERSION_KEY = 'i_doms_employee_groups_wc_v'
+/** v4：组员带岗位；组长在列表勾选 */
+const GROUP_SEED_VERSION = '4'
 let codeSeq = 16
+
+function resolveWorkCenterFields(payload = {}) {
+  const byId = getWorkCenterById(payload.workCenterId)
+  if (byId) return { workCenterId: byId.id, workCenter: byId.name }
+  const byName = getWorkCenterByName(payload.workCenter)
+  if (byName) return { workCenterId: byName.id, workCenter: byName.name }
+  return {
+    workCenterId: String(payload.workCenterId || '').trim(),
+    workCenter: String(payload.workCenter || '').trim(),
+  }
+}
 
 function loadFromStorage() {
   try {
@@ -37,11 +56,12 @@ function generateCode() {
 function createSeedGroups() {
   return [
     {
-      id: 'eg-1',
-      code: 'WG20260310002',
-      name: '加工小组',
-      workCenter: '机泵',
-      position: '泵装配调试',
+      id: 'eg-acid-1',
+      code: 'WG20261124001',
+      name: '酸浸1组',
+      workCenterId: 'wc-acid-1',
+      workCenter: '酸浸一线',
+      position: '',
       allowTaskGen: true,
       leaderParticipates: true,
       multiExecutor: true,
@@ -49,9 +69,49 @@ function createSeedGroups() {
       leaderId: 'emp-2',
       leaderName: '张三',
       workers: [
-        { id: 'emp-2', name: '张三', isLeader: true },
-        { id: 'emp-3', name: '李四', isLeader: false },
-        { id: 'emp-9', name: '赵六', isLeader: false },
+        { id: 'emp-2', name: '张三', position: '反应岗', isLeader: true },
+        { id: 'emp-3', name: '李四', position: '配料岗', isLeader: false },
+      ],
+      remark: '包酸浸一线；组内再分早晚班',
+      createdAt: '2026-11-24',
+    },
+    {
+      id: 'eg-acid-2',
+      code: 'WG20261124002',
+      name: '酸浸2组',
+      workCenterId: 'wc-acid-2',
+      workCenter: '酸浸二线',
+      position: '',
+      allowTaskGen: true,
+      leaderParticipates: true,
+      multiExecutor: true,
+      status: '启用',
+      leaderId: 'emp-1',
+      leaderName: '孙琴丽',
+      workers: [
+        { id: 'emp-1', name: '孙琴丽', position: '班组长', isLeader: true },
+        { id: 'emp-4', name: '王五', position: '分离岗', isLeader: false },
+      ],
+      remark: '包酸浸二线；组内再分早晚班',
+      createdAt: '2026-11-24',
+    },
+    {
+      id: 'eg-1',
+      code: 'WG20260310002',
+      name: '加工小组',
+      workCenterId: 'wc-pump',
+      workCenter: '机泵',
+      position: '',
+      allowTaskGen: true,
+      leaderParticipates: true,
+      multiExecutor: true,
+      status: '启用',
+      leaderId: 'emp-2',
+      leaderName: '张三',
+      workers: [
+        { id: 'emp-2', name: '张三', position: '反应岗', isLeader: true },
+        { id: 'emp-3', name: '李四', position: '配料岗', isLeader: false },
+        { id: 'emp-9', name: '赵六', position: '灌装岗', isLeader: false },
       ],
       remark: '',
       createdAt: '2026-03-10',
@@ -60,8 +120,9 @@ function createSeedGroups() {
       id: 'eg-2',
       code: 'WG20260310003',
       name: '总装小组',
+      workCenterId: 'wc-assy',
       workCenter: '组装中心',
-      position: '泵装配调试',
+      position: '',
       allowTaskGen: true,
       leaderParticipates: true,
       multiExecutor: true,
@@ -69,81 +130,8 @@ function createSeedGroups() {
       leaderId: 'emp-1',
       leaderName: '孙琴丽',
       workers: [
-        { id: 'emp-1', name: '孙琴丽', isLeader: true },
-        { id: 'emp-4', name: '王五', isLeader: false },
-      ],
-      remark: '',
-      createdAt: '2026-03-10',
-    },
-    {
-      id: 'eg-3',
-      code: 'WG20260310004',
-      name: '探伤小组',
-      workCenter: '机泵',
-      position: '质检',
-      allowTaskGen: true,
-      leaderParticipates: true,
-      multiExecutor: true,
-      status: '启用',
-      leaderId: 'emp-10',
-      leaderName: '陈七',
-      workers: [{ id: 'emp-10', name: '陈七', isLeader: true }],
-      remark: '',
-      createdAt: '2026-03-10',
-    },
-    {
-      id: 'eg-4',
-      code: 'WG20260310001',
-      name: '机加小组',
-      workCenter: '机泵',
-      position: '车间工人',
-      allowTaskGen: true,
-      leaderParticipates: false,
-      multiExecutor: true,
-      status: '启用',
-      leaderId: 'emp-3',
-      leaderName: '李四',
-      workers: [
-        { id: 'emp-3', name: '李四', isLeader: true },
-        { id: 'emp-9', name: '赵六', isLeader: false },
-      ],
-      remark: '',
-      createdAt: '2026-03-10',
-    },
-    {
-      id: 'eg-5',
-      code: 'WG20260310005',
-      name: '焊接小组',
-      workCenter: '机泵',
-      position: '车间工人',
-      allowTaskGen: true,
-      leaderParticipates: true,
-      multiExecutor: false,
-      status: '启用',
-      leaderId: 'emp-4',
-      leaderName: '王五',
-      workers: [
-        { id: 'emp-4', name: '王五', isLeader: true },
-        { id: 'emp-2', name: '张三', isLeader: false },
-      ],
-      remark: '',
-      createdAt: '2026-03-10',
-    },
-    {
-      id: 'eg-6',
-      code: 'WG20260310006',
-      name: '精加小组',
-      workCenter: '机泵',
-      position: '车间工人',
-      allowTaskGen: true,
-      leaderParticipates: true,
-      multiExecutor: true,
-      status: '启用',
-      leaderId: 'emp-2',
-      leaderName: '张三',
-      workers: [
-        { id: 'emp-2', name: '张三', isLeader: true },
-        { id: 'emp-9', name: '赵六', isLeader: false },
+        { id: 'emp-1', name: '孙琴丽', position: '班组长', isLeader: true },
+        { id: 'emp-4', name: '王五', position: '分离岗', isLeader: false },
       ],
       remark: '',
       createdAt: '2026-03-10',
@@ -151,8 +139,28 @@ function createSeedGroups() {
   ]
 }
 
+function normalizeGroup(row) {
+  if (!row || typeof row !== 'object') return row
+  const linked = resolveWorkCenterFields(row)
+  return {
+    ...row,
+    workCenterId: linked.workCenterId || row.workCenterId || '',
+    workCenter: linked.workCenter || row.workCenter || '',
+  }
+}
+
+function loadGroups() {
+  const versionOk = localStorage.getItem(GROUP_SEED_VERSION_KEY) === GROUP_SEED_VERSION
+  const stored = loadFromStorage()
+  if (versionOk && stored?.length) return stored.map(normalizeGroup)
+  const seed = createSeedGroups()
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ groups: seed }))
+  localStorage.setItem(GROUP_SEED_VERSION_KEY, GROUP_SEED_VERSION)
+  return seed
+}
+
 export const employeeGroupState = reactive({
-  groups: loadFromStorage() || createSeedGroups(),
+  groups: loadGroups(),
 })
 
 watch(
@@ -174,11 +182,16 @@ export function getEnabledEmployeeGroups() {
 }
 
 export function addEmployeeGroup(payload) {
+  const linked = resolveWorkCenterFields(payload)
+  if (!linked.workCenterId && !linked.workCenter) {
+    throw new Error('请选择工作中心')
+  }
   const row = {
     id: `eg-${Date.now()}`,
     code: payload.code?.trim() || generateCode(),
     name: payload.name?.trim() || '',
-    workCenter: payload.workCenter || '',
+    workCenterId: linked.workCenterId,
+    workCenter: linked.workCenter,
     position: payload.position || '',
     allowTaskGen: payload.allowTaskGen ?? true,
     leaderParticipates: payload.leaderParticipates ?? true,
@@ -197,8 +210,16 @@ export function addEmployeeGroup(payload) {
 export function updateEmployeeGroup(id, patch) {
   const idx = employeeGroupState.groups.findIndex((g) => g.id === id)
   if (idx === -1) return null
-  Object.assign(employeeGroupState.groups[idx], patch)
+  const linked = resolveWorkCenterFields({ ...employeeGroupState.groups[idx], ...patch })
+  Object.assign(employeeGroupState.groups[idx], patch, linked)
   return employeeGroupState.groups[idx]
+}
+
+/** 某工作中心下的启用班组 */
+export function listGroupsByWorkCenter(workCenterIdOrName) {
+  const key = String(workCenterIdOrName || '').trim()
+  if (!key) return []
+  return getEnabledEmployeeGroups().filter((g) => g.workCenterId === key || g.workCenter === key)
 }
 
 export function deleteEmployeeGroups(ids) {
@@ -208,7 +229,13 @@ export function deleteEmployeeGroups(ids) {
   return before - employeeGroupState.groups.length
 }
 
-export { workCenterOptions } from '@/mock/workOrderOptions'
+/** 兼容旧引用：启用中的工作中心名称 */
+export function getWorkCenterOptions() {
+  return listWorkCenterNames({ enabledOnly: true })
+}
+
+/** @deprecated 请用 getWorkCenterOptions() */
+export const workCenterOptions = listWorkCenterNames({ enabledOnly: true })
 /** 基础配置「岗位」主数据；工序「默认执行」从此取数 */
 export const positionOptions = [
   '配料岗',

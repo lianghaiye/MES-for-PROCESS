@@ -166,8 +166,8 @@
           <template v-else-if="column.key === 'source'">
             {{ sourceLabel[record.source] || '—' }}
           </template>
-          <template v-else-if="column.key === 'productionLine'">
-            {{ record.productionLineText || '—' }}
+          <template v-else-if="column.key === 'workCenter'">
+            {{ record.workCenterText || '—' }}
           </template>
           <template v-else-if="column.key === 'sourceRef'">{{ record.sourceRef || '—' }}</template>
           <template v-else-if="column.key === 'splitTo'">{{ splitText(record) }}</template>
@@ -299,6 +299,19 @@
                   :options="formulaOptions"
                   :disabled="!form.itemId"
                   @change="form.parentId = undefined"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="工作中心">
+                <a-select
+                  v-model:value="form.workCenterId"
+                  size="small"
+                  allow-clear
+                  show-search
+                  option-filter-prop="label"
+                  placeholder="可不选"
+                  :options="workCenterOptions"
                 />
               </a-form-item>
             </a-col>
@@ -539,7 +552,11 @@ import {
   listOrdersByFeedPlan,
   ORDER_STATUS_LABEL,
 } from '@/store/batchInstructionStore'
-import { formatPlanLineLabel } from '@/store/productionLineStore'
+import {
+  formatWorkCenterLabel,
+  listEnabledWorkCenters,
+  workCenterState,
+} from '@/store/workCenterStore'
 import {
   buildFeedPlanPeriod,
   FEED_PLAN_PERIOD,
@@ -587,9 +604,9 @@ const baseColumns = [
   { title: '期间', key: 'periodLabel', dataIndex: 'periodLabel', width: 200 },
   { title: '执行情况', key: 'execProgress', dataIndex: 'execProgressText', width: 130 },
   {
-    title: '产线',
-    key: 'productionLine',
-    dataIndex: 'productionLineText',
+    title: '工作中心',
+    key: 'workCenter',
+    dataIndex: 'workCenterText',
     width: 150,
     ellipsis: true,
   },
@@ -681,7 +698,7 @@ const form = reactive({
   planName: '',
   itemId: undefined,
   formulaId: undefined,
-  productionLineId: undefined,
+  workCenterId: undefined,
   targetQty: null,
   parentId: undefined,
   source: FEED_PLAN_SOURCE.MPS,
@@ -724,6 +741,14 @@ const formulaOptions = computed(() => {
   return rows.map((row) => ({
     value: row.id,
     label: `${row.formulaNo || row.id} ${row.name || ''}`.trim(),
+  }))
+})
+
+const workCenterOptions = computed(() => {
+  void workCenterState.centers
+  return listEnabledWorkCenters().map((row) => ({
+    value: row.id,
+    label: `${row.code || ''} ${row.name || ''}`.trim(),
   }))
 })
 
@@ -833,7 +858,7 @@ function enrichPlan(plan) {
   void feedPlanState.autoRelease
   return {
     ...plan,
-    productionLineText: formatPlanLineLabel(plan.productionLineId),
+    workCenterText: formatWorkCenterLabel(plan.workCenterId),
     planName:
       plan.planName || defaultPlanName(plan.periodType, plan.start, [plan.start, plan.end]) || '—',
     product: itemLabel(plan.itemId),
@@ -1158,7 +1183,7 @@ function resetForm() {
   form.planName = defaultPlanName('month', form.date)
   form.itemId = undefined
   form.formulaId = undefined
-  form.productionLineId = undefined
+  form.workCenterId = undefined
   form.targetQty = null
   form.parentId = undefined
   form.source = FEED_PLAN_SOURCE.MPS
@@ -1184,7 +1209,7 @@ function openEdit(record) {
     record.planName || defaultPlanName(record.periodType, record.start, [record.start, record.end])
   form.itemId = record.itemId || getFormula(record.formulaId)?.itemId
   form.formulaId = record.formulaId
-  form.productionLineId = record.productionLineId || undefined
+  form.workCenterId = record.workCenterId || undefined
   form.targetQty = record.targetQty
   form.parentId = record.parentId || undefined
   form.source = record.source || FEED_PLAN_SOURCE.MPS
@@ -1208,7 +1233,7 @@ function handleSave() {
         planNo: form.planNo,
         planName: form.planName,
         formulaId: form.formulaId,
-        productionLineId: form.productionLineId,
+        workCenterId: form.workCenterId,
         targetQty: form.targetQty,
         parentId: form.parentId,
         source: form.source,

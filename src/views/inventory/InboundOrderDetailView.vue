@@ -161,6 +161,9 @@
                   <template v-else-if="column.key === 'locationNo'">
                     {{ line.locationNo || '—' }}
                   </template>
+                  <template v-else-if="column.key === 'content'">
+                    {{ formatContentPctText(line.content) }}
+                  </template>
                   <template v-else-if="column.key === 'sourceDocNo'">
                     {{ line.sourceDocNo || '—' }}
                   </template>
@@ -602,9 +605,14 @@
                       </a-tag>
                     </template>
                     <template v-else-if="column.key === 'status'">
-                      <a-tag :color="batch.status === '在库' ? 'success' : 'default'">{{
-                        batch.status || '—'
-                      }}</a-tag>
+                      <a-tag
+                        :color="
+                          batch.status === '在库' || batch.status === '已入库'
+                            ? 'success'
+                            : 'default'
+                        "
+                        >{{ batch.status || '—' }}</a-tag
+                      >
                     </template>
                     <template v-else>
                       {{ (column.dataIndex && batch[column.dataIndex]) || '—' }}
@@ -681,6 +689,7 @@
 
 <script>
 import { formatQty, formatQtyWithUnit } from '@/utils/numberFormat'
+import { formatContentPctText } from '@/utils/batchContent'
 export default { name: 'InboundOrderDetailView' }
 </script>
 
@@ -706,6 +715,7 @@ import {
 } from '@/store/inboundOrderStore'
 import { inboundStatusColor } from '@/mock/inboundOptions'
 import { stockBatchState } from '@/store/stockBatchStore'
+import { groupInboundDisplayBatches, listInboundDisplayBatches } from '@/utils/inboundBatchDisplay'
 import { listStockPieces, stockPieceState } from '@/store/stockPieceStore'
 import { resolveInboundSourceRoute } from '@/utils/inboundSourceLink'
 import {
@@ -1067,65 +1077,12 @@ const pieceColumns = [
 ]
 
 const batchList = computed(() => {
-  const docNo = record.value?.docNo
-  if (!docNo) return []
-  const fromLines = new Set()
-  ;(record.value?.lineItems || []).forEach((line) => {
-    ;(line.batchNos || []).forEach((no) => {
-      if (no) fromLines.add(String(no))
-    })
-  })
-  return stockBatchState.batches.filter((b) => {
-    if (b.sourceDocNo === docNo) return true
-    if (fromLines.size && fromLines.has(String(b.batchNo))) return true
-    return false
-  })
+  void stockBatchState.batches
+  return listInboundDisplayBatches(record.value)
 })
 
 /** 按入库明细分组：上方编号+名称+材质，下方该物品批次 */
-const batchGroups = computed(() => {
-  const lines = record.value?.lineItems || []
-  const allBatches = batchList.value
-  const usedBatchIds = new Set()
-
-  const groups = lines.map((line, index) => {
-    const code = line.itemCode || ''
-    const lineBatchNos = new Set((line.batchNos || []).map((no) => String(no)))
-    const batches = allBatches.filter((b) => {
-      if (usedBatchIds.has(b.id)) return false
-      const matchByNo = lineBatchNos.size && lineBatchNos.has(String(b.batchNo))
-      const matchByCode = code && b.itemCode === code
-      if (matchByNo || matchByCode) {
-        usedBatchIds.add(b.id)
-        return true
-      }
-      return false
-    })
-    return {
-      key: line.id || `${code || 'line'}-${index}`,
-      itemCode: code,
-      itemName: line.itemName || '',
-      material: line.material || '',
-      unit: line.stockUnit || line.unit || '',
-      batches,
-    }
-  })
-
-  // 未能挂到明细行的批次（兜底一组）
-  const orphanBatches = allBatches.filter((b) => !usedBatchIds.has(b.id))
-  if (orphanBatches.length) {
-    groups.push({
-      key: 'orphan-batches',
-      itemCode: '',
-      itemName: '其他批次',
-      material: '',
-      unit: '',
-      batches: orphanBatches,
-    })
-  }
-
-  return groups
-})
+const batchGroups = computed(() => groupInboundDisplayBatches(record.value, batchList.value))
 
 function batchExpandableFor(batches) {
   return {

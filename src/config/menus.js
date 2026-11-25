@@ -86,7 +86,7 @@ export const sideMenus = {
     { key: 'production-plan', label: '生产计划', path: '/planning/production-plan' },
     {
       key: 'shift-energy-report',
-      label: '交班能耗填报',
+      label: '班组交班',
       path: '/planning/shift-energy-report',
     },
     { key: 'replenish-center', label: '库存预警', path: '/planning/replenish-center' },
@@ -189,6 +189,7 @@ export const sideMenus = {
   ],
   'basic-config': [
     { key: 'company-profile', label: '企业信息', path: '/basic-config/company-profile' },
+    { key: 'work-centers', label: '工作中心', path: '/basic-config/work-centers' },
     { key: 'employee-groups', label: '员工组别', path: '/basic-config/employee-groups' },
     { key: 'defect-items', label: '不良品项', path: '/basic-config/defect-items' },
     { key: 'material-grades', label: '材质管理', path: '/basic-config/material-grades' },
@@ -466,7 +467,7 @@ export const routeTitles = {
   '/contracts/changes/:id': '变更单详情',
   '/planning/production-plan': '生产计划',
   '/planning/production-plan/:id': '生产计划详情',
-  '/planning/shift-energy-report': '交班能耗填报',
+  '/planning/shift-energy-report': '班组交班',
   '/planning/design-task': '设计任务',
   '/planning/replenish-center': '库存预警',
   '/planning/replenish-ledger': '补货台账',
@@ -607,6 +608,7 @@ export const routeTitles = {
   '/board/work-order-monitor/screen': '工单监管看板',
   '/board/carousel/play': '看板轮播播放',
   '/basic-config/company-profile': '企业信息',
+  '/basic-config/work-centers': '工作中心',
   '/basic-config/employee-groups': '员工组别',
   '/basic-config/defect-items': '不良品项',
   '/basic-config/material-grades': '材质管理',

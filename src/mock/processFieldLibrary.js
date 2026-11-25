@@ -125,7 +125,7 @@ export const mockProcessLibraryFields = [
     unit: 'kg',
     unitPosition: QC_UNIT_POSITION.SUFFIX,
     placeholder: '已改由投料过账按明细填写，勿再放进过程记录模板',
-    remark: '实投量/含量走投料明细过账并扣库存，过程记录模板不再采集',
+    remark: '实投量/有效含量走投料明细过账并扣库存，过程记录模板不再采集',
     creator: '工艺员',
     createdAt: '2026-11-01 10:00:00',
     updater: '工艺员',

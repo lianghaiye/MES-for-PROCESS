@@ -2,50 +2,89 @@
   <div class="list-page batch-instruction-page">
     <div class="filter-card">
       <a-form layout="inline" class="filter-form horizontal-form">
-        <a-row :gutter="[12, 8]" style="width: 100%">
-          <a-col :xs="24" :sm="12" :md="8" :lg="6">
-            <a-form-item label="批次号">
-              <a-input
-                v-model:value="filters.keyword"
-                size="small"
-                allow-clear
-                placeholder="批次号 / 产品 / 配方"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :sm="12" :md="8" :lg="6">
-            <a-form-item label="状态">
-              <a-select
-                v-model:value="filters.status"
-                size="small"
-                allow-clear
-                placeholder="全部"
-                :options="statusOptions"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :sm="12" :md="8" :lg="6">
-            <a-form-item label="产线">
-              <a-select
-                v-model:value="filters.productionLineId"
-                size="small"
-                allow-clear
-                show-search
-                option-filter-prop="label"
-                placeholder="全部"
-                :options="lineOptions"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :sm="12" :md="8" :lg="6">
-            <a-form-item class="filter-actions-item">
-              <a-space>
-                <a-button type="primary" size="small" @click="applySearch">查询</a-button>
-                <a-button size="small" @click="resetSearch">重置</a-button>
-              </a-space>
-            </a-form-item>
-          </a-col>
-        </a-row>
+        <ListFilterBar
+          :field-count="7"
+          search-text="查询"
+          reset-text="重置"
+          @search="applySearch"
+          @reset="resetSearch"
+        >
+          <a-form-item label="批次号">
+            <a-input
+              v-model:value="filters.keyword"
+              size="small"
+              allow-clear
+              placeholder="批次号"
+              @press-enter="applySearch"
+            />
+          </a-form-item>
+          <a-form-item label="状态">
+            <a-select
+              v-model:value="filters.status"
+              size="small"
+              allow-clear
+              placeholder="全部"
+              style="width: 100%"
+              :options="statusOptions"
+            />
+          </a-form-item>
+          <a-form-item label="主产品">
+            <a-select
+              v-model:value="filters.itemId"
+              size="small"
+              allow-clear
+              show-search
+              option-filter-prop="label"
+              placeholder="全部"
+              style="width: 100%"
+              :options="productOptions"
+            />
+          </a-form-item>
+          <a-form-item label="配方">
+            <a-select
+              v-model:value="filters.formulaId"
+              size="small"
+              allow-clear
+              show-search
+              option-filter-prop="label"
+              placeholder="全部"
+              style="width: 100%"
+              :options="formulaOptions"
+            />
+          </a-form-item>
+          <a-form-item label="来源">
+            <a-select
+              v-model:value="filters.sourceKey"
+              size="small"
+              allow-clear
+              show-search
+              option-filter-prop="label"
+              placeholder="全部"
+              style="width: 100%"
+              :options="sourceOptions"
+            />
+          </a-form-item>
+          <a-form-item label="工作中心">
+            <a-select
+              v-model:value="filters.workCenterId"
+              size="small"
+              allow-clear
+              show-search
+              option-filter-prop="label"
+              placeholder="全部"
+              style="width: 100%"
+              :options="workCenterOptions"
+            />
+          </a-form-item>
+          <a-form-item label="创建时间">
+            <a-range-picker
+              v-model:value="filters.createdRange"
+              size="small"
+              style="width: 100%"
+              :placeholder="['开始日期', '结束日期']"
+            />
+          </a-form-item>
+        </ListFilterBar>
       </a-form>
     </div>
 
@@ -121,7 +160,7 @@
           <template v-else-if="column.key === 'stage'">{{ record.stageText }}</template>
           <template v-else-if="column.key === 'item'">{{ record.productText }}</template>
           <template v-else-if="column.key === 'formula'">{{ record.formulaText }}</template>
-          <template v-else-if="column.key === 'productionLine'">{{ record.lineText }}</template>
+          <template v-else-if="column.key === 'workCenter'">{{ record.workCenterText }}</template>
           <template v-else-if="column.key === 'seq'">{{ record.seqText }}</template>
           <template v-else-if="column.key === 'qty'">{{ record.qtyText }}</template>
           <template v-else-if="column.key === 'feed'">{{ record.feedText }}</template>
@@ -195,6 +234,8 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import dayjs from 'dayjs'
+import ListFilterBar from '@/components/ListFilterBar.vue'
 import TableColumnSettingButton from '@/components/TableColumnSettingButton.vue'
 import TableColumnSettingDrawer from '@/components/TableColumnSettingDrawer.vue'
 import { useTableColumnSettings } from '@/composables/useTableColumnSettings'
@@ -209,10 +250,10 @@ import {
   releaseOrder,
 } from '@/store/batchInstructionStore'
 import {
-  formatProductionLineLabel,
-  listEnabledProductionLineOptions,
-  productionLineState,
-} from '@/store/productionLineStore'
+  formatWorkCenterLabel,
+  listEnabledWorkCenters,
+  workCenterState,
+} from '@/store/workCenterStore'
 import { getFeedPlan } from '@/store/feedPlanStore'
 import { currentProcessStep } from '@/utils/processRouteBoard'
 import { formatQty } from '@/utils/numberFormat'
@@ -271,12 +312,21 @@ const statusOptions = Object.entries(ORDER_STATUS_LABEL).map(([value, label]) =>
 const filters = reactive({
   keyword: '',
   status: undefined,
-  productionLineId: undefined,
+  itemId: undefined,
+  formulaId: undefined,
+  sourceKey: undefined,
+  workCenterId: undefined,
+  createdRange: null,
 })
 const applied = reactive({
   keyword: '',
   status: undefined,
-  productionLineId: undefined,
+  itemId: undefined,
+  formulaId: undefined,
+  sourceKey: undefined,
+  workCenterId: undefined,
+  createdFrom: '',
+  createdTo: '',
 })
 
 const baseColumns = [
@@ -298,7 +348,7 @@ const baseColumns = [
   { title: '实际产出', key: 'output', dataIndex: 'outputText', width: 110, align: 'right' },
   { title: '得率差', key: 'gap', dataIndex: 'gapText', width: 90, align: 'right' },
   { title: '配方', key: 'formula', dataIndex: 'formulaText', width: 180, ellipsis: true },
-  { title: '产线', key: 'productionLine', dataIndex: 'lineText', width: 140, ellipsis: true },
+  { title: '工作中心', key: 'workCenter', dataIndex: 'workCenterText', width: 140, ellipsis: true },
   { title: '来源计划', key: 'source', dataIndex: 'sourceText', width: 180, ellipsis: true },
   { title: '创建人', key: 'createdBy', dataIndex: 'createdBy', width: 110 },
   { title: '创建时间', key: 'createdAt', dataIndex: 'createdAt', width: 150 },
@@ -313,9 +363,59 @@ const { columnSettings, columnDrawerOpen, displayColumns, tableScrollX, defaultC
     excludeKeys: ['index', 'action'],
   })
 
-const lineOptions = computed(() => {
-  void productionLineState.lines
-  return listEnabledProductionLineOptions()
+const workCenterOptions = computed(() => {
+  void workCenterState.centers
+  return listEnabledWorkCenters().map((row) => ({
+    value: row.id,
+    label: `${row.code || ''} ${row.name || ''}`.trim(),
+  }))
+})
+
+/** 来源展示文案（计划号优先，否则 sourceLabel） */
+function resolveSourceText(order) {
+  const plan = order?.feedPlanId ? getFeedPlan(order.feedPlanId) : null
+  return plan?.planNo || order?.sourceLabel || ''
+}
+
+/** 筛选项：现有指令里出现过的主产品 / 配方 / 来源 */
+const productOptions = computed(() => {
+  void batchInstructionState.orders
+  const map = new Map()
+  batchInstructionState.orders.forEach((order) => {
+    const id = String(order.itemId || '').trim()
+    if (!id || map.has(id)) return
+    map.set(id, itemLabel(id) || id)
+  })
+  return [...map.entries()]
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => String(a.label).localeCompare(String(b.label), 'zh-CN'))
+})
+
+const formulaOptions = computed(() => {
+  void batchInstructionState.orders
+  const map = new Map()
+  batchInstructionState.orders.forEach((order) => {
+    const id = String(order.formulaId || '').trim()
+    if (!id || map.has(id)) return
+    const label = `${order.formulaName || ''} ${order.formulaVersion || ''}`.trim() || id
+    map.set(id, label)
+  })
+  return [...map.entries()]
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => String(a.label).localeCompare(String(b.label), 'zh-CN'))
+})
+
+const sourceOptions = computed(() => {
+  void batchInstructionState.orders
+  const map = new Map()
+  batchInstructionState.orders.forEach((order) => {
+    const text = resolveSourceText(order)
+    if (!text || map.has(text)) return
+    map.set(text, text)
+  })
+  return [...map.entries()]
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => String(a.label).localeCompare(String(b.label), 'zh-CN'))
 })
 
 function statusColor(status) {
@@ -334,6 +434,16 @@ function sumFeed(order) {
   return (order.feeds || []).reduce((sum, row) => sum + (Number(row.qty) || 0), 0)
 }
 
+/** 创建时间是否落在已生效的日期区间内 */
+function matchCreatedRange(order) {
+  if (!applied.createdFrom && !applied.createdTo) return true
+  const at = dayjs(order.createdAt)
+  if (!at.isValid()) return false
+  if (applied.createdFrom && at.isBefore(dayjs(applied.createdFrom).startOf('day'))) return false
+  if (applied.createdTo && at.isAfter(dayjs(applied.createdTo).endOf('day'))) return false
+  return true
+}
+
 const rows = computed(() => {
   void batchInstructionState.orders
   const keyword = String(applied.keyword || '')
@@ -342,9 +452,16 @@ const rows = computed(() => {
   return batchInstructionState.orders
     .filter((order) => {
       if (applied.status && order.status !== applied.status) return false
-      if (applied.productionLineId && order.productionLineId !== applied.productionLineId) {
+      if (applied.itemId && order.itemId !== applied.itemId) return false
+      if (applied.formulaId && order.formulaId !== applied.formulaId) return false
+      if (applied.workCenterId && order.workCenterId !== applied.workCenterId) {
         return false
       }
+      if (applied.sourceKey) {
+        const sourceText = resolveSourceText(order) || '—'
+        if (sourceText !== applied.sourceKey) return false
+      }
+      if (!matchCreatedRange(order)) return false
       if (!keyword) return true
       const product = itemLabel(order.itemId)
       const text = `${order.batchNo || ''} ${product} ${order.formulaName || ''} ${order.sourceLabel || ''}`
@@ -352,19 +469,15 @@ const rows = computed(() => {
     })
     .map((order, index) => {
       const stage = currentProcessStep(order, getFormula)
-      const plan = order.feedPlanId ? getFeedPlan(order.feedPlanId) : null
       const feed = sumFeed(order)
       const split = Number(order.batchCount) > 1
+      const sourceText = resolveSourceText(order) || '—'
       return {
         ...order,
         seqNo: String(index + 1),
         productText: itemLabel(order.itemId) || '—',
         formulaText: `${order.formulaName || '—'} ${order.formulaVersion || ''}`.trim(),
-        lineText: order.productionLineId
-          ? formatProductionLineLabel(order.productionLineId) || '—'
-          : order.executeBy === 'formula' || order.feedPlanId
-            ? '按配方设备'
-            : '—',
+        workCenterText: order.workCenterId ? formatWorkCenterLabel(order.workCenterId) || '—' : '—',
         stageText: stage?.text || '—',
         seqText: split ? `${order.seq}/${order.batchCount}` : '—',
         qtyText: qtyText(order),
@@ -374,7 +487,7 @@ const rows = computed(() => {
             ? '—'
             : `${formatQty(order.actualOutput)} ${order.unit || ''}`.trim(),
         gapText: order.yieldGap == null || order.yieldGap === '' ? '—' : String(order.yieldGap),
-        sourceText: plan?.planNo || order.sourceLabel || '—',
+        sourceText,
       }
     })
 })
@@ -382,13 +495,23 @@ const rows = computed(() => {
 function applySearch() {
   applied.keyword = filters.keyword
   applied.status = filters.status
-  applied.productionLineId = filters.productionLineId
+  applied.itemId = filters.itemId
+  applied.formulaId = filters.formulaId
+  applied.sourceKey = filters.sourceKey
+  applied.workCenterId = filters.workCenterId
+  const range = filters.createdRange
+  applied.createdFrom = range?.[0] ? dayjs(range[0]).format('YYYY-MM-DD') : ''
+  applied.createdTo = range?.[1] ? dayjs(range[1]).format('YYYY-MM-DD') : ''
 }
 
 function resetSearch() {
   filters.keyword = ''
   filters.status = undefined
-  filters.productionLineId = undefined
+  filters.itemId = undefined
+  filters.formulaId = undefined
+  filters.sourceKey = undefined
+  filters.workCenterId = undefined
+  filters.createdRange = null
   applySearch()
 }
 

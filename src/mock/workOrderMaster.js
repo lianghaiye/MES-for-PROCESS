@@ -1,14 +1,14 @@
 export const mockEmployees = [
-  { id: 'emp-1', name: '孙琴丽', employeeNo: '65436456' },
-  { id: 'emp-2', name: '张三', employeeNo: 'E2025001' },
-  { id: 'emp-3', name: '李四', employeeNo: 'E2025002' },
-  { id: 'emp-4', name: '王五', employeeNo: 'E2025003' },
-  { id: 'emp-5', name: 'admin1', employeeNo: '65436456' },
-  { id: 'emp-6', name: 'testjb', employeeNo: '' },
-  { id: 'emp-7', name: 'jb001', employeeNo: '' },
-  { id: 'emp-8', name: '浪潮', employeeNo: '' },
-  { id: 'emp-9', name: '赵六', employeeNo: 'E2025004' },
-  { id: 'emp-10', name: '陈七', employeeNo: 'E2025005' },
+  { id: 'emp-1', name: '孙琴丽', employeeNo: '65436456', position: '班组长' },
+  { id: 'emp-2', name: '张三', employeeNo: 'E2025001', position: '反应岗' },
+  { id: 'emp-3', name: '李四', employeeNo: 'E2025002', position: '配料岗' },
+  { id: 'emp-4', name: '王五', employeeNo: 'E2025003', position: '分离岗' },
+  { id: 'emp-5', name: 'admin1', employeeNo: '65436456', position: '操作工' },
+  { id: 'emp-6', name: 'testjb', employeeNo: '', position: '操作工' },
+  { id: 'emp-7', name: 'jb001', employeeNo: '', position: '操作工' },
+  { id: 'emp-8', name: '浪潮', employeeNo: '', position: '质检岗' },
+  { id: 'emp-9', name: '赵六', employeeNo: 'E2025004', position: '灌装岗' },
+  { id: 'emp-10', name: '陈七', employeeNo: 'E2025005', position: '质检岗' },
 ]
 
 export const mockFeedingMaterials = [

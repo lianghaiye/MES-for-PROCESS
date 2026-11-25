@@ -244,6 +244,7 @@ import {
 } from '@/utils/deliveryLine'
 import { getWarehouseSelectOptions, warehouseState } from '@/store/warehouseStore'
 import { getMaterialBatch, listMaterialBatches } from '@/store/materialBatchStore'
+import { isProcessOutputBatchUsable } from '@/store/batchInstructionStore'
 import {
   bagCountFromTons,
   contentSettlementReady,
@@ -302,12 +303,16 @@ const bagHint = computed(() => {
 })
 const batchOptions = computed(() =>
   listMaterialBatches()
-    .filter(
-      (batch) =>
-        batch.status === 'released' &&
-        Number(batch.qty) > 0 &&
-        (!draft.productId || batch.itemId === draft.productId),
-    )
+    .filter((batch) => {
+      if (!(Number(batch.qty) > 0)) return false
+      if (draft.productId && batch.itemId !== draft.productId) return false
+      // 须已入库确认；流程产出另过硬门禁检单
+      if (batch.status !== 'released') return false
+      if (batch.sourceType && batch.sourceType !== 'purchase') {
+        return isProcessOutputBatchUsable(batch)
+      }
+      return true
+    })
     .map((batch) => ({
       value: batch.id,
       label: `${batch.batchNo} · 余 ${batch.qty}${batch.content != null ? ` · ${toContentPercent(batch.content)}%` : ''}`,

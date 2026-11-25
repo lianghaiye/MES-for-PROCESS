@@ -81,32 +81,58 @@ export const INVENTORY_DEDUCT_DESCRIPTION =
   '完工再按 BOM×完工数量扣线边仓（仓库可改），可勾选自动审批自动确认；库存不足则扣减失败。' +
   '下料结算已固定为无需结算：余料留在现场，库存扣减仍按本项口径实扣。'
 
-/** 出库规则：拣批顺序（普通料 / 需下料结算料语义不同，见 DESCRIPTION） */
+/** 车间暂存合并入库时，多批有效含量如何处理（一期仅开放「相同才可合」） */
+export const WORKSHOP_STAGING_MERGE_CONTENT_MODES = {
+  SAME: 'same',
+  WEIGHTED_AVG: 'weighted_avg',
+  SPLIT_LINES: 'split_lines',
+}
+
+export const WORKSHOP_STAGING_MERGE_CONTENT_OPTIONS = [
+  { value: WORKSHOP_STAGING_MERGE_CONTENT_MODES.SAME, label: '含量须相同才可合' },
+  {
+    value: WORKSHOP_STAGING_MERGE_CONTENT_MODES.WEIGHTED_AVG,
+    label: '加权平均（二期）',
+    disabled: true,
+  },
+  {
+    value: WORKSHOP_STAGING_MERGE_CONTENT_MODES.SPLIT_LINES,
+    label: '同单拆行保留各批含量（二期）',
+    disabled: true,
+  },
+]
+
+export const WORKSHOP_STAGING_MERGE_CONTENT_DESCRIPTION =
+  '控制「待处置产出」合并入库时，多条车间暂存批的有效含量规则。本期仅开放「含量须相同」；加权平均与拆行后续开放。'
+
+/**
+ * 出库规则（领料 / 外协发料等仓库出库；销售发货见 salesOutboundIssueRule）
+ * - fefo：近效先出（失效日期升序，同效期再按批次号先进先出）；过期批不参与
+ * - manual：必须自主选批
+ * - either：默认 FEFO，行上可改自主选批
+ */
 export const OUTBOUND_ISSUE_RULES = {
+  FEFO: 'fefo',
+  /** @deprecated 兼容旧存档，归一为 FEFO */
   FIFO: 'fifo',
+  /** @deprecated 兼容旧存档，归一为 FEFO */
   LIFO: 'lifo',
   MANUAL: 'manual',
+  EITHER: 'either',
 }
 
 export const OUTBOUND_ISSUE_RULE_OPTIONS = [
-  {
-    value: OUTBOUND_ISSUE_RULES.FIFO,
-    label: '先进先出（普通料）/ FIFO+优先整批+余料优先（需下料结算）',
-    disabled: false,
-  },
-  {
-    value: OUTBOUND_ISSUE_RULES.LIFO,
-    label: '后进先出',
-    disabled: true,
-  },
-  { value: OUTBOUND_ISSUE_RULES.MANUAL, label: '自主拣选', disabled: true },
+  { value: OUTBOUND_ISSUE_RULES.FEFO, label: 'FEFO（近效先出）' },
+  { value: OUTBOUND_ISSUE_RULES.MANUAL, label: '自主选批' },
+  { value: OUTBOUND_ISSUE_RULES.EITHER, label: '两者皆可' },
 ]
 
 export const OUTBOUND_ISSUE_RULE_DESCRIPTION =
-  '本期仅开放先进先出，按物料类型自动区分拣批细节：' +
-  '①普通物料（未勾「需要下料结算」）：按批次号先进先出，按出库数量扣减，余量留原批；' +
-  '②需下料结算物料：FIFO + 优先找单批/单件能满足出库数量的批，候选中余料优先、其次最短够用，没有单批够用才跨批。' +
-  '下料余料不再单独结算回库。「后进先出」「自主拣选」本期置灰未开放。领料、外协发料始终走本项；销售发货见下方「发货出库规则」。'
+  '控制仓库出库如何扣批：' +
+  '①FEFO：先按失效日期近的先出，同效期再按批次号先进先出；过期批不可扣；需下料结算物料仍叠加「余料优先 / 最短够用」。' +
+  '②自主选批：出库必须选手选批次，不自动扣批。' +
+  '③两者皆可：默认按 FEFO 预分配，行上可点「自主拣选」改实发批。' +
+  '领料、外协发料走本项；销售发货见下方「发货出库规则」。有效含量跟过账实扣批次走。'
 
 /**
  * 销售发货出库如何扣批（不影响领料 / 外协发料）
@@ -558,6 +584,10 @@ export const ENABLE_SEQUENTIAL_PROCESS_TASK_DESCRIPTION =
   '开启后，工单下发的工序任务按工艺顺序放开：上道工序任务未报工完成前，下道工序工人不可见、不可领取。' +
   '关闭后各工序任务同时可见可接（默认）。对之后新下发的任务生效；极简报工模式仍并行下发。'
 
+export const ENABLE_SEQUENTIAL_BATCH_STEP_DESCRIPTION =
+  '开启后，批次指令工艺阶段按顺序确认：上一步未确认前，下一步不可确认。' +
+  '关闭后各步可分别确认（默认）。硬门禁仍按各步自己的过程检控制；关单时仍要求全部步骤已确认。'
+
 export const PROCESS_ROUTE_MODE_DESCRIPTION =
   '工艺路线：格子是工序，每格再挂设备，渣/母液回流写回到哪一格。' +
   '设备顺序：只排设备，配方阶段仍选工序，设备从这条顺序里选。' +
@@ -580,7 +610,7 @@ export const PROCESS_FEED_DEDUCT_OPTIONS = [
 
 export const PROCESS_FEED_DEDUCT_FRESH_DESCRIPTION =
   '控制「线边新料」行怎么扣：选手选批次 / 只选储罐或库位按先进先出 / 两者皆可（选了批按批扣，未选批须选位置）。' +
-  'FIFO 时含量可手填或空着后补。投料来源在明细行选择，不在表头统一。'
+  'FIFO 时有效含量可手填或空着后补。投料来源在明细行选择，不在表头统一。'
 
 export const PROCESS_FEED_DEDUCT_RECYCLE_DESCRIPTION =
   '控制「回流料」行怎么扣：选手选批次（默认）/ 回用罐+量先进先出 / 两者皆可。' +
@@ -631,6 +661,18 @@ export const FUNCTION_PARAM_ROWS = [
     description: INVENTORY_DEDUCT_DESCRIPTION,
   },
   {
+    key: 'outboundIssueRule',
+    category: 'inventory',
+    scenario: '出库规则',
+    description: OUTBOUND_ISSUE_RULE_DESCRIPTION,
+  },
+  {
+    key: 'workshopStagingMergeContentMode',
+    category: 'inventory',
+    scenario: '车间暂存合并含量',
+    description: WORKSHOP_STAGING_MERGE_CONTENT_DESCRIPTION,
+  },
+  {
     key: 'transferRequireInboundConfirm',
     category: 'inventory',
     scenario: '调拨入库方签收',
@@ -679,6 +721,13 @@ export const FUNCTION_PARAM_ROWS = [
     description: PROCESS_FEED_DEDUCT_RECYCLE_DESCRIPTION,
   },
   {
+    key: 'enableSequentialBatchStep',
+    category: 'production',
+    scenario: '批次阶段时序确认',
+    description: ENABLE_SEQUENTIAL_BATCH_STEP_DESCRIPTION,
+    controlType: 'switch',
+  },
+  {
     key: 'salaryPushMode',
     category: 'production',
     scenario: '工资推送',
@@ -716,10 +765,19 @@ function normalizeInventoryDeductMode(mode) {
 }
 
 function normalizeOutboundIssueRule(mode) {
-  const hit = OUTBOUND_ISSUE_RULE_OPTIONS.find((item) => item.value === mode)
-  // 本期仅开放 FIFO；历史 LIFO/自主拣选回落为先进先出
+  const text = String(mode || '').trim()
+  // 旧 FIFO / LIFO 一律升为 FEFO（近效先出）
+  if (text === OUTBOUND_ISSUE_RULES.FIFO || text === OUTBOUND_ISSUE_RULES.LIFO) {
+    return OUTBOUND_ISSUE_RULES.FEFO
+  }
+  if (OUTBOUND_ISSUE_RULE_OPTIONS.some((item) => item.value === text)) return text
+  return OUTBOUND_ISSUE_RULES.EITHER
+}
+
+function normalizeWorkshopStagingMergeContentMode(mode) {
+  const hit = WORKSHOP_STAGING_MERGE_CONTENT_OPTIONS.find((item) => item.value === mode)
   if (hit && !hit.disabled) return hit.value
-  return OUTBOUND_ISSUE_RULES.FIFO
+  return WORKSHOP_STAGING_MERGE_CONTENT_MODES.SAME
 }
 
 function normalizeSalesOutboundIssueRule(mode) {
@@ -790,6 +848,9 @@ function loadFromStorage() {
           autoApproveDocs: normalizeAutoApproveDocs(parsed.autoApproveDocs),
           inventoryDeductMode: normalizeInventoryDeductMode(parsed.inventoryDeductMode),
           outboundIssueRule: normalizeOutboundIssueRule(parsed.outboundIssueRule),
+          workshopStagingMergeContentMode: normalizeWorkshopStagingMergeContentMode(
+            parsed.workshopStagingMergeContentMode,
+          ),
           salesOutboundIssueRule: normalizeSalesOutboundIssueRule(parsed.salesOutboundIssueRule),
           shipAttachmentDecideStage: normalizeShipAttachmentDecideStage(
             parsed.shipAttachmentDecideStage,
@@ -807,6 +868,7 @@ function loadFromStorage() {
           blankSizeAssistToolsVersion: BLANK_SIZE_ASSIST_DEFAULTS_VERSION,
           enableBomLevelMts: false,
           enableSequentialProcessTask: false,
+          enableSequentialBatchStep: Boolean(parsed.enableSequentialBatchStep),
           processRouteMode: normalizeRouteMode(
             parsed.processRouteMode ?? readLegacyProcessRouteMode(),
           ),
@@ -847,7 +909,8 @@ export const functionParamState = reactive({
     autoGenerateDocs: createDefaultAutoGenerateDocs(),
     autoApproveDocs: createDefaultAutoApproveDocs(),
     inventoryDeductMode: INVENTORY_DEDUCT_MODES.NO_ISSUE,
-    outboundIssueRule: OUTBOUND_ISSUE_RULES.FIFO,
+    outboundIssueRule: OUTBOUND_ISSUE_RULES.EITHER,
+    workshopStagingMergeContentMode: WORKSHOP_STAGING_MERGE_CONTENT_MODES.SAME,
     salesOutboundIssueRule: SALES_OUTBOUND_ISSUE_RULES.BY_ORDER,
     shipAttachmentDecideStage: SHIP_ATTACHMENT_DECIDE_STAGES.APPLY,
     transferRequireInboundConfirm: normalizeTransferRequireInboundConfirm(
@@ -863,6 +926,7 @@ export const functionParamState = reactive({
     blankSizeAssistToolsVersion: BLANK_SIZE_ASSIST_DEFAULTS_VERSION,
     enableBomLevelMts: false,
     enableSequentialProcessTask: false,
+    enableSequentialBatchStep: false,
     processRouteMode: normalizeRouteMode(readLegacyProcessRouteMode()) || ROUTE_MODE_PROCESS,
     processFeedDeductMode: PROCESS_FEED_DEDUCT_MODES.BATCH_PICK,
     processFeedDeductModeRecycle: PROCESS_FEED_DEDUCT_MODES.BATCH_PICK,
@@ -971,23 +1035,50 @@ export function getOutboundIssueRule() {
   return normalizeOutboundIssueRule(functionParamState.params.outboundIssueRule)
 }
 
+export function getWorkshopStagingMergeContentMode() {
+  return normalizeWorkshopStagingMergeContentMode(
+    functionParamState.params.workshopStagingMergeContentMode,
+  )
+}
+
+export function setWorkshopStagingMergeContentMode(mode) {
+  const normalized = normalizeWorkshopStagingMergeContentMode(mode)
+  const hit = WORKSHOP_STAGING_MERGE_CONTENT_OPTIONS.find((item) => item.value === normalized)
+  if (!hit || hit.disabled) {
+    return { ok: false, message: '本期仅开放「含量须相同才可合」' }
+  }
+  functionParamState.params.workshopStagingMergeContentMode = normalized
+  return { ok: true }
+}
+
 export function setOutboundIssueRule(mode) {
   const normalized = normalizeOutboundIssueRule(mode)
-  const hit = OUTBOUND_ISSUE_RULE_OPTIONS.find((item) => item.value === normalized)
-  if (!hit || hit.disabled) {
-    return { ok: false, message: '本期仅开放「先进先出+优先整批+余料优先」' }
+  if (!OUTBOUND_ISSUE_RULE_OPTIONS.some((item) => item.value === normalized)) {
+    return { ok: false, message: '无效的出库规则' }
   }
   functionParamState.params.outboundIssueRule = normalized
   return { ok: true }
 }
 
+/** 强制自主选批（不可走自动 FEFO） */
 export function isManualOutboundIssue() {
   return getOutboundIssueRule() === OUTBOUND_ISSUE_RULES.MANUAL
 }
 
+/** 仅 FEFO 自动扣批（行上不可自主改批） */
 export function isAutoOutboundIssue() {
+  return getOutboundIssueRule() === OUTBOUND_ISSUE_RULES.FEFO
+}
+
+/** FEFO 与自主选批皆可（默认自动，行上可改手选） */
+export function isEitherOutboundIssue() {
+  return getOutboundIssueRule() === OUTBOUND_ISSUE_RULES.EITHER
+}
+
+/** 是否允许行上出现「自主拣选」入口 */
+export function canOutboundManualBatchPick() {
   const rule = getOutboundIssueRule()
-  return rule === OUTBOUND_ISSUE_RULES.FIFO || rule === OUTBOUND_ISSUE_RULES.LIFO
+  return rule === OUTBOUND_ISSUE_RULES.MANUAL || rule === OUTBOUND_ISSUE_RULES.EITHER
 }
 
 export function getSalesOutboundIssueRule() {
@@ -1145,6 +1236,16 @@ export function isSequentialProcessTaskEnabled() {
 
 export function setEnableSequentialProcessTask() {
   functionParamState.params.enableSequentialProcessTask = false
+  return { ok: true }
+}
+
+/** 批次指令工艺阶段是否按时序确认（上一步确认后才可确认下一步） */
+export function isSequentialBatchStepEnabled() {
+  return Boolean(functionParamState.params.enableSequentialBatchStep)
+}
+
+export function setEnableSequentialBatchStep(enabled) {
+  functionParamState.params.enableSequentialBatchStep = Boolean(enabled)
   return { ok: true }
 }
 

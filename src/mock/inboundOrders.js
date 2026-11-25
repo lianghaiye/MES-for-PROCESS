@@ -36,6 +36,8 @@ export function createInboundLine(partial = {}) {
     barcodeBatchNo: '',
     productionDate: '',
     expiryDate: '',
+    /** 有效含量：0~1 小数；界面按百分比录入 */
+    content: null,
     lineRemark: '',
     warehouse: '',
     poLineId: '',

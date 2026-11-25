@@ -1,4 +1,5 @@
 /** 出库明细列定义（新增/编辑表单与详情页共用） */
+import { formatContentPctText } from '@/utils/batchContent'
 
 /** 仅销售出库展示的明细列 */
 export const OUTBOUND_SALES_ONLY_LINE_KEYS = ['packagingForm', 'deliveryRemark']
@@ -9,18 +10,19 @@ export const OUTBOUND_NON_SALES_LINE_KEYS = []
 export const outboundFormLineColumns = [
   { title: '序号', key: 'index', width: 56, align: 'center' },
   { title: '状态', key: 'lineStatus', dataIndex: 'lineStatus', width: 88 },
-  { title: '物品编码', dataIndex: 'itemCode', key: 'itemCode', width: 120, ellipsis: true },
   { title: '物品名称', dataIndex: 'itemName', key: 'itemName', width: 130, ellipsis: true },
+  { title: '物品编码', dataIndex: 'itemCode', key: 'itemCode', width: 120, ellipsis: true },
   { title: '规格型号', dataIndex: 'specModel', key: 'specModel', width: 110, ellipsis: true },
   { title: '条码类型', dataIndex: 'barcodeType', key: 'barcodeType', width: 96 },
   { title: '当前可用库存数', key: 'availableStockQty', width: 130, align: 'right' },
   { title: '当前仓库数量', key: 'warehouseStockQty', width: 130, align: 'right' },
-  { title: '仓库', key: 'shipWarehouse', width: 120 },
+  { title: '出库位置', key: 'shipWarehouse', width: 120 },
   { title: '货位号', key: 'locationNo', dataIndex: 'locationNo', width: 110, ellipsis: true },
   /** 数量与单位合并展示，如「10 米」 */
   { title: '出库数量', key: 'shipQty', width: 120 },
   { title: '出库重量(kg)', key: 'weight', width: 120, align: 'right' },
   { title: '拣选批次', key: 'batchPick', width: 260 },
+  { title: '有效含量', key: 'content', width: 110, align: 'right' },
   {
     title: '包装形式',
     dataIndex: 'packagingForm',
@@ -56,17 +58,17 @@ export function filterOutboundLineColumns(columns, outboundType) {
 
 /** 拣选批次列提示 */
 export const OUTBOUND_BATCH_PICK_TIP_MANUAL =
-  '自主拣选：先填写出库数量，再多选批次（或点「搜索更多」按入库时间筛选）。系统按所选批次「余量小优先」跨批扣减；出库数量大于所选批次合计时拦截。允许跨批次扣减。'
+  '自主选批：先填写出库数量，再多选批次（或点「搜索更多」）。系统按所选批次「余量小优先」跨批扣减；出库数量大于所选批次合计时拦截。允许跨批次扣减；有效含量跟所选批次走。'
 
 export const OUTBOUND_BATCH_PICK_TIP_AUTO =
-  '默认先进先出+优先整批+余料优先：优先匹配单批/单件≥需求（余料优先、最短够用），没有再跨批硬凑。可点「自主拣选」指定批次；自主拣选时优先扣数量小的批次，并允许跨批。'
+  '默认 FEFO（近效先出）：失效日期近的先扣，同效期再按批次号先进先出；需下料结算物料叠加余料优先/最短够用。功能参数为「两者皆可」时可点「自主拣选」改实发批；含量跟过账批次走。'
 
 /** @deprecated 兼容旧引用，等同自主拣选提示 */
 export const OUTBOUND_BATCH_PICK_TIP = OUTBOUND_BATCH_PICK_TIP_MANUAL
 
 const BATCH_ATTR_LABELS = {
   specModel: '规格型号',
-  content: '含量',
+  content: '有效含量',
   expiryDate: '失效日期',
   supplierBatchNo: '供应商批号',
 }
@@ -87,6 +89,11 @@ export function formatBatchAttrsText(attrs) {
     if (val == null || val === '') return
     if (BATCH_ATTR_SKIP.has(key)) return
     const label = BATCH_ATTR_LABELS[key] || key
+    if (key === 'content') {
+      const text = formatContentPctText(val)
+      if (text !== '—') parts.push(`${label}:${text}`)
+      return
+    }
     parts.push(`${label}:${val}`)
   })
   return parts.join('；')

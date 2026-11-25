@@ -12,6 +12,8 @@ export function createOutboundLine(partial = {}) {
     material: '',
     drawingNo: '',
     barcodeBatchNo: '',
+    /** 有效含量：确认出库时从批次带出快照（0~1） */
+    content: null,
     shipQty: 1,
     weight: null,
     shipWarehouse: '',

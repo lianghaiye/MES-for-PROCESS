@@ -64,7 +64,7 @@ export function createProcessFormTemplateSeed() {
       code: 'PFT-FEED-001',
       name: '投料记录',
       status: '启用',
-      remark: '投料工序过程记录；实投量/含量在投料过账中填写，不在此模板采集',
+      remark: '投料工序过程记录；实投量/有效含量在投料过账中填写，不在此模板采集',
       fields: [
         fieldFromCode('OP_OPERATOR', {
           required: true,

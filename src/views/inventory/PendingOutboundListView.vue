@@ -57,9 +57,9 @@
             </a-form-item>
           </a-col>
           <a-col :xs="24" :sm="12" :md="6">
-            <a-form-item label="物品编码">
+            <a-form-item label="物品名称">
               <a-input
-                v-model:value="filters.itemCode"
+                v-model:value="filters.itemName"
                 allow-clear
                 placeholder="请输入"
                 size="small"
@@ -67,9 +67,9 @@
             </a-form-item>
           </a-col>
           <a-col :xs="24" :sm="12" :md="6">
-            <a-form-item label="物品名称">
+            <a-form-item label="物品编码">
               <a-input
-                v-model:value="filters.itemName"
+                v-model:value="filters.itemCode"
                 allow-clear
                 placeholder="请输入"
                 size="small"
@@ -634,8 +634,8 @@ const baseColumns = [
   { title: '出库单号', key: 'docNo', dataIndex: 'docNo', width: 150, fixed: 'left' },
   { title: '出库类型', key: 'outboundType', dataIndex: 'outboundType', width: 110 },
   { title: '出库数量', key: 'shipQtyTotal', width: 120, align: 'right' },
-  { title: '物品编码', key: 'itemCode', dataIndex: 'itemCode', width: 120, ellipsis: true },
   { title: '物品名称', key: 'itemName', dataIndex: 'itemName', width: 140, ellipsis: true },
+  { title: '物品编码', key: 'itemCode', dataIndex: 'itemCode', width: 120, ellipsis: true },
   { title: '规格型号', key: 'specModel', dataIndex: 'specModel', width: 110, ellipsis: true },
   { title: '出库数量', key: 'shipQty', width: 110, align: 'right' },
   { title: '出库仓库', key: 'warehouse', dataIndex: 'warehouse', width: 100 },
@@ -659,7 +659,8 @@ const baseColumns = [
 ]
 
 const { columnSettings, columnDrawerOpen, displayColumns, tableScrollX, defaultColumnSettings } =
-  useTableColumnSettings('pending-outbound-list-v2', baseColumns, { minScrollX: 3000 })
+  // v3：物品名称列排在物品编码前（覆盖本地已存列序）
+  useTableColumnSettings('pending-outbound-list-v3', baseColumns, { minScrollX: 3000 })
 
 const pageOrderRowSpans = computed(() => buildPendingOutboundLineRowSpans(pagedList.value))
 const orderMergeKeySet = new Set(PENDING_OUTBOUND_ORDER_MERGE_KEYS)

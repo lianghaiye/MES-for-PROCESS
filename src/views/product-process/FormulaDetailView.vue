@@ -319,7 +319,7 @@ const lineColumns = [
   { title: '允差(±)', dataIndex: 'toleranceText', align: 'right', width: 100 },
   { title: '关键物料', dataIndex: 'keyText', width: 90 },
   { title: '辅料', dataIndex: 'auxText', width: 80 },
-  { title: '按含量折算', dataIndex: 'contentText', width: 160 },
+  { title: '按有效含量折算', dataIndex: 'contentText', width: 160 },
   { title: '理论投料', dataIndex: 'theoreticalQty', align: 'right', width: 110 },
 ]
 const stepColumns = [
@@ -406,7 +406,7 @@ const lineRows = computed(() =>
       keyText: key ? '是' : '否',
       auxText: aux ? '是' : '否',
       contentText: line.convertByContent
-        ? `是（含量 ${line.content == null || line.content === '' ? '—' : percentText(line.content)}）`
+        ? `是（有效含量 ${line.content == null || line.content === '' ? '—' : percentText(line.content)}）`
         : '否',
       theoreticalQty: calc.ok ? calc.qty : '—',
     }

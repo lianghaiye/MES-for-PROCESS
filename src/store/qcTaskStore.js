@@ -360,6 +360,9 @@ export function createQcTask(partial = {}) {
     processIndex: partial.processIndex ?? null,
     assaySchemeId: partial.assaySchemeId || '',
     assaySchemeName: partial.assaySchemeName || '',
+    assayType: partial.assayType || '',
+    /** 现场取样口/罐位等，发起时选填 */
+    sampleLocation: partial.sampleLocation || '',
     scheduleBatchId: partial.scheduleBatchId || '',
     scheduleBatchNo: partial.scheduleBatchNo ?? null,
     itemCode: partial.itemCode || '',
@@ -591,7 +594,13 @@ function resolveBatchItemProfile(itemId) {
  * 批次指令步骤「化验」：按工序配置的方案生成过程检/成品检，可重复发起
  * @returns {{ ok: boolean, task?: object, created?: boolean, message?: string }}
  */
-export function createProcessQcFromBatchStep({ orderId, stepNo, schemeId, inspectQty } = {}) {
+export function createProcessQcFromBatchStep({
+  orderId,
+  stepNo,
+  schemeId,
+  inspectQty,
+  sampleLocation,
+} = {}) {
   let getBatchOrder
   let attachStepQc
   let getStepQcRecords
@@ -713,6 +722,7 @@ export function createProcessQcFromBatchStep({ orderId, stepNo, schemeId, inspec
     assaySchemeId: scheme.id,
     assaySchemeName: scheme.name,
     assayType: scheme.assayType || '',
+    sampleLocation: String(sampleLocation || '').trim(),
     remark: `批次 ${order.batchNo} · 步骤 ${step.stepNo} ${step.name || ''} · ${scheme.name}`,
     multiTemplate: summary.multiTemplate,
     templateId: summary.templateId,
@@ -862,6 +872,11 @@ export function createOutputInboundQc({
     itemId,
     stepNo: step.stepNo,
     bizScope,
+    assayType,
+    schemeName: task.assaySchemeName || template.name || bizScope,
+    templateName: task.templateName || template.name || '',
+    templateCode: task.templateCode || template.code || '',
+    hardGate: true,
     taskId: task.id,
     qcNo: task.qcNo,
     qcStatus: task.qcStatus,

@@ -26,14 +26,9 @@
       <a-button v-if="order.status === 'pending_release'" type="primary" @click="release"
         >下发</a-button
       >
-      <a-button
-        v-if="order.status === 'pending_release' || order.status === 'running'"
-        @click="goRequisition"
-        >领料</a-button
-      >
       <a-button v-if="order.status === 'running'" @click="openFeedFor()">投料</a-button>
       <a-button v-if="order.status === 'running' && hasPendingOutput" @click="openOutputFor()"
-        >产出入库</a-button
+        >产出登记</a-button
       >
       <a-button v-if="order.status === 'running'" type="primary" @click="finish">完成</a-button>
       <a-button
@@ -69,6 +64,15 @@
         </div>
       </div>
 
+      <a-alert
+        v-if="completionBlockerVisible"
+        class="completion-blocker-alert"
+        type="warning"
+        show-icon
+        message="工艺阶段已全部确认，系统未能自动完成"
+        :description="completionBlockerDescription"
+      />
+
       <div class="batch-detail-tabs">
         <a-tabs
           v-model:active-key="detailTab"
@@ -76,6 +80,7 @@
         >
           <a-tab-pane key="info" tab="基本信息" />
           <a-tab-pane key="feed" tab="投料明细" />
+          <a-tab-pane key="assay" :tab="`取样检验与放行 (${assayRows.length})`" />
           <a-tab-pane key="ebr" tab="批记录（EBR）" />
           <a-tab-pane key="output" tab="产出与追溯" />
           <a-tab-pane key="route" tab="工艺路线" />
@@ -90,7 +95,7 @@
               ><i>创建时间</i><b>{{ order.createdAt || '—' }}</b></span
             >
             <span
-              ><i>产线</i><b>{{ productionLineText }}</b></span
+              ><i>工作中心</i><b>{{ workCenterText }}</b></span
             >
             <span
               ><i>来源计划</i><b>{{ order.sourceLabel || '—' }}</b></span
@@ -121,6 +126,15 @@
               ><span class="v">{{ batchNo(order.reworkOfBatchId) }}</span>
             </div>
             <div class="formula-kv-full">
+              <span class="k">异常偏差：</span>
+              <span class="v">{{ order.deviation || '—' }}</span>
+              <template v-if="(order.deviationLogs || []).length > 1">
+                <a-button type="link" size="small" @click="deviationLogsOpen = true">
+                  历史 ({{ order.deviationLogs.length }})
+                </a-button>
+              </template>
+            </div>
+            <div class="formula-kv-full">
               <span class="k">备注：</span><span class="v">{{ order.remark || '—' }}</span>
             </div>
           </div>
@@ -128,11 +142,13 @@
 
         <DetailSectionCard title="工艺阶段">
           <a-table
+            class="step-stage-table"
             :columns="stepColumns"
             :data-source="stepRows"
             :pagination="false"
             size="small"
             row-key="stepNo"
+            :scroll="{ x: 1480 }"
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'done'">
@@ -146,78 +162,133 @@
                 }}</a-tag>
               </template>
               <template v-else-if="column.key === 'summary'">
-                <a-popover
-                  v-if="stepSummaryLines(record.stepNo).length"
-                  placement="bottomLeft"
-                  trigger="click"
-                  overlay-class-name="step-rich-popover"
-                >
-                  <template #content>
-                    <div class="step-rich-list">
-                      <div
-                        v-for="(line, idx) in stepSummaryLines(record.stepNo)"
-                        :key="`sum-${record.stepNo}-${idx}`"
-                        class="step-rich-item"
-                      >
-                        <span class="step-rich-label">{{ line.label }}</span>
-                        <span class="step-rich-value">{{ line.value }}</span>
-                      </div>
+                <div v-if="stepSummaryLines(record.stepNo).length" class="step-stack-cell">
+                  <div
+                    v-for="(line, idx) in visibleStepCellItems(
+                      stepSummaryLines(record.stepNo),
+                      record.stepNo,
+                      'summary',
+                    )"
+                    :key="`sum-${record.stepNo}-${idx}`"
+                    class="stack-card"
+                  >
+                    <div class="stack-card-top">
+                      <span class="stack-card-title" :title="line.label">{{ line.label }}</span>
                     </div>
-                  </template>
-                  <button type="button" class="step-rich-trigger">
-                    <span class="step-rich-main">{{ stepSummaryPreview(record.stepNo) }}</span>
-                    <span class="step-rich-more">详情</span>
-                  </button>
-                </a-popover>
+                    <div class="stack-card-bottom">
+                      <span class="stack-card-value" :title="String(line.value)">{{
+                        line.value
+                      }}</span>
+                    </div>
+                  </div>
+                  <a-button
+                    v-if="stepSummaryLines(record.stepNo).length > 1"
+                    type="link"
+                    size="small"
+                    class="stack-toggle"
+                    @click="toggleStepCellExpand(record.stepNo, 'summary')"
+                  >
+                    {{
+                      isStepCellExpanded(record.stepNo, 'summary')
+                        ? '收起'
+                        : `详情 (${stepSummaryLines(record.stepNo).length})`
+                    }}
+                  </a-button>
+                </div>
                 <span v-else class="muted">{{ record.summaryText }}</span>
               </template>
               <template v-else-if="column.key === 'output'">
-                <a-popover
-                  v-if="stepOutputLines(record.stepNo).length"
-                  placement="bottomLeft"
-                  trigger="click"
-                  overlay-class-name="step-rich-popover"
-                >
-                  <template #content>
-                    <div class="step-rich-list">
-                      <div
-                        v-for="(line, idx) in stepOutputLines(record.stepNo)"
-                        :key="`out-${record.stepNo}-${idx}`"
-                        class="step-rich-item"
-                      >
-                        <a-tag v-if="line.role" size="small" color="blue">{{ line.role }}</a-tag>
-                        <span class="step-rich-value">
-                          {{ line.name }} · {{ line.qty
-                          }}<template v-if="line.disposition"> · {{ line.disposition }}</template>
-                        </span>
-                      </div>
+                <div v-if="stepOutputLines(record.stepNo).length" class="step-stack-cell">
+                  <div
+                    v-for="(line, idx) in visibleStepCellItems(
+                      stepOutputLines(record.stepNo),
+                      record.stepNo,
+                      'output',
+                    )"
+                    :key="`out-${record.stepNo}-${idx}`"
+                    class="stack-card"
+                  >
+                    <div class="stack-card-top">
+                      <a-tag v-if="line.role" size="small" color="blue">{{ line.role }}</a-tag>
+                      <span class="stack-card-title" :title="line.name">{{ line.name }}</span>
                     </div>
-                  </template>
-                  <button type="button" class="step-rich-trigger">
-                    <span class="step-rich-main">{{ stepOutputPreview(record.stepNo) }}</span>
-                    <span class="step-rich-more">详情</span>
-                  </button>
-                </a-popover>
+                    <div class="stack-card-bottom">
+                      <span
+                        class="stack-card-value"
+                        :title="[line.qty, line.disposition].filter(Boolean).join(' · ')"
+                      >
+                        {{ line.qty
+                        }}<template v-if="line.disposition"> · {{ line.disposition }}</template>
+                      </span>
+                    </div>
+                  </div>
+                  <a-button
+                    v-if="stepOutputLines(record.stepNo).length > 1"
+                    type="link"
+                    size="small"
+                    class="stack-toggle"
+                    @click="toggleStepCellExpand(record.stepNo, 'output')"
+                  >
+                    {{
+                      isStepCellExpanded(record.stepNo, 'output')
+                        ? '收起'
+                        : `详情 (${stepOutputLines(record.stepNo).length})`
+                    }}
+                  </a-button>
+                </div>
                 <span v-else class="muted">—</span>
               </template>
               <template v-else-if="column.key === 'qc'">
-                <template v-if="stepAssaySummaryLines(record).length">
-                  <div v-for="row in stepAssaySummaryLines(record)" :key="row.key" class="qc-line">
-                    <span class="qc-scheme-name">{{ row.typeLabel }}</span>
-                    <a v-if="row.taskId" class="qc-link" @click="goQcTask(row.taskId)">
+                <div v-if="stepAssaySummaryLines(record).length" class="step-stack-cell">
+                  <div
+                    v-for="row in visibleStepCellItems(
+                      stepAssaySummaryLines(record),
+                      record.stepNo,
+                      'qc',
+                    )"
+                    :key="row.key"
+                    class="stack-card"
+                  >
+                    <div class="stack-card-top">
+                      <span class="stack-card-title" :title="row.typeLabel">{{
+                        row.typeLabel
+                      }}</span>
+                      <a-tag v-if="row.hardGate" color="warning" size="small">硬</a-tag>
+                    </div>
+                    <div class="stack-card-bottom">
                       <a-tag :color="row.statusColor" size="small">{{ row.statusLabel }}</a-tag>
-                      <span v-if="row.qcNo" class="qc-no-inline">{{ row.qcNo }}</span>
-                    </a>
-                    <a-tag v-else :color="row.statusColor" size="small">{{
-                      row.statusLabel
-                    }}</a-tag>
-                    <a-tag v-if="row.hardGate" color="warning" size="small">硬</a-tag>
+                      <a
+                        v-if="row.taskId"
+                        class="stack-card-link"
+                        :title="row.qcNo"
+                        @click="goQcTask(row.taskId)"
+                      >
+                        {{ row.qcNo || '查看' }}
+                      </a>
+                      <span v-else-if="row.qcNo" class="stack-card-muted" :title="row.qcNo">{{
+                        row.qcNo
+                      }}</span>
+                      <span v-else class="muted">—</span>
+                    </div>
                   </div>
-                </template>
-                <span v-else>—</span>
+                  <a-button
+                    v-if="stepAssaySummaryLines(record).length > 1"
+                    type="link"
+                    size="small"
+                    class="stack-toggle"
+                    @click="toggleStepCellExpand(record.stepNo, 'qc')"
+                  >
+                    {{
+                      isStepCellExpanded(record.stepNo, 'qc')
+                        ? '收起'
+                        : `详情 (${stepAssaySummaryLines(record).length})`
+                    }}
+                  </a-button>
+                </div>
+                <span v-else class="muted">—</span>
               </template>
               <template v-else-if="column.key === 'action'">
-                <template v-if="order.status === 'running'">
+                <div v-if="order.status === 'running'" class="step-action-cell">
                   <a-button
                     v-if="stepHasFeeds(record.stepNo)"
                     type="link"
@@ -239,16 +310,25 @@
                     @click="openOutputFor(record.stepNo)"
                     >产出</a-button
                   >
-                  <a-button type="link" size="small" @click="openStep(record)">
-                    {{ record.confirmed ? '重新确认' : '确认本步' }}
-                  </a-button>
-                </template>
+                  <a-tooltip :title="stepConfirmListBlockTip(record)">
+                    <span class="step-confirm-btn-wrap">
+                      <a-button
+                        type="link"
+                        size="small"
+                        :disabled="stepConfirmListBlocked(record)"
+                        @click="openStep(record)"
+                      >
+                        {{ record.confirmed ? '重新确认' : '确认本步' }}
+                      </a-button>
+                    </span>
+                  </a-tooltip>
+                </div>
                 <template v-else-if="record.qcLink?.taskId">
                   <a-button type="link" size="small" @click="goQcTask(record.qcLink.taskId)"
                     >查看检单</a-button
                   >
                 </template>
-                <span v-else>—</span>
+                <span v-else class="muted">—</span>
               </template>
             </template>
           </a-table>
@@ -257,14 +337,79 @@
 
       <div v-show="detailTab === 'route'" class="batch-tab-pane">
         <DetailSectionCard title="工艺路线">
+          <p class="section-hint">
+            下发时的设备路线快照。对照工艺阶段进度；设备显示台账占釜/完好状态；化验与门禁取自配方工序配置（与「工艺阶段」一致）。点「打开阶段」可跳转执行。
+          </p>
           <a-table
             v-if="showRouteSteps"
             :columns="routeStepColumns"
             :data-source="routeStepRows"
             :pagination="false"
             size="small"
+            :scroll="{ x: 1200 }"
             row-key="key"
-          />
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'progress'">
+                <a-tag :color="record.progressColor">{{ record.progressLabel }}</a-tag>
+                <span v-if="record.stageStepNo" class="muted route-stage-ref"
+                  >阶段 {{ record.stageStepNo }}</span
+                >
+              </template>
+              <template v-else-if="column.key === 'occupy'">
+                <a-tag v-if="record.occupyStatus" :color="record.occupyColor">{{
+                  record.occupyStatus
+                }}</a-tag>
+                <span v-else>—</span>
+                <div v-if="record.occupiedBatchNo" class="muted route-occupy-batch">
+                  {{ record.occupiedBatchNo }}
+                </div>
+              </template>
+              <template v-else-if="column.key === 'deviceStatus'">
+                <a-tag v-if="record.deviceStatus" :color="record.deviceStatusColor">{{
+                  record.deviceStatus
+                }}</a-tag>
+                <span v-else>—</span>
+              </template>
+              <template v-else-if="column.key === 'assay'">
+                <template v-if="record.assayItems.length">
+                  <div
+                    v-for="(item, idx) in record.assayItems"
+                    :key="`${record.key}-assay-${idx}`"
+                    class="route-assay-line"
+                  >
+                    <span>{{ item.typeLabel }}</span>
+                    <a-tag :color="item.hardGate ? 'warning' : 'default'" class="route-gate-tag">{{
+                      item.gateLabel
+                    }}</a-tag>
+                  </div>
+                </template>
+                <span v-else>—</span>
+              </template>
+              <template v-else-if="column.key === 'gate'">
+                <a-tag v-if="record.gateLabel !== '—'" :color="record.gateColor">{{
+                  record.gateLabel
+                }}</a-tag>
+                <span v-else>—</span>
+              </template>
+              <template v-else-if="column.key === 'action'">
+                <a-tooltip
+                  v-if="record.stageStep && order.status === 'running'"
+                  :title="stepConfirmListBlockTip(record.stageStep)"
+                >
+                  <span class="step-confirm-btn-wrap">
+                    <a-button
+                      type="link"
+                      size="small"
+                      :disabled="stepConfirmListBlocked(record.stageStep)"
+                      @click="openStep(record.stageStep)"
+                      >打开阶段</a-button
+                    >
+                  </span>
+                </a-tooltip>
+              </template>
+            </template>
+          </a-table>
           <a-table
             v-else
             :columns="unitColumns"
@@ -273,64 +418,234 @@
             size="small"
             row-key="key"
             :locale="{ emptyText: '未指定工艺路线' }"
-          />
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'occupy'">
+                <a-tag v-if="record.occupyStatus" :color="record.occupyColor">{{
+                  record.occupyStatus
+                }}</a-tag>
+                <span v-else>—</span>
+                <div v-if="record.occupiedBatchNo" class="muted route-occupy-batch">
+                  {{ record.occupiedBatchNo }}
+                </div>
+              </template>
+              <template v-else-if="column.key === 'deviceStatus'">
+                <a-tag v-if="record.deviceStatus" :color="record.deviceStatusColor">{{
+                  record.deviceStatus
+                }}</a-tag>
+                <span v-else>—</span>
+              </template>
+            </template>
+          </a-table>
         </DetailSectionCard>
       </div>
 
       <div v-show="detailTab === 'feed'" class="batch-tab-pane">
-        <DetailSectionCard title="投料明细">
-          <div v-if="feedRows.length" class="feed-groups">
-            <div v-for="row in feedRows" :key="row.key" class="feed-group">
-              <div class="feed-group-head">
-                <div class="feed-formula">
-                  <span><i>原料：</i>{{ row.item }}</span>
-                  <span><i>编号：</i>{{ row.itemCode }}</span>
-                  <span><i>规格：</i>{{ row.specText }}</span>
-                  <span><i>阶段：</i>{{ row.stepText }}</span>
-                  <span><i>理论投料：</i>{{ row.planQtyText }}</span>
-                  <span><i>允差：</i>{{ row.toleranceText }}</span>
-                  <span><i>关键物料：</i>{{ row.keyText }}</span>
-                  <span><i>辅料：</i>{{ row.auxText }}</span>
-                </div>
-                <div class="feed-summary">
-                  <span
-                    ><i>实投</i><b>{{ row.postedText }}</b></span
-                  >
-                  <span
-                    ><i>补料次数</i><b>{{ row.supplementText }}</b></span
-                  >
-                  <span
-                    ><i>偏差</i><b>{{ row.gapText }}</b></span
-                  >
-                </div>
+        <div class="filter-card feed-tab-filter">
+          <a-form layout="inline" class="filter-form horizontal-form">
+            <ListFilterBar
+              :field-count="3"
+              search-text="搜索"
+              reset-text="重置"
+              @search="applyFeedTabFilter"
+              @reset="resetFeedTabFilter"
+            >
+              <a-form-item label="阶段">
+                <a-select
+                  v-model:value="feedTabFilter.stepNo"
+                  allow-clear
+                  size="small"
+                  placeholder="全部阶段"
+                  style="width: 100%"
+                  :options="feedTabStageOptions"
+                />
+              </a-form-item>
+              <a-form-item label="物料名称">
+                <a-input
+                  v-model:value="feedTabFilter.itemName"
+                  allow-clear
+                  size="small"
+                  placeholder="请输入"
+                  @press-enter="applyFeedTabFilter"
+                />
+              </a-form-item>
+              <a-form-item label="物料编号">
+                <a-input
+                  v-model:value="feedTabFilter.itemCode"
+                  allow-clear
+                  size="small"
+                  placeholder="请输入"
+                  @press-enter="applyFeedTabFilter"
+                />
+              </a-form-item>
+            </ListFilterBar>
+          </a-form>
+        </div>
+
+        <template v-if="filteredFeedStageGroups.length">
+          <DetailSectionCard
+            v-for="stage in filteredFeedStageGroups"
+            :key="stage.key"
+            :title="stage.title"
+            :default-collapsed="stage.defaultCollapsed"
+          >
+            <template #extra>
+              <div class="feed-stage-meta">
+                <span>物料 {{ stage.materialCount }}</span>
+                <span>理论 {{ stage.planQtyText }}</span>
+                <span>实投 {{ stage.postedQtyText }}</span>
+                <span>过账 {{ stage.postingCount }} 次</span>
               </div>
-              <a-table
-                v-if="row.postings.length"
-                class="feed-posting-table"
-                :columns="feedPostingColumns"
-                :data-source="row.postings"
-                :pagination="false"
-                size="small"
-                row-key="key"
-              >
-                <template #bodyCell="{ column, record }">
-                  <template v-if="column.key === 'content'">
-                    <span>{{ record.contentText }}</span>
-                    <a-button
-                      v-if="record.contentPending && order.status === 'running'"
-                      type="link"
-                      size="small"
-                      @click="openFeedContentPatch(record)"
-                    >
-                      补录含量
+            </template>
+            <div class="feed-stage-body">
+              <div v-for="row in stage.materials" :key="row.key" class="feed-material-card">
+                <div class="feed-material-head">
+                  <div class="feed-material-main">
+                    <div class="feed-material-name">
+                      <span class="name">{{ row.item }}</span>
+                      <a-tag v-if="row.isExtra" color="orange" size="small">补加</a-tag>
+                      <a-tag v-if="row.keyText === '是'" color="blue" size="small">关键</a-tag>
+                      <a-tag v-if="row.auxText === '是'" size="small">辅料</a-tag>
+                    </div>
+                    <div class="feed-material-sub">
+                      <span>{{ row.itemCode }}</span>
+                      <span v-if="row.specText !== '—'">{{ row.specText }}</span>
+                      <span>理论 {{ row.planQtyText }}</span>
+                      <span v-if="row.toleranceText !== '—'">允差 {{ row.toleranceText }}</span>
+                    </div>
+                  </div>
+                  <div class="feed-material-metrics">
+                    <div class="metric">
+                      <i>实投</i><b>{{ row.postedText }}</b>
+                    </div>
+                    <div class="metric">
+                      <i>偏差</i><b>{{ row.gapText }}</b>
+                    </div>
+                    <div class="metric">
+                      <i>过账</i><b>{{ row.postings.length }}</b>
+                    </div>
+                  </div>
+                </div>
+                <div v-if="row.postings.length" class="feed-posting-block">
+                  <div class="feed-posting-toolbar">
+                    <span class="feed-posting-label">过账记录（{{ row.postings.length }}）</span>
+                    <a-button type="link" size="small" @click="toggleFeedPostingExpand(row.key)">
+                      {{ isFeedPostingExpanded(row.key) ? '收起 ▴' : '展开 ▾' }}
                     </a-button>
-                  </template>
-                </template>
-              </a-table>
-              <div v-else class="feed-empty">还没有过账</div>
+                  </div>
+                  <a-table
+                    v-show="isFeedPostingExpanded(row.key)"
+                    class="feed-posting-table"
+                    :columns="feedPostingColumns"
+                    :data-source="row.postings"
+                    :pagination="false"
+                    size="small"
+                    row-key="key"
+                    :scroll="{ x: 1100 }"
+                  >
+                    <template #bodyCell="{ column, record }">
+                      <template v-if="column.key === 'seq'">{{ record.seq }}</template>
+                      <template v-else-if="column.key === 'feedSource'">
+                        <a-tag v-if="record.feedSourceLabel !== '—'" color="processing">
+                          {{ record.feedSourceLabel }}
+                        </a-tag>
+                        <span v-else>—</span>
+                      </template>
+                      <template v-else-if="column.key === 'deductMode'">
+                        <a-tag
+                          v-if="record.deductModeLabel !== '—'"
+                          :color="record.deductModeColor"
+                        >
+                          {{ record.deductModeLabel }}
+                        </a-tag>
+                        <span v-else>—</span>
+                      </template>
+                      <template v-else-if="column.key === 'qcNo'">
+                        <a-button
+                          v-if="record.qcTaskId || (record.qcNo && record.qcNo !== '—')"
+                          type="link"
+                          size="small"
+                          @click="openFeedBatchQc(record)"
+                        >
+                          {{ record.qcNo || '查看检单' }}
+                        </a-button>
+                        <span v-else>—</span>
+                      </template>
+                      <template v-else-if="column.key === 'content'">
+                        <span>{{ record.contentText }}</span>
+                        <a-button
+                          v-if="record.contentPending && order.status === 'running'"
+                          type="link"
+                          size="small"
+                          @click="openFeedContentPatch(record)"
+                        >
+                          补录有效含量
+                        </a-button>
+                      </template>
+                    </template>
+                  </a-table>
+                </div>
+                <div v-else class="feed-empty">本阶段该物料还没有过账</div>
+              </div>
             </div>
-          </div>
-          <a-empty v-else description="配方未维护投料" />
+          </DetailSectionCard>
+        </template>
+        <DetailSectionCard v-else title="投料明细">
+          <a-empty
+            :description="feedStageGroups.length ? '没有符合筛选条件的投料明细' : '配方未维护投料'"
+          />
+        </DetailSectionCard>
+      </div>
+
+      <div v-show="detailTab === 'assay'" class="batch-tab-pane">
+        <DetailSectionCard title="取样、检验与放行">
+          <p class="section-hint">
+            过程检执行清单（投料前核对、中控取样、转序放行等）。「实测」为检验项录入值摘要；「化验结果」为整单结论。「工序设备」取自工艺阶段；「取样位置」在发起时可填（非必填）。
+          </p>
+          <a-table
+            :columns="assayColumns"
+            :data-source="assayRows"
+            :pagination="false"
+            size="small"
+            row-key="key"
+            :locale="{ emptyText: '还没有过程检' }"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'seq'">{{ record.seq }}</template>
+              <template v-else-if="column.key === 'qcNo'">
+                <a-button
+                  v-if="record.taskId"
+                  type="link"
+                  size="small"
+                  @click="goQcTask(record.taskId)"
+                >
+                  {{ record.qcNo }}
+                </a-button>
+                <span v-else>—</span>
+              </template>
+              <template v-else-if="column.key === 'gate'">
+                <a-tag v-if="record.hardGate" color="warning">硬门禁</a-tag>
+                <a-tag v-else>记录</a-tag>
+              </template>
+              <template v-else-if="column.key === 'status'">
+                <a-tag :color="record.statusColor">{{ record.statusLabel }}</a-tag>
+              </template>
+              <template v-else-if="column.key === 'actual'">
+                <span :title="record.actualFull || record.actual">{{ record.actual }}</span>
+              </template>
+              <template v-else-if="column.key === 'judge'">
+                <a-tag
+                  v-if="record.judge !== '—'"
+                  :color="
+                    record.judge === '质检通过' || record.judge === '合格' ? 'success' : 'default'
+                  "
+                >
+                  {{ record.judge }}
+                </a-tag>
+                <span v-else>—</span>
+              </template>
+            </template>
+          </a-table>
         </DetailSectionCard>
       </div>
 
@@ -355,45 +670,30 @@
             </template>
           </a-table>
         </DetailSectionCard>
-
-        <DetailSectionCard title="取样、检验与放行">
-          <a-table
-            :columns="assayColumns"
-            :data-source="assayRows"
-            :pagination="false"
-            size="small"
-            row-key="key"
-            :locale="{ emptyText: '还没有过程检' }"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'judge'">
-                <a-tag
-                  v-if="record.judge !== '—'"
-                  :color="
-                    record.judge === '质检通过' || record.judge === '合格' ? 'success' : 'default'
-                  "
-                >
-                  {{ record.judge }}
-                </a-tag>
-                <span v-else>—</span>
-              </template>
-              <template v-else-if="column.key === 'qcNo'">
-                <a-button
-                  v-if="record.taskId"
-                  type="link"
-                  size="small"
-                  @click="goQcTask(record.taskId)"
-                >
-                  {{ record.qcNo }}
-                </a-button>
-                <span v-else>—</span>
-              </template>
-            </template>
-          </a-table>
-        </DetailSectionCard>
       </div>
 
       <div v-show="detailTab === 'output'" class="batch-tab-pane">
+        <!-- 异常偏差属整单产出说明，与登记同源，产出 Tab 同步展示便于对照追溯 -->
+        <DetailSectionCard title="异常偏差">
+          <a-row :gutter="[24, 8]" class="drawer-basic-info">
+            <a-col :span="24">
+              <span class="info-label">最新说明：</span>
+              <span class="info-value">{{ order.deviation || '—' }}</span>
+              <a-button
+                v-if="(order.deviationLogs || []).length > 1"
+                type="link"
+                size="small"
+                @click="deviationLogsOpen = true"
+              >
+                历史 ({{ order.deviationLogs.length }})
+              </a-button>
+            </a-col>
+          </a-row>
+          <p class="section-hint" style="margin-top: 8px; margin-bottom: 0">
+            在「产出登记」时可补充；留空不改历史，填写则追加一条并更新最新说明。
+          </p>
+        </DetailSectionCard>
+
         <DetailSectionCard title="产出与物料平衡">
           <p class="section-hint">投入 {{ feedQtyText }}，产出合计 {{ outputSumText }}。</p>
           <a-table
@@ -406,7 +706,8 @@
             :locale="{ emptyText: '配方未维护产出' }"
           >
             <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'inbound'">
+              <template v-if="column.key === 'seq'">{{ record.seq }}</template>
+              <template v-else-if="column.key === 'inbound'">
                 <template v-if="record.inboundLinks.length">
                   <a
                     v-for="link in record.inboundLinks"
@@ -423,16 +724,43 @@
         </DetailSectionCard>
 
         <DetailSectionCard title="产出与追溯">
+          <p class="section-hint">
+            「处理状态」表示去向是否落地（待处理 / 待入库 / 已入库 /
+            待回用等）；「检单状态」为产出化验进度。入仓库与入储罐均生成生产入库单，须仓管确认后才可发货或普通投料；硬门禁另须化验合格。批令不再做成品放行。
+          </p>
           <a-table
             :columns="outColumns"
             :data-source="outRows"
             :pagination="false"
             size="small"
+            :scroll="{ x: 1820 }"
             :row-key="outputRowKey"
           >
             <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'status'">
-                <a-tag>{{ BATCH_STATUS_LABEL[record.status] || '—' }}</a-tag>
+              <template v-if="column.key === 'seq'">{{ record.seq }}</template>
+              <template v-else-if="column.key === 'handleStatus'">
+                <a-tag :color="record.handleStatusColor">{{ record.handleStatusLabel }}</a-tag>
+              </template>
+              <template v-else-if="column.key === 'content'">
+                <span>{{ record.contentText }}</span>
+                <a-button
+                  v-if="record.contentPending && order.status === 'running'"
+                  type="link"
+                  size="small"
+                  @click="openOutputContentPatch(record)"
+                >
+                  补录有效含量
+                </a-button>
+              </template>
+              <template v-else-if="column.key === 'assayGate'">
+                <a-tag v-if="record.assayHardGate" color="warning">硬门禁</a-tag>
+                <a-tag v-else>记录</a-tag>
+              </template>
+              <template v-else-if="column.key === 'qcTaskStatus'">
+                <a-tag v-if="record.qcTaskStatusLabel !== '—'" :color="record.qcTaskStatusColor">{{
+                  record.qcTaskStatusLabel
+                }}</a-tag>
+                <span v-else>—</span>
               </template>
               <template v-else-if="column.key === 'inspectConclusion'">
                 <a-tag
@@ -456,37 +784,37 @@
                 </template>
                 <span v-else>—</span>
               </template>
+              <template v-else-if="column.key === 'inbound'">
+                <template v-if="record.inboundLinks?.length">
+                  <a
+                    v-for="link in record.inboundLinks"
+                    :key="link.id"
+                    class="doc-link"
+                    @click="goInbound(link)"
+                    >{{ link.docNo }}</a
+                  >
+                </template>
+                <span v-else>—</span>
+              </template>
               <template v-else-if="column.key === 'action'">
                 <a-button
-                  v-if="record.status === 'await_decide'"
+                  v-if="record.handleStatus === 'await_decide'"
                   type="link"
                   size="small"
+                  :disabled="record.decideDisabled"
+                  :title="record.decideDisabledReason"
                   @click="openDecideDisposition(record)"
                   >确认去向</a-button
                 >
                 <a-button
-                  v-else-if="record.status === 'pending'"
-                  type="link"
-                  size="small"
-                  @click="releaseOut(record.batchId)"
-                  >成品放行</a-button
-                >
-                <a-button
-                  v-else-if="record.status === 'released'"
-                  type="link"
-                  size="small"
-                  @click="rework(record)"
-                  >返工</a-button
-                >
-                <a-button
-                  v-else-if="record.status === 'await_reextract' && Number(record.remainQty) > 0"
+                  v-else-if="
+                    record.handleStatus === 'await_reextract' && Number(record.remainQty) > 0
+                  "
                   type="link"
                   size="small"
                   @click="openReextract(record)"
                   >开再提指令</a-button
                 >
-                <span v-else-if="record.status === 'await_reuse'">投料时选「回流料」</span>
-                <span v-else>—</span>
               </template>
             </template>
           </a-table>
@@ -510,11 +838,12 @@
 
     <a-modal
       :open="stepOpen"
-      :title="`确认本步 · ${currentStep?.name || ''}`"
-      :width="720"
+      :title="stepConfirmModalTitle"
+      width="min(1200px, 94vw)"
+      wrap-class-name="batch-step-confirm-modal-wrap"
       :mask-closable="false"
       destroy-on-close
-      :ok-button-props="{ disabled: stepConfirmHardGateBlocked }"
+      :ok-button-props="{ disabled: stepConfirmSubmitBlocked }"
       @cancel="stepOpen = false"
       @ok="saveStep"
     >
@@ -532,11 +861,19 @@
         show-icon
         message="硬门禁化验未完成或未通过，确认已禁用。请先在「化验」清单完成必做项。"
       />
+      <a-alert
+        v-if="stepConfirmNoEquipmentCandidates"
+        class="prior-assay-hint"
+        type="warning"
+        show-icon
+        message="本步没有候选设备。请先在配方阶段或「指定下发」维护候选设备后再确认。"
+      />
       <div v-if="stepConfirmAssayChecklist.length" class="modal-basic-card step-report-card">
         <div class="section-title">本步化验清单</div>
         <p class="section-hint">
-          硬门禁项须合格后才能确认本步；「记录」项可后补，不挡确认。产出检请在「产出」过账时发起。
+          硬门禁项须合格后才能确认本步；「记录」项可后补，不挡确认。产出检请在「产出」过账时发起。取样位置按化验类型选填，点「发起」时写入对应检单。
         </p>
+        <p class="section-meta">执行设备：{{ stepConfirmEquipmentText }}</p>
         <a-table
           :columns="assayChecklistColumns"
           :data-source="stepConfirmAssayChecklist"
@@ -547,6 +884,16 @@
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'gate'">
               <a-tag :color="record.hardGate ? 'warning' : 'default'">{{ record.gateLabel }}</a-tag>
+            </template>
+            <template v-else-if="column.key === 'sampleLocation'">
+              <a-input
+                v-if="record.canStart"
+                v-model:value="assaySampleLocationByScheme[record.schemeId]"
+                size="small"
+                allow-clear
+                placeholder="选填"
+              />
+              <span v-else>{{ record.sampleLocation || '—' }}</span>
             </template>
             <template v-else-if="column.key === 'status'">
               <a-tag :color="record.statusColor">{{ record.statusLabel }}</a-tag>
@@ -563,6 +910,7 @@
                 v-if="order.status === 'running' && record.canStart"
                 type="link"
                 size="small"
+                :loading="assayStartingId === record.schemeId"
                 @click="startAssayFromChecklist(record, currentStep)"
                 >发起</a-button
               >
@@ -574,7 +922,7 @@
       <div v-if="stepFeedSummary.length" class="modal-basic-card step-report-card">
         <div class="section-title">本步投料（只读）</div>
         <p class="section-hint">
-          实投量与含量在「投料」过账中填写并扣库存；此处仅汇总，过程记录模板不再采集实投。
+          实投量与有效含量在「投料」过账中填写并扣库存；此处仅汇总，过程记录模板不再采集实投。
         </p>
         <a-table
           :columns="stepFeedSummaryColumns"
@@ -585,17 +933,34 @@
         />
       </div>
 
+      <a-alert
+        v-if="stepConfirmSequenceBlocked"
+        class="prior-assay-hint"
+        type="warning"
+        show-icon
+        :message="stepConfirmSequenceMessage"
+      />
+      <a-alert
+        v-if="stepConfirmFeedBlocked"
+        class="prior-assay-hint"
+        type="warning"
+        show-icon
+        message="本步计划投料尚未过账，确认已禁用。请先点「投料」完成后再确认本步。"
+      />
       <div class="modal-basic-card step-report-card">
         <div class="section-title">工艺参数</div>
-        <p class="section-hint">填写本阶段参数实际值；留空表示本项不记。</p>
+        <p class="section-hint">本步已配置的参数须填写，且落在上下限内；确认时会校验。</p>
         <a-form layout="inline" class="horizontal-form">
           <a-row :gutter="[12, 8]" style="width: 100%">
-            <a-col v-for="(field, index) in currentParams" :key="field.key" :span="12">
-              <a-form-item :label="paramLabel(field)">
+            <a-col v-for="(field, index) in currentParams" :key="field.key" :span="6">
+              <a-form-item :label="paramLabel(field)" required>
                 <a-input-number
                   v-model:value="stepActuals[index]"
                   size="small"
                   style="width: 100%"
+                  :min="field.min != null && field.min !== '' ? Number(field.min) : undefined"
+                  :max="field.max != null && field.max !== '' ? Number(field.max) : undefined"
+                  :placeholder="paramPlaceholder(field)"
                 />
               </a-form-item>
             </a-col>
@@ -609,11 +974,11 @@
       <div class="modal-basic-card step-report-card">
         <div class="section-title">通用记录</div>
         <p class="section-hint">
-          操作人、操作时间默认带出当前登录人与打开时间，可改（事后补录）；出料量、备注选填。本格设备、批指令号只读。
+          操作人、操作时间默认带出当前登录人与打开时间，可改（事后补录）；执行设备须从本步候选中选一台；出料量、备注选填。
         </p>
         <a-form layout="inline" class="horizontal-form">
           <a-row :gutter="[12, 8]" style="width: 100%">
-            <a-col :span="12">
+            <a-col :span="6">
               <a-form-item label="操作人" required>
                 <a-input
                   v-model:value="formValues.OP_OPERATOR"
@@ -622,7 +987,7 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="12">
+            <a-col :span="6">
               <a-form-item label="操作时间" required>
                 <a-date-picker
                   v-model:value="stepOperatedAtPicker"
@@ -636,16 +1001,21 @@
               </a-form-item>
             </a-col>
             <a-col :span="12">
-              <a-form-item label="本格设备">
-                <a-input :value="stepFixedSystem.equipment" size="small" disabled />
+              <a-form-item label="执行设备" required>
+                <a-select
+                  v-model:value="stepExecEquipmentId"
+                  size="small"
+                  allow-clear
+                  show-search
+                  option-filter-prop="label"
+                  placeholder="从候选中选择"
+                  :options="stepEquipmentOptions"
+                  :disabled="!stepEquipmentCandidates.length"
+                  style="width: 100%"
+                />
               </a-form-item>
             </a-col>
-            <a-col :span="12">
-              <a-form-item label="批指令号">
-                <a-input :value="stepFixedSystem.batchNo" size="small" disabled />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
+            <a-col :span="6">
               <a-form-item label="出料量">
                 <a-input-number
                   v-model:value="formValues.OP_OUTPUT_QTY"
@@ -691,7 +1061,8 @@
     <a-modal
       :open="openFeed"
       :title="feedModalTitle"
-      width="min(1320px, 94vw)"
+      width="min(1600px, 96vw)"
+      wrap-class-name="batch-feed-modal-wrap"
       :mask-closable="false"
       destroy-on-close
       @cancel="openFeed = false"
@@ -731,6 +1102,10 @@
       </div>
 
       <div class="feed-lines-title">投料明细</div>
+      <p v-if="feedHasConvertByContent" class="section-hint feed-assay-hint">
+        按含量折算物料：「指导量」= 目标有效量 ÷
+        批次含量（只读对照）；选批后会预填实投量，可改。理论量仍按配方假定含量。
+      </p>
       <a-table
         :columns="feedDraftColumns"
         :data-source="feedLineDrafts"
@@ -738,17 +1113,40 @@
         size="small"
         bordered
         row-key="key"
-        :scroll="{ x: 1680, y: 360 }"
+        :scroll="{ x: 1900, y: 360 }"
+        :row-class-name="(record) => (record.included === false ? 'draft-row-skipped' : '')"
         :locale="{ emptyText: '本阶段没有计划投料，可勾选补加或换阶段' }"
       >
+        <template #headerCell="{ column }">
+          <template v-if="column.key === 'included'">
+            <a-checkbox
+              :checked="feedIncludeHeaderChecked"
+              :indeterminate="feedIncludeHeaderIndeterminate"
+              :disabled="!feedLineDrafts.length"
+              @change="(e) => onFeedIncludeCheckAll(e?.target?.checked)"
+            >
+              本次
+            </a-checkbox>
+          </template>
+          <template v-else>{{ column.title }}</template>
+        </template>
         <template #bodyCell="{ column, record, index }">
-          <template v-if="column.key === 'index'">{{ index + 1 }}</template>
+          <template v-if="column.key === 'included'">
+            <div class="draft-include-cell">
+              <a-checkbox
+                :checked="record.included !== false"
+                @change="(e) => (record.included = Boolean(e?.target?.checked))"
+              />
+            </div>
+          </template>
+          <template v-else-if="column.key === 'index'">{{ index + 1 }}</template>
           <template v-else-if="column.key === 'feedSource'">
             <a-select
               v-model:value="record.feedSource"
               size="small"
               style="width: 100%"
               :options="feedSourceOptions"
+              :disabled="record.included === false"
               @change="(val) => onFeedRowSourceChange(record, val)"
             />
           </template>
@@ -760,26 +1158,12 @@
               allow-clear
               show-search
               option-filter-prop="label"
+              :popup-match-select-width="false"
+              :dropdown-style="{ minWidth: '360px' }"
               style="width: 100%"
               :options="feedLocationOptionsForItem(record.itemId, record.feedSource)"
-              :placeholder="
-                rowFifoOnly(record) ? '必选：从哪个储罐/库位扣' : '未选批时必选：从哪个储罐/库位扣'
-              "
-            />
-            <span v-else class="muted">{{ feedLocationFollowText(record) }}</span>
-          </template>
-          <template v-else-if="column.key === 'batchId'">
-            <a-select
-              v-if="showFeedBatchSelect(record)"
-              v-model:value="record.batchId"
-              size="small"
-              allow-clear
-              show-search
-              option-filter-prop="label"
-              style="width: 100%"
-              :options="batchOptionsForItem(record.itemId, record.feedSource)"
-              :placeholder="feedBatchPlaceholder(record)"
-              @change="(val) => onFeedBatchChange(record, val)"
+              :placeholder="rowFifoOnly(record) ? '边搜边选库位/储罐' : '未选批时边搜边选库位/储罐'"
+              :disabled="record.included === false"
             >
               <template #dropdownRender="{ menuNode: menu }">
                 <div>
@@ -787,10 +1171,44 @@
                   <a-divider style="margin: 4px 0" />
                   <div
                     class="search-more-row"
+                    :class="{ 'is-disabled': record.included === false }"
                     @mousedown.prevent
-                    @click="openFeedBatchPicker(record)"
+                    @click="record.included !== false && openFeedLocationPicker(record)"
                   >
-                    搜索更多
+                    选择更多
+                  </div>
+                </div>
+              </template>
+            </a-select>
+            <span v-else class="muted">{{ feedLocationFollowText(record) }}</span>
+          </template>
+          <template v-else-if="column.key === 'batchId'">
+            <a-select
+              v-if="showFeedBatchSelect(record)"
+              :value="feedBatchSelectValue(record)"
+              mode="multiple"
+              size="small"
+              allow-clear
+              show-search
+              option-filter-prop="label"
+              :max-tag-count="1"
+              style="width: 100%"
+              :options="batchOptionsForItem(record.itemId, record.feedSource)"
+              :placeholder="feedBatchPlaceholder(record)"
+              :disabled="record.included === false"
+              @change="(val) => onFeedBatchSelectChange(record, val)"
+            >
+              <template #dropdownRender="{ menuNode: menu }">
+                <div>
+                  <component :is="menu" />
+                  <a-divider style="margin: 4px 0" />
+                  <div
+                    class="search-more-row"
+                    :class="{ 'is-disabled': record.included === false }"
+                    @mousedown.prevent
+                    @click="record.included !== false && openFeedBatchPicker(record)"
+                  >
+                    搜索更多（可多选）
                   </div>
                 </div>
               </template>
@@ -808,6 +1226,7 @@
               style="width: 100%"
               :addon-after="record.unit || 'kg'"
               placeholder="实投"
+              :disabled="record.included === false"
             />
           </template>
           <template v-else-if="column.key === 'content'">
@@ -822,7 +1241,14 @@
               style="width: 100%"
               addon-after="%"
               :placeholder="feedContentPlaceholder(record)"
+              :disabled="record.included === false"
+              @change="() => onFeedContentPctChange(record)"
             />
+          </template>
+          <template v-else-if="column.key === 'guideQty'">
+            <span :class="{ 'feed-guide-qty': record.convertByContent }">
+              {{ feedGuideQtyText(record) }}
+            </span>
           </template>
           <template v-else-if="column.key === 'qcNo'">
             <a-button
@@ -859,6 +1285,69 @@
           </template>
         </template>
       </a-table>
+
+      <div class="feed-history-block">
+        <div class="feed-lines-title feed-history-title">
+          <span
+            >本阶段投料记录{{
+              feedModalHistoryRows.length ? `（${feedModalHistoryRows.length}）` : ''
+            }}</span
+          >
+          <a-button type="link" size="small" @click="feedHistoryCollapsed = !feedHistoryCollapsed">
+            {{ feedHistoryCollapsed ? '展开 ▾' : '收起 ▴' }}
+          </a-button>
+        </div>
+        <a-table
+          v-show="!feedHistoryCollapsed"
+          class="feed-modal-history-table"
+          :columns="feedModalHistoryColumns"
+          :data-source="feedModalHistoryRows"
+          :pagination="false"
+          size="small"
+          bordered
+          row-key="key"
+          :scroll="{ y: 260 }"
+          :locale="{ emptyText: '本阶段还没有过账记录' }"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'seq'">{{ record.seq }}</template>
+            <template v-else-if="column.key === 'feedSource'">
+              <a-tag v-if="record.feedSourceLabel !== '—'" color="processing">
+                {{ record.feedSourceLabel }}
+              </a-tag>
+              <span v-else>—</span>
+            </template>
+            <template v-else-if="column.key === 'deductMode'">
+              <a-tag v-if="record.deductModeLabel !== '—'" :color="record.deductModeColor">
+                {{ record.deductModeLabel }}
+              </a-tag>
+              <span v-else>—</span>
+            </template>
+            <template v-else-if="column.key === 'qcNo'">
+              <a-button
+                v-if="record.qcTaskId || (record.qcNo && record.qcNo !== '—')"
+                type="link"
+                size="small"
+                @click="openFeedBatchQc(record)"
+              >
+                {{ record.qcNo || '查看检单' }}
+              </a-button>
+              <span v-else>—</span>
+            </template>
+            <template v-else-if="column.key === 'content'">
+              <span>{{ record.contentText }}</span>
+              <a-button
+                v-if="record.contentPending && order.status === 'running'"
+                type="link"
+                size="small"
+                @click="openFeedContentPatch(record)"
+              >
+                补录有效含量
+              </a-button>
+            </template>
+          </template>
+        </a-table>
+      </div>
     </a-modal>
 
     <SelectMaterialBatchModal
@@ -869,6 +1358,16 @@
       :feed-source="feedBatchPickerRow?.feedSource || 'fresh'"
       :selected-ids="feedBatchPickerSelectedIds"
       @selected="onFeedBatchesPicked"
+    />
+
+    <SelectFeedLocationModal
+      v-model:open="feedLocationPickerOpen"
+      :item-id="feedLocationPickerRow?.itemId || ''"
+      :unit-label="feedLocationPickerRow?.unit || 'kg'"
+      :order="order"
+      :feed-source="normalizeRowFeedSource(feedLocationPickerRow?.feedSource)"
+      :selected-id="feedLocationPickerRow?.locationId || ''"
+      @selected="onFeedLocationPicked"
     />
 
     <a-modal
@@ -892,8 +1391,9 @@
       <div class="modal-basic-card step-report-card">
         <div class="section-title">本步必做 / 可做化验</div>
         <p class="section-hint">
-          下列为过程检清单（投料前核对、中控取样、转序放行）。硬门禁未合格不能确认本步；记录项可多次取样。产出检请在本步「产出」过账时按产出行勾选并发起。
+          下列为过程检清单（投料前核对、中控取样、转序放行）。硬门禁未合格不能确认本步；记录项可多次取样。产出检请在本步「产出」过账时按产出行勾选并发起。取样位置按化验类型选填，点「发起」时写入对应检单。
         </p>
+        <p class="section-meta">工序设备：{{ assayEquipmentText }}</p>
         <a-table
           :columns="assayChecklistColumns"
           :data-source="assayChecklistRows"
@@ -905,6 +1405,16 @@
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'gate'">
               <a-tag :color="record.hardGate ? 'warning' : 'default'">{{ record.gateLabel }}</a-tag>
+            </template>
+            <template v-else-if="column.key === 'sampleLocation'">
+              <a-input
+                v-if="record.canStart"
+                v-model:value="assaySampleLocationByScheme[record.schemeId]"
+                size="small"
+                allow-clear
+                placeholder="选填"
+              />
+              <span v-else>{{ record.sampleLocation || '—' }}</span>
             </template>
             <template v-else-if="column.key === 'status'">
               <a-tag :color="record.statusColor">{{ record.statusLabel }}</a-tag>
@@ -950,10 +1460,11 @@
 
     <a-modal
       :open="openOutput"
-      title="产出入库"
-      :width="1320"
+      title="产出登记"
+      :width="outputModalWidth"
       :mask-closable="false"
       destroy-on-close
+      wrap-class-name="output-register-modal-wrap"
       @cancel="openOutput = false"
       @ok="saveOutput"
     >
@@ -979,32 +1490,81 @@
               </a-form-item>
             </a-col>
             <a-col :span="24">
-              <a-form-item label="异常偏差">
-                <a-input v-model:value="deviation" size="small" />
+              <a-form-item label="当前异常偏差">
+                <span class="info-value">{{ order.deviation || '—' }}</span>
+              </a-form-item>
+            </a-col>
+            <a-col :span="24">
+              <a-form-item label="补充异常偏差">
+                <a-input
+                  v-model:value="deviation"
+                  size="small"
+                  allow-clear
+                  placeholder="可选：有新情况再填；将追加到整单记录，不覆盖历史"
+                />
               </a-form-item>
             </a-col>
           </a-row>
         </a-form>
         <p class="section-hint">
-          联副产品可先选「待判定」落暂存位并化验，出结果后再定回用/再提/入库/废弃。配方已配置产出检的行强制勾选且不可改；未配置的可选手勾。同一物料同阶段多次过账默认共用一张产出化验单；若需复检可勾「强制新建」。过程检请在「化验」清单发起。
+          异常偏差属整单说明：本次留空不影响已有记录；填写则追加一条并更新「最新」展示。默认全部勾选「本次」，取消后该行置灰跳过。硬门禁须先「待判定」再确认最终去向。
         </p>
       </div>
+
+      <div class="feed-lines-title">本次登记</div>
       <a-table
         :columns="expectColumns"
         :data-source="outputDrafts"
         :pagination="false"
         size="small"
+        bordered
         row-key="key"
+        :scroll="{ x: 1480 }"
+        :row-class-name="(record) => (record.included === false ? 'draft-row-skipped' : '')"
         :locale="{ emptyText: '本阶段没有计划产出，可勾选补加或换阶段' }"
       >
+        <template #headerCell="{ column }">
+          <template v-if="column.key === 'included'">
+            <a-checkbox
+              :checked="outputIncludeHeaderChecked"
+              :indeterminate="outputIncludeHeaderIndeterminate"
+              :disabled="!outputDrafts.length"
+              @change="(e) => onOutputIncludeCheckAll(e?.target?.checked)"
+            >
+              本次
+            </a-checkbox>
+          </template>
+          <template v-else-if="column.key === 'inboundQc'">
+            <!-- 勾选与文案拆开，避免窄列把「产出化验」截成「产出」 -->
+            <div class="output-assay-header">
+              <a-checkbox
+                :checked="outputAssayHeaderChecked"
+                :indeterminate="outputAssayHeaderIndeterminate"
+                :disabled="!outputAssayToggleableRows.length"
+                @change="(e) => onOutputAssayCheckAll(e?.target?.checked)"
+              />
+              <span class="output-assay-header-text">产出化验</span>
+            </div>
+          </template>
+          <template v-else>{{ column.title }}</template>
+        </template>
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'disposition'">
+          <template v-if="column.key === 'included'">
+            <div class="draft-include-cell">
+              <a-checkbox
+                :checked="record.included !== false"
+                @change="(e) => (record.included = Boolean(e?.target?.checked))"
+              />
+            </div>
+          </template>
+          <template v-else-if="column.key === 'disposition'">
             <a-select
               v-model:value="record.disposition"
               size="small"
               style="width: 100%"
-              :options="outputDispositionOptionsFor(record.role)"
+              :options="outputDispositionOptionsFor(record.role, record.itemId)"
               placeholder="请选择"
+              :disabled="record.included === false"
               @change="onOutputDispositionChange(record)"
             />
           </template>
@@ -1019,6 +1579,7 @@
               style="width: 100%"
               :options="locationOptionsFor(record.disposition)"
               :placeholder="locationPlaceholder(record.disposition)"
+              :disabled="record.included === false"
             />
             <span v-else>—</span>
           </template>
@@ -1032,38 +1593,141 @@
               :parser="inputNumberParser"
               :addon-after="record.unit || undefined"
               style="width: 100%"
+              placeholder="实产"
+              :disabled="record.included === false"
+            />
+          </template>
+          <template v-else-if="column.key === 'content'">
+            <a-input-number
+              v-model:value="record.contentPct"
+              size="small"
+              :min="0"
+              :max="100"
+              :step="0.01"
+              :formatter="inputNumberFormatter"
+              :parser="inputNumberParser"
+              style="width: 100%"
+              addon-after="%"
+              :placeholder="record.contentFromAssay ? '已从化验带出' : '选填/可后补'"
+              :disabled="record.included === false"
             />
           </template>
           <template v-else-if="column.key === 'inboundQc'">
+            <!-- 勾选与文案拆开，避免窄列把「发起化验」截成「发起」 -->
             <div class="output-assay-cell">
-              <a-checkbox
-                :checked="(record.assayScopes || []).includes('成品检')"
-                :disabled="record.assayLocked"
-                @change="(e) => onOutputAssayCheck(record, e?.target?.checked)"
-              >
-                产出化验
-              </a-checkbox>
-              <a-checkbox
+              <div class="output-assay-row">
+                <a-checkbox
+                  :checked="(record.assayScopes || []).includes('成品检')"
+                  :disabled="record.assayLocked || record.included === false"
+                  @change="(e) => onOutputAssayCheck(record, e?.target?.checked)"
+                />
+                <span class="output-assay-label">{{
+                  record.assayLocked ? '配方必检' : '发起化验'
+                }}</span>
+              </div>
+              <div
                 v-if="
                   (record.assayScopes || []).includes('成品检') && hasExistingOutputAssay(record)
                 "
-                v-model:checked="record.forceNewAssay"
+                class="output-assay-row"
               >
-                强制新建
-              </a-checkbox>
+                <a-checkbox
+                  v-model:checked="record.forceNewAssay"
+                  :disabled="record.included === false"
+                />
+                <span class="output-assay-label">强制新建</span>
+              </div>
+              <span
+                v-if="record.hasCompletedAssay && !(record.assayScopes || []).includes('成品检')"
+                class="muted"
+              >
+                已有完成检单，可不发起
+              </span>
             </div>
           </template>
         </template>
       </a-table>
+
+      <div class="feed-history-block">
+        <div class="feed-lines-title feed-history-title">
+          <span
+            >本阶段已登记明细{{
+              outputModalHistoryRows.length ? `（${outputModalHistoryRows.length}）` : ''
+            }}</span
+          >
+          <a-button
+            type="link"
+            size="small"
+            @click="outputHistoryCollapsed = !outputHistoryCollapsed"
+          >
+            {{ outputHistoryCollapsed ? '展开 ▾' : '收起 ▴' }}
+          </a-button>
+        </div>
+        <a-table
+          v-show="!outputHistoryCollapsed"
+          class="feed-modal-history-table"
+          :columns="outputModalHistoryColumns"
+          :data-source="outputModalHistoryRows"
+          :pagination="false"
+          size="small"
+          bordered
+          row-key="key"
+          :scroll="{ x: 1100, y: 240 }"
+          :locale="{ emptyText: '本阶段还没有登记记录' }"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'seq'">{{ record.seq }}</template>
+            <template v-else-if="column.key === 'content'">
+              <span>{{ record.contentText }}</span>
+              <a-button
+                v-if="record.contentPending && order.status === 'running'"
+                type="link"
+                size="small"
+                @click="openOutputContentPatch(record)"
+              >
+                补录有效含量
+              </a-button>
+            </template>
+            <template v-else-if="column.key === 'qcTaskStatus'">
+              <a-tag v-if="record.qcTaskStatusLabel !== '—'" :color="record.qcTaskStatusColor">{{
+                record.qcTaskStatusLabel
+              }}</a-tag>
+              <span v-else>—</span>
+            </template>
+            <template v-else-if="column.key === 'qcLinks'">
+              <template v-if="record.qcLinks?.length">
+                <a-button
+                  v-for="link in record.qcLinks"
+                  :key="link.taskId || link.qcNo"
+                  type="link"
+                  size="small"
+                  @click="goQcTask(link.taskId)"
+                >
+                  {{ link.qcNo }}
+                </a-button>
+              </template>
+              <span v-else>—</span>
+            </template>
+          </template>
+        </a-table>
+      </div>
+
       <div class="output-qc-list-block">
-        <div class="section-title">关联产出化验单</div>
+        <div class="feed-lines-title feed-history-title">
+          <span
+            >关联产出化验单{{
+              outputRelatedQcRows.length ? `（${outputRelatedQcRows.length}）` : ''
+            }}</span
+          >
+        </div>
         <a-table
           :columns="outputRelatedQcColumns"
           :data-source="outputRelatedQcRows"
           :pagination="false"
           size="small"
+          bordered
           row-key="key"
-          :locale="{ emptyText: '本阶段暂无关联产出化验单；勾选产出化验并确认后生成' }"
+          :locale="{ emptyText: '本阶段暂无关联产出化验单；勾选「发起产出化验」并确认后生成' }"
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'status'">
@@ -1083,6 +1747,28 @@
           </template>
         </a-table>
       </div>
+    </a-modal>
+    <a-modal
+      :open="deviationLogsOpen"
+      title="异常偏差历史"
+      :width="520"
+      :footer="null"
+      destroy-on-close
+      @cancel="deviationLogsOpen = false"
+    >
+      <a-timeline v-if="(order.deviationLogs || []).length">
+        <a-timeline-item
+          v-for="(log, idx) in [...(order.deviationLogs || [])].reverse()"
+          :key="idx"
+        >
+          <div class="deviation-log-meta">
+            <span>{{ log.at || '—' }}</span>
+            <span v-if="log.operator"> · {{ log.operator }}</span>
+          </div>
+          <div class="deviation-log-text">{{ log.text || '—' }}</div>
+        </a-timeline-item>
+      </a-timeline>
+      <a-empty v-else description="暂无历史记录" />
     </a-modal>
     <a-modal
       :open="decideOpen"
@@ -1147,13 +1833,14 @@
           </a-row>
         </a-form>
         <p class="section-hint">
-          待判定在化验出结果后再定去向。选回用或再提时，若已勾选化验则按硬门禁校验。
+          硬门禁（已挂产出化验）：未出结果或不合格时，不能确认回用 / 再提 / 入仓库 /
+          入储罐，仅可废弃或继续待判定。未挂产出化验（记录）可先确认去向。
         </p>
       </div>
     </a-modal>
     <a-modal
       :open="feedContentPatchOpen"
-      title="补录投料含量"
+      title="补录投料有效含量"
       :width="400"
       :mask-closable="false"
       destroy-on-close
@@ -1172,7 +1859,7 @@
               </a-form-item>
             </a-col>
             <a-col :span="24">
-              <a-form-item label="含量" required>
+              <a-form-item label="有效含量" required>
                 <a-input-number
                   v-model:value="feedContentPatch.contentPct"
                   size="small"
@@ -1183,13 +1870,58 @@
                   :parser="inputNumberParser"
                   style="width: 100%"
                   addon-after="%"
-                  placeholder="请输入含量"
+                  placeholder="请输入有效含量"
                 />
               </a-form-item>
             </a-col>
           </a-row>
         </a-form>
-        <p class="section-hint">可手填；也可等过程检带含量字段完成后再自动回填。两种方式不互斥。</p>
+        <p class="section-hint">
+          可手填；也可等过程检带有效含量字段完成后再自动回填。两种方式不互斥。
+        </p>
+      </div>
+    </a-modal>
+    <a-modal
+      :open="outputContentPatchOpen"
+      title="补录产出有效含量"
+      :width="400"
+      :mask-closable="false"
+      destroy-on-close
+      ok-text="保存"
+      :confirm-loading="outputContentPatchSaving"
+      @cancel="closeOutputContentPatch"
+      @ok="saveOutputContentPatch"
+    >
+      <div class="modal-basic-card">
+        <div class="section-title">基本信息</div>
+        <a-form layout="inline" class="horizontal-form">
+          <a-row :gutter="[12, 8]" style="width: 100%">
+            <a-col :span="24">
+              <a-form-item label="批次">
+                <span>{{ outputContentPatch.batchNo || '—' }}</span>
+              </a-form-item>
+            </a-col>
+            <a-col :span="24">
+              <a-form-item label="有效含量" required>
+                <a-input-number
+                  v-model:value="outputContentPatch.contentPct"
+                  size="small"
+                  :min="0"
+                  :max="100"
+                  :step="0.01"
+                  :formatter="inputNumberFormatter"
+                  :parser="inputNumberParser"
+                  style="width: 100%"
+                  addon-after="%"
+                  placeholder="请输入有效含量"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </a-form>
+        <p class="section-hint">
+          可手填；也可等产出化验带有效含量字段完成后再自动回填。两种方式不互斥。
+        </p>
       </div>
     </a-modal>
     <ConfirmReleaseBatchModal v-model:open="confirmOpen" :order-id="order.id" />
@@ -1205,8 +1937,10 @@ import { message, Modal } from 'ant-design-vue'
 import FormCreateShell from '@/components/FormCreateShell.vue'
 import { currentProcessStep } from '@/utils/processRouteBoard'
 import DetailSectionCard from '@/components/DetailSectionCard.vue'
+import ListFilterBar from '@/components/ListFilterBar.vue'
 import { useFormCreatePage } from '@/composables/useFormCreatePage'
 import { useTabs } from '@/composables/useTabs'
+import { formatOperatorLabel } from '@/utils/operationLog'
 import {
   formatStepParams,
   getFormula,
@@ -1233,27 +1967,40 @@ import {
 import { displayInspectConclusion, inspectConclusionColor } from '@/utils/inspectConclusion'
 import { resolveBatchInspectInfo } from '@/utils/resolveBatchInspect'
 import QcTaskDetailDrawer from '@/views/quality/components/QcTaskDetailDrawer.vue'
-import { round3 } from '@/utils/processBatchMath'
+import {
+  allocateSuggestedFeedQtys,
+  contentAsFraction,
+  round3,
+  suggestActualFeedQty,
+} from '@/utils/processBatchMath'
 import {
   ORDER_STATUS_LABEL,
   cancelBatchOrder,
+  allRouteStepsConfirmed,
   completeOrder,
   confirmOutputDisposition,
   deletePendingOrder,
   completionErrors,
   confirmStep,
+  stepFeedConfirmErrors,
+  stepParamConfirmErrors,
+  stepSequenceConfirmErrors,
   createReextract,
-  createRework,
   getBatchOrder,
   getStepQcLink,
   getStepQcRecords,
+  isOutputAssayHardGate,
   backfillFeedContentFromAssay,
+  backfillOutputContentFromAssay,
+  extractContentFractionFromQcTask,
   postFeeds,
   postOutput,
   releaseOrder,
-  releaseOutputBatch,
+  resolveStepEquipmentCandidates,
 } from '@/store/batchInstructionStore'
 import { getProcessById, resolveDefaultExecutors } from '@/store/processConfigStore'
+import { deviceLabelById, equipmentState, getDeviceById } from '@/store/equipmentStore'
+import { EQUIPMENT_OCCUPY_STATUS, EQUIPMENT_STATUS } from '@/mock/equipmentSeed'
 import {
   formatProcessGate,
   normalizeProcessGate,
@@ -1268,7 +2015,7 @@ import {
   QC_TASK_STATUS,
 } from '@/store/qcTaskStore'
 import { qcBizScopeLabel } from '@/constants/qcBizScopeLabel'
-import { formatProductionLineLabel } from '@/store/productionLineStore'
+import { formatWorkCenterLabel } from '@/store/workCenterStore'
 import ConfirmReleaseBatchModal from '@/views/production/components/ConfirmReleaseBatchModal.vue'
 import PendingBatchEditModal from '@/views/production/components/PendingBatchEditModal.vue'
 import {
@@ -1279,9 +2026,11 @@ import {
   isProcessAssayScheme,
   resolveAssaySchemesForStep,
 } from '@/utils/qcProcessConfig'
+import { isQcConclusionField, isQcInspectRemarkField } from '@/utils/qcConclusionField'
+import { formatFieldValueWithUnit } from '@/utils/qcFieldStandard'
 import {
-  BATCH_STATUS_LABEL,
   getMaterialBatch,
+  isProcessItemAllowWorkshopStaging,
   listFeedableBatches,
   listFeedSourceLocations,
   listMaterialBatches,
@@ -1301,6 +2050,7 @@ import {
 import { PROCESS_FORM_SYSTEM_KEYS } from '@/mock/qcFieldLibrary'
 import ProcessStepReportFields from '@/views/production/components/ProcessStepReportFields.vue'
 import SelectMaterialBatchModal from '@/views/production/components/SelectMaterialBatchModal.vue'
+import SelectFeedLocationModal from '@/views/production/components/SelectFeedLocationModal.vue'
 import { filterTemplateFieldsBeyondFixed } from '@/utils/stepConfirmFixedFields'
 import dayjs from 'dayjs'
 
@@ -1309,45 +2059,59 @@ const router = useRouter()
 const { openTab } = useTabs()
 const { goBack } = useFormCreatePage('/production/work-orders')
 const order = computed(() => getBatchOrder(route.params.id))
-const productionLineText = computed(() => {
+const workCenterText = computed(() => {
   const current = order.value
-  if (!current) return '—'
-  if (current.productionLineId) return formatProductionLineLabel(current.productionLineId) || '—'
-  if (current.executeBy === 'formula' || current.feedPlanId) return '按配方设备'
-  return '—'
+  if (!current?.workCenterId) return '—'
+  return formatWorkCenterLabel(current.workCenterId) || '—'
 })
 
 const unitColumns = [
   { title: '顺序', dataIndex: 'seq', width: 70, align: 'center' },
-  { title: '设备', dataIndex: 'equipmentText' },
+  { title: '设备', dataIndex: 'equipmentText', width: 200 },
+  { title: '占釜状态', key: 'occupy', width: 140 },
+  { title: '设备状态', key: 'deviceStatus', width: 100 },
 ]
 const routeStepColumns = [
-  { title: '列', dataIndex: 'stepNo', width: 70 },
-  { title: '行', dataIndex: 'rowNo', width: 70 },
-  { title: '工序', dataIndex: 'name', width: 120 },
-  { title: '设备', dataIndex: 'equipmentText', width: 180 },
-  { title: '回流', dataIndex: 'returnText' },
+  { title: '列', dataIndex: 'stepNo', width: 56 },
+  { title: '行', dataIndex: 'rowNo', width: 56 },
+  { title: '工序', dataIndex: 'name', width: 120, ellipsis: true },
+  { title: '设备', dataIndex: 'equipmentText', width: 160, ellipsis: true },
+  { title: '回流', dataIndex: 'returnText', width: 80 },
+  { title: '阶段进度', key: 'progress', width: 130 },
+  { title: '占釜状态', key: 'occupy', width: 130 },
+  { title: '设备状态', key: 'deviceStatus', width: 96 },
+  { title: '化验', key: 'assay', width: 200 },
+  { title: '工序门禁', key: 'gate', width: 96 },
+  { title: '操作', key: 'action', width: 100, fixed: 'right' },
 ]
 const stepColumns = [
-  { title: '序', dataIndex: 'stepNo', width: 70 },
-  { title: '阶段', dataIndex: 'name', width: 120 },
-  { title: '设备', dataIndex: 'equipmentText', width: 160 },
-  { title: '岗位', dataIndex: 'positionText', width: 140 },
-  { title: '配方要求', dataIndex: 'limitText', width: 200 },
-  { title: '转序条件', dataIndex: 'transitionText', width: 160 },
-  { title: '门禁判定', key: 'done', width: 100 },
-  { title: '化验', key: 'qc', width: 240 },
-  { title: '实绩摘要', key: 'summary', width: 200 },
-  { title: '产出', key: 'output', width: 200 },
-  { title: '操作', key: 'action', width: 220 },
+  { title: '序', dataIndex: 'stepNo', width: 56, align: 'center', fixed: 'left' },
+  { title: '状态', key: 'done', width: 88, fixed: 'left' },
+  { title: '阶段', dataIndex: 'name', width: 110, ellipsis: true },
+  { title: '设备', dataIndex: 'equipmentText', width: 150, ellipsis: true },
+  { title: '岗位', dataIndex: 'positionText', width: 100, ellipsis: true },
+  { title: '配方要求', dataIndex: 'limitText', width: 180, ellipsis: true },
+  { title: '转序条件', dataIndex: 'transitionText', width: 140, ellipsis: true },
+  { title: '化验', key: 'qc', width: 200 },
+  { title: '实绩摘要', key: 'summary', width: 160 },
+  { title: '产出', key: 'output', width: 160 },
+  { title: '操作', key: 'action', width: 168, fixed: 'right' },
 ]
 const assayColumns = [
-  { title: '取样点', dataIndex: 'point', width: 140 },
-  { title: '时间', dataIndex: 'at', width: 160 },
-  { title: '检验项', dataIndex: 'item', width: 140 },
+  { title: '序号', key: 'seq', width: 56, align: 'center' },
+  { title: '工序', dataIndex: 'point', width: 120, ellipsis: true },
+  { title: '工序设备', dataIndex: 'equipmentText', width: 140, ellipsis: true },
+  { title: '取样位置', dataIndex: 'sampleLocation', width: 120, ellipsis: true },
+  { title: '检验方案', dataIndex: 'item', width: 130, ellipsis: true },
+  { title: '类型', dataIndex: 'typeLabel', width: 96, ellipsis: true },
+  { title: '门禁', key: 'gate', width: 88 },
   { title: '检单', key: 'qcNo', width: 140 },
-  { title: '实测', dataIndex: 'actual', width: 120 },
-  { title: '判定', key: 'judge', width: 110 },
+  { title: '检单状态', key: 'status', width: 96 },
+  { title: '发起时间', dataIndex: 'createdAt', width: 160 },
+  { title: '实测', key: 'actual', width: 180, ellipsis: true },
+  { title: '化验结果', key: 'judge', width: 100 },
+  { title: '质检时间', dataIndex: 'inspectedAt', width: 160 },
+  { title: '质检人', dataIndex: 'inspector', width: 100 },
 ]
 const logColumns = [
   { title: '操作时间', dataIndex: 'operatedAt', width: 170 },
@@ -1356,6 +2120,7 @@ const logColumns = [
   { title: '说明', dataIndex: 'remark' },
 ]
 const balanceColumns = [
+  { title: '序号', key: 'seq', width: 56, align: 'center' },
   { title: '产出类型', dataIndex: 'roleLabel', width: 100 },
   { title: '物料', dataIndex: 'item', width: 180 },
   { title: '阶段', dataIndex: 'stepText', width: 140 },
@@ -1366,16 +2131,36 @@ const balanceColumns = [
   { title: '入库单号', key: 'inbound', width: 160 },
 ]
 const feedPostingColumns = [
-  { title: '时间', dataIndex: 'at', width: 170 },
-  { title: '执行人', dataIndex: 'operator', width: 120 },
-  { title: '原料批次', dataIndex: 'batchNo', width: 160 },
-  { title: '本次实投', dataIndex: 'qtyText', align: 'right', width: 120 },
-  { title: '含量', key: 'content', width: 160 },
+  { title: '序号', key: 'seq', width: 56, align: 'center' },
+  { title: '时间', dataIndex: 'at', width: 150 },
+  { title: '执行人', dataIndex: 'operator', width: 90 },
+  { title: '投料来源', key: 'feedSource', width: 100 },
+  { title: '扣减方式', key: 'deductMode', width: 110 },
+  { title: '原料批次', dataIndex: 'batchNo', width: 140 },
+  { title: '化验单号', key: 'qcNo', width: 150 },
+  { title: '来源库位', dataIndex: 'locationText', width: 130, ellipsis: true },
+  { title: '本次实投', dataIndex: 'qtyText', align: 'right', width: 110 },
+  { title: '有效含量', key: 'content', width: 130 },
+]
+const feedModalHistoryColumns = [
+  { title: '序号', key: 'seq', width: 56, align: 'center' },
+  { title: '时间', dataIndex: 'at', width: 140 },
+  { title: '原料', dataIndex: 'item', width: 110, ellipsis: true },
+  { title: '投料来源', key: 'feedSource', width: 100 },
+  { title: '扣减方式', key: 'deductMode', width: 110 },
+  { title: '原料批次', dataIndex: 'batchNo', width: 130 },
+  { title: '化验单号', key: 'qcNo', width: 140 },
+  { title: '来源库位', dataIndex: 'locationText', width: 120, ellipsis: true },
+  { title: '本次实投', dataIndex: 'qtyText', align: 'right', width: 100 },
+  { title: '有效含量', key: 'content', width: 120 },
+  { title: '执行人', dataIndex: 'operator', width: 90 },
 ]
 const feedDraftColumns = computed(() => {
   void functionParamState.params.processFeedDeductMode
   void functionParamState.params.processFeedDeductModeRecycle
   const cols = [
+    // 表头勾选全选「本次」；取消勾选即跳过本行，不必清实投量
+    { title: '本次', key: 'included', width: 72, align: 'center', fixed: 'left' },
     { title: '序号', key: 'index', width: 56, align: 'center', fixed: 'left' },
     { title: '原料', dataIndex: 'item', width: 120, ellipsis: true, fixed: 'left' },
     { title: '编号', dataIndex: 'itemCode', width: 110, ellipsis: true },
@@ -1391,7 +2176,9 @@ const feedDraftColumns = computed(() => {
     { title: '原料批次', key: 'batchId', width: 280 },
     { title: '来源储罐/库位', key: 'feedLocation', width: 220 },
     { title: '实投量', key: 'qty', width: 140 },
-    { title: '含量 (%)', key: 'content', width: 160 },
+    { title: '有效含量 (%)', key: 'content', width: 160 },
+    // 指导量：按「目标有效量 ÷ 批次含量」算出的建议实投，只读对照，不替代手填实投
+    { title: '指导量', key: 'guideQty', width: 150, align: 'right' },
     { title: '化验单号', key: 'qcNo', width: 140, ellipsis: true },
     { title: '检验结论', key: 'qcResult', width: 110 },
   )
@@ -1401,7 +2188,7 @@ const stepFeedSummaryColumns = [
   { title: '原料', dataIndex: 'item', width: 140 },
   { title: '理论', dataIndex: 'planQty', width: 90, align: 'right' },
   { title: '已投', dataIndex: 'posted', width: 90, align: 'right' },
-  { title: '含量', dataIndex: 'contentText', width: 90, align: 'right' },
+  { title: '有效含量', dataIndex: 'contentText', width: 90, align: 'right' },
   { title: '批次', dataIndex: 'batches' },
 ]
 const ebrColumns = [
@@ -1412,6 +2199,7 @@ const ebrColumns = [
   { title: '时间', dataIndex: 'at', width: 160 },
 ]
 const outColumns = [
+  { title: '序号', key: 'seq', width: 56, align: 'center' },
   { title: '角色', dataIndex: 'roleLabel', width: 90 },
   { title: '物料', dataIndex: 'item', width: 160, ellipsis: true },
   { title: '阶段', dataIndex: 'stepText', width: 110 },
@@ -1419,21 +2207,47 @@ const outColumns = [
   { title: '处理方式', dataIndex: 'dispositionLabel', width: 90 },
   { title: '去向位置', dataIndex: 'locationName', width: 110 },
   { title: '数量', dataIndex: 'qtyText', align: 'right', width: 100 },
+  { title: '有效含量', key: 'content', width: 140, align: 'right' },
   { title: '剩余', dataIndex: 'remainText', align: 'right', width: 100 },
-  { title: '放行状态', key: 'status', width: 100 },
+  { title: '处理状态', key: 'handleStatus', width: 100 },
+  { title: '检单状态', key: 'qcTaskStatus', width: 100 },
+  { title: '检验方案', dataIndex: 'assaySchemeText', width: 140, ellipsis: true },
+  { title: '类型', dataIndex: 'assayTypeLabel', width: 100, ellipsis: true },
+  { title: '门禁', key: 'assayGate', width: 88 },
   { title: '检验结论', key: 'inspectConclusion', width: 100 },
-  { title: '化验单号', key: 'qcLinks', width: 180 },
-  { title: '操作', key: 'action', width: 160 },
+  { title: '化验单号', key: 'qcLinks', width: 160 },
+  { title: '入库单号', key: 'inbound', width: 140 },
+  { title: '操作', key: 'action', width: 140, fixed: 'right' },
 ]
 const expectColumns = [
-  { title: '角色', dataIndex: 'roleLabel', width: 100 },
-  { title: '物料', dataIndex: 'item' },
-  { title: '预期', dataIndex: 'qtyText', align: 'right', width: 120 },
-  { title: '已产', dataIndex: 'postedText', align: 'right', width: 120 },
-  { title: '本次实产', key: 'actual', width: 150 },
+  { title: '本次', key: 'included', width: 72, align: 'center' },
+  { title: '角色', dataIndex: 'roleLabel', width: 88 },
+  { title: '物料名称', dataIndex: 'itemName', width: 140, ellipsis: true },
+  { title: '编码', dataIndex: 'itemCode', width: 120, ellipsis: true },
+  { title: '规格型号', dataIndex: 'specText', width: 120, ellipsis: true },
+  { title: '预期', dataIndex: 'qtyText', align: 'right', width: 110 },
+  { title: '已产', dataIndex: 'postedText', align: 'right', width: 110 },
+  { title: '本次实产', key: 'actual', width: 140 },
+  { title: '有效含量 (%)', key: 'content', width: 140 },
   { title: '处理方式', key: 'disposition', width: 120 },
   { title: '去向位置', key: 'location', width: 160 },
-  { title: '产出化验', key: 'inboundQc', width: 168 },
+  // 表头自定义勾选「全选发起」见 #headerCell；minWidth 防止「产出化验」被挤没
+  { title: '产出化验', key: 'inboundQc', width: 168, minWidth: 168 },
+]
+/** 弹窗内「本阶段已登记明细」列 */
+const outputModalHistoryColumns = [
+  { title: '序号', key: 'seq', width: 56, align: 'center' },
+  { title: '时间', dataIndex: 'at', width: 140 },
+  { title: '角色', dataIndex: 'roleLabel', width: 80 },
+  { title: '物料名称', dataIndex: 'itemName', width: 140, ellipsis: true },
+  { title: '编码', dataIndex: 'itemCode', width: 120, ellipsis: true },
+  { title: '规格型号', dataIndex: 'specText', width: 120, ellipsis: true },
+  { title: '批次号', dataIndex: 'batchNo', width: 150, ellipsis: true },
+  { title: '处理方式', dataIndex: 'dispositionLabel', width: 90 },
+  { title: '数量', dataIndex: 'qtyText', width: 100, align: 'right' },
+  { title: '有效含量', key: 'content', width: 150 },
+  { title: '检单状态', key: 'qcTaskStatus', width: 100 },
+  { title: '化验单号', key: 'qcLinks', width: 140 },
 ]
 const outputRelatedQcColumns = [
   { title: '物料', dataIndex: 'item', width: 180 },
@@ -1446,6 +2260,7 @@ const assayChecklistColumns = [
   { title: '化验类型', dataIndex: 'typeLabel', width: 120 },
   { title: '业务类型', dataIndex: 'bizLabel', width: 100 },
   { title: '门禁', key: 'gate', width: 90 },
+  { title: '取样位置', key: 'sampleLocation', width: 140 },
   { title: '状态', key: 'status', width: 200 },
   { title: '发起', key: 'action', width: 110 },
 ]
@@ -1486,28 +2301,150 @@ const theoreticalOutputText = computed(() => {
   return `${value} ${order.value?.unit || ''}`.trim()
 })
 
+/** 步骤齐了但仍执行中：展示未能自动关单的实时原因。 */
+const completionBlockerList = computed(() => {
+  const row = order.value
+  if (!row || row.status !== 'running') return []
+  if (!allRouteStepsConfirmed(row)) return []
+  const live = completionErrors(row)
+  if (live.length) return live
+  return Array.isArray(row.completionBlockers) ? row.completionBlockers.filter(Boolean) : []
+})
+const completionBlockerVisible = computed(() => completionBlockerList.value.length > 0)
+const completionBlockerDescription = computed(() =>
+  completionBlockerList.value.map((text, index) => `${index + 1}. ${text}`).join('\n'),
+)
+
 const routeText = computed(() => {
   const route = order.value?.equipmentRoute
   if (!route?.routeId && !route?.routeName) return '—'
   return `${route.routeCode || ''} ${route.routeName || ''}`.trim() || '—'
 })
+
+function deviceOccupyMeta(equipmentId) {
+  const device = equipmentId ? getDeviceById(equipmentId) : null
+  if (!device) {
+    return {
+      occupyStatus: '',
+      occupyColor: 'default',
+      occupiedBatchNo: '',
+      deviceStatus: '',
+      deviceStatusColor: 'default',
+    }
+  }
+  const occupy = device.occupyStatus || ''
+  let occupyColor = 'default'
+  if (occupy === EQUIPMENT_OCCUPY_STATUS.CLEAN) occupyColor = 'success'
+  else if (occupy === EQUIPMENT_OCCUPY_STATUS.OCCUPIED) occupyColor = 'processing'
+  else if (occupy === EQUIPMENT_OCCUPY_STATUS.WAIT_DISCHARGE) occupyColor = 'warning'
+  let deviceStatusColor = 'default'
+  if (device.status === EQUIPMENT_STATUS.IN_USE) deviceStatusColor = 'success'
+  else if (device.status === EQUIPMENT_STATUS.REPAIRING) deviceStatusColor = 'error'
+  else if (device.status === EQUIPMENT_STATUS.IDLE) deviceStatusColor = 'warning'
+  return {
+    occupyStatus: occupy || '—',
+    occupyColor,
+    occupiedBatchNo: device.occupiedBatchNo || '',
+    deviceStatus: device.status || '—',
+    deviceStatusColor,
+  }
+}
+
+function matchRouteStageStep(routeStep, usedStepNos) {
+  const snapshots = order.value?.routeSnapshot || []
+  const name = String(routeStep?.name || '').trim()
+  const equipmentId = String(routeStep?.equipmentId || '').trim()
+  let hit = snapshots.find(
+    (step) =>
+      !usedStepNos.has(Number(step.stepNo)) &&
+      String(step.name || '').trim() === name &&
+      String(step.equipmentId || '').trim() === equipmentId,
+  )
+  if (!hit) {
+    hit = snapshots.find(
+      (step) => !usedStepNos.has(Number(step.stepNo)) && String(step.name || '').trim() === name,
+    )
+  }
+  if (hit) usedStepNos.add(Number(hit.stepNo))
+  return hit || null
+}
+
+function stageProgressMeta(stageStep) {
+  if (!stageStep) return { progressLabel: '—', progressColor: 'default' }
+  const stepNo = Number(stageStep.stepNo)
+  const confirmed = (order.value?.confirmedSteps || []).includes(stepNo)
+  if (confirmed) return { progressLabel: '已确认', progressColor: 'success' }
+  if (order.value?.status !== 'running') {
+    return { progressLabel: '未开始', progressColor: 'default' }
+  }
+  const pending = (order.value?.routeSnapshot || []).find(
+    (step) => !(order.value?.confirmedSteps || []).includes(step.stepNo),
+  )
+  if (pending && Number(pending.stepNo) === stepNo) {
+    return { progressLabel: '执行中', progressColor: 'processing' }
+  }
+  if (pending && Number(pending.stepNo) < stepNo) {
+    return { progressLabel: '未开始', progressColor: 'default' }
+  }
+  return { progressLabel: '未开始', progressColor: 'default' }
+}
+
+function routeAssayGateMeta(stageStep) {
+  if (!stageStep) {
+    return { assayItems: [], gateLabel: '—', gateColor: 'default' }
+  }
+  const proc = stageStep.processId ? getProcessById(stageStep.processId) : null
+  const gateMode = normalizeProcessGate(stageStep.gateMode || proc?.gateMode)
+  const hardStep = gateMode === PROCESS_GATE_HARD
+  const schemes = resolveAssaySchemesForStep(stageStep, proc).filter(isProcessAssayScheme)
+  const assayItems = schemes.map((scheme) => {
+    const hardGate = isAssaySchemeHardGate(scheme)
+    return {
+      typeLabel: assayTypeLabel(scheme.assayType, scheme.bizScope) || scheme.name || '化验',
+      hardGate,
+      gateLabel: hardGate ? '硬门禁' : '记录',
+    }
+  })
+  return {
+    assayItems,
+    gateLabel: hardStep ? '硬门禁' : schemes.length ? '记录' : '—',
+    gateColor: hardStep ? 'warning' : 'default',
+  }
+}
+
 const unitRows = computed(() =>
-  (order.value?.equipmentRoute?.units || []).map((unit, index) => ({
-    key: `${unit.equipmentId || 'unit'}-${index}`,
-    seq: index + 1,
-    equipmentText: unit.equipmentName || '—',
-  })),
+  (order.value?.equipmentRoute?.units || []).map((unit, index) => {
+    const occupy = deviceOccupyMeta(unit.equipmentId)
+    return {
+      key: `${unit.equipmentId || 'unit'}-${index}`,
+      seq: index + 1,
+      equipmentText: unit.equipmentName || '—',
+      ...occupy,
+    }
+  }),
 )
-const routeStepRows = computed(() =>
-  (order.value?.equipmentRoute?.steps || []).map((step, index) => ({
-    key: `${step.stepNo}-${step.rowNo}-${index}`,
-    stepNo: step.stepNo,
-    rowNo: step.rowNo,
-    name: step.name || '—',
-    equipmentText: step.equipmentName || '—',
-    returnText: step.returnText || '—',
-  })),
-)
+const routeStepRows = computed(() => {
+  const usedStepNos = new Set()
+  return (order.value?.equipmentRoute?.steps || []).map((step, index) => {
+    const stageStep = matchRouteStageStep(step, usedStepNos)
+    const occupy = deviceOccupyMeta(step.equipmentId)
+    const progress = stageProgressMeta(stageStep)
+    const assayGate = routeAssayGateMeta(stageStep)
+    return {
+      key: `${step.stepNo}-${step.rowNo}-${index}`,
+      stepNo: step.stepNo,
+      rowNo: step.rowNo,
+      name: step.name || '—',
+      equipmentText: step.equipmentName || '—',
+      returnText: step.returnText || '—',
+      stageStep,
+      stageStepNo: stageStep?.stepNo || '',
+      ...occupy,
+      ...progress,
+      ...assayGate,
+    }
+  })
+})
 const showRouteSteps = computed(() => {
   const mode = order.value?.equipmentRoute?.routeMode
   if (mode === 'equipment') return false
@@ -1573,15 +2510,30 @@ function stepOutputText(stepNo) {
     .join('；')
 }
 
-function stepOutputPreview(stepNo) {
-  const lines = stepOutputLines(stepNo)
-  if (!lines.length) return '—'
-  const first = [lines[0].role, lines[0].name, lines[0].qty].filter(Boolean).join(' ')
-  if (lines.length === 1) return first
-  return `${first} 等${lines.length}项`
+/** 工艺阶段单元格：化验 / 实绩 / 产出 多项时默认收起只露 1 条 */
+const stepCellExpandMap = reactive({})
+
+function stepCellExpandKey(stepNo, kind) {
+  return `${stepNo}:${kind}`
 }
 
-/** 步骤实绩摘要：投料合计 + 全部工艺参数实绩；仅确认无数值时显示「已确认」；否则 — */
+function isStepCellExpanded(stepNo, kind) {
+  return Boolean(stepCellExpandMap[stepCellExpandKey(stepNo, kind)])
+}
+
+function toggleStepCellExpand(stepNo, kind) {
+  const key = stepCellExpandKey(stepNo, kind)
+  stepCellExpandMap[key] = !stepCellExpandMap[key]
+}
+
+function visibleStepCellItems(list, stepNo, kind) {
+  const rows = Array.isArray(list) ? list : []
+  if (!rows.length) return []
+  if (rows.length === 1 || isStepCellExpanded(stepNo, kind)) return rows
+  return rows.slice(0, 1)
+}
+
+/** 步骤实绩摘要：投料合计 + 工艺参数合并为一条；仅确认无数值时显示「已确认」；否则 — */
 function stepSummaryLines(stepNo) {
   const current = order.value
   if (!current) return []
@@ -1593,9 +2545,10 @@ function stepSummaryLines(stepNo) {
     const unit = itemUnit(feeds[0].itemId) || current.unit || ''
     lines.push({ label: '投料', value: formatQtyWithUnit(qty, unit) })
   }
-  params.forEach((row) => {
-    lines.push({ label: row.key || '参数', value: String(row.value ?? '—') })
-  })
+  if (params.length) {
+    const text = params.map((row) => `${row.key || '参数'} ${row.value ?? '—'}`).join('；')
+    lines.push({ label: '工艺参数', value: text })
+  }
   return lines
 }
 
@@ -1604,14 +2557,6 @@ function stepSummaryText(stepNo) {
   if (lines.length) return lines.map((line) => `${line.label} ${line.value}`).join('；')
   if (order.value?.confirmedSteps?.includes(stepNo)) return '已确认'
   return '—'
-}
-
-function stepSummaryPreview(stepNo) {
-  const lines = stepSummaryLines(stepNo)
-  if (!lines.length) return stepSummaryText(stepNo)
-  const first = `${lines[0].label} ${lines[0].value}`
-  if (lines.length === 1) return first
-  return `${first} 等${lines.length}项`
 }
 
 function contentWithUnit(value) {
@@ -1637,57 +2582,357 @@ function contentPctToFraction(value) {
   return roundNumber(n / 100, 6)
 }
 
-const feedRows = computed(() => {
-  const posted = order.value?.feeds || []
-  return (order.value?.theoreticalFeeds || []).map((line, index) => {
-    const feeds = posted.filter((row) => row.itemId === line.itemId)
-    const card = itemMasterCard(line.itemId)
-    const unit = itemUnit(line.itemId) || order.value?.unit || ''
-    const postedQty = feeds.reduce((sum, row) => sum + Number(row.qty), 0) || 0
-    const planQty = Number(line.qty)
+function feedSourceLabelOf(source, row) {
+  if (source === 'recycle' || row?.isRecycle) return '回流料'
+  if (source === 'reextract' || row?.isReextract) return '再提'
+  if (source === 'fresh') return '线边新料'
+  return '—'
+}
+
+function feedDeductModeMeta(row) {
+  const mode = String(row?.deductMode || '').trim()
+  if (mode === 'location_fifo') {
+    return { label: '库位先进先出', color: 'cyan' }
+  }
+  if (mode === 'batch_pick') {
+    return { label: '自主选批', color: 'blue' }
+  }
+  // 历史未落字段：含量待补录多半是 FIFO；其余按自主选批，避免空着
+  if (row?.contentPending) {
+    return { label: '库位先进先出', color: 'cyan' }
+  }
+  return { label: '自主选批', color: 'blue' }
+}
+
+function mapFeedPostingRow(row, feedIndex, { itemLabelText, unit, seq } = {}) {
+  const loc = tankName(row.locationId)
+  const deduct = feedDeductModeMeta(row)
+  const batch = row.materialBatchId ? getMaterialBatch(row.materialBatchId) : null
+  const qc = resolveBatchInspectInfo(batch)
+  return {
+    key: row.id || `${row.itemId || 'item'}-${row.materialBatchId || row.batchNo}-${feedIndex}`,
+    feedId: row.id || '',
+    seq: seq != null ? seq : feedIndex + 1,
+    at: row.at || '—',
+    operator: formatOperatorLabel(row.operator),
+    item: itemLabelText || itemLabel(row.itemId) || '—',
+    feedSource:
+      row.feedSource || (row.isRecycle ? 'recycle' : row.isReextract ? 'reextract' : 'fresh'),
+    feedSourceLabel: feedSourceLabelOf(row.feedSource, row),
+    deductMode: row.deductMode || '',
+    deductModeLabel: deduct.label,
+    deductModeColor: deduct.color,
+    batchNo: row.batchNo || '—',
+    qcNo: qc.qcNo || '—',
+    qcTaskId: qc.qcTaskId || '',
+    locationText: loc !== '—' ? loc : '—',
+    qtyText: formatQtyWithUnit(row.qty, unit || itemUnit(row.itemId) || ''),
+    contentPending: Boolean(row.contentPending),
+    contentText: row.contentPending ? '待补录' : contentWithUnit(row.contentUsed),
+  }
+}
+
+function buildFeedMaterialRow(line, { stepNo, isExtra = false, postedRows = [] } = {}) {
+  const card = itemMasterCard(line.itemId)
+  const unit = itemUnit(line.itemId) || order.value?.unit || ''
+  const name = card.name || itemLabel(line.itemId) || '—'
+  const planQty = Number(line.qty) || 0
+  const postedQty = postedRows.reduce((sum, row) => sum + Number(row.qty || 0), 0)
+  return {
+    key: `${stepNo || 'x'}-${line.itemId}-${isExtra ? 'extra' : 'plan'}`,
+    itemId: line.itemId,
+    item: name,
+    itemCode: card.code || '—',
+    specText: card.specModel || '—',
+    isExtra,
+    planQty,
+    planQtyText: planQty > 0 ? formatQtyWithUnit(planQty, unit) : '—',
+    toleranceText:
+      line.tolerance == null || line.tolerance === ''
+        ? '—'
+        : `±${Number((Number(line.tolerance) * 100).toFixed(2))}%`,
+    keyText: line.isKeyMaterial ? '是' : '否',
+    auxText: line.isAuxiliary ? '是' : '否',
+    postedQty,
+    postedText: postedRows.length ? formatQtyWithUnit(postedQty, unit) : '—',
+    gapText: postedRows.length && planQty > 0 ? formatQtyWithUnit(postedQty - planQty, unit) : '—',
+    postings: postedRows.map((row, feedIndex) =>
+      mapFeedPostingRow(row, feedIndex, {
+        itemLabelText: name,
+        unit,
+        seq: feedIndex + 1,
+      }),
+    ),
+  }
+}
+
+/** 投料明细按工艺阶段归类；过账按本阶段 stepNo 归集，补加物料单独标出 */
+const feedStageGroups = computed(() => {
+  const current = order.value
+  if (!current) return []
+  const posted = current.feeds || []
+  const theoretical = current.theoreticalFeeds || []
+  const routeSteps = current.routeSnapshot || []
+  const stepNameMap = new Map(routeSteps.map((step) => [Number(step.stepNo), step.name || '']))
+
+  const stageNos = []
+  const seen = new Set()
+  theoretical.forEach((line) => {
+    const no = Number(line.stepNo) || 0
+    if (seen.has(no)) return
+    seen.add(no)
+    stageNos.push(no)
+  })
+  posted.forEach((row) => {
+    const no = Number(row.stepNo) || 0
+    if (seen.has(no)) return
+    seen.add(no)
+    stageNos.push(no)
+  })
+  stageNos.sort((a, b) => a - b)
+
+  const defaultUnit = current.unit || ''
+  return stageNos.map((stepNo, stageIndex) => {
+    const planLines = theoretical.filter((line) => Number(line.stepNo) === stepNo)
+    const stagePosts = posted.filter((row) => Number(row.stepNo) === stepNo)
+    const plannedIds = new Set(planLines.map((line) => line.itemId))
+    const materials = planLines.map((line) =>
+      buildFeedMaterialRow(line, {
+        stepNo,
+        postedRows: stagePosts.filter((row) => row.itemId === line.itemId),
+      }),
+    )
+    // 本阶段过账了、但不在本阶段理论投料里的（补加）
+    const extraIds = [
+      ...new Set(stagePosts.map((row) => row.itemId).filter((id) => id && !plannedIds.has(id))),
+    ]
+    extraIds.forEach((itemId) => {
+      materials.push(
+        buildFeedMaterialRow(
+          { itemId, qty: 0 },
+          {
+            stepNo,
+            isExtra: true,
+            postedRows: stagePosts.filter((row) => row.itemId === itemId),
+          },
+        ),
+      )
+    })
+
+    const planQty = materials.reduce((sum, row) => sum + Number(row.planQty || 0), 0)
+    const postedQty = stagePosts.reduce((sum, row) => sum + Number(row.qty || 0), 0)
+    const unit = itemUnit(materials[0]?.itemId) || itemUnit(stagePosts[0]?.itemId) || defaultUnit
+    const stepName = stepNameMap.get(stepNo) || planLines[0]?.stepName || ''
+    const title = stepNo > 0 ? `${stepNo} ${stepName}`.trim() : stepName || '未指定阶段'
     return {
-      key: `${line.itemId}-${index}`,
-      item: card.name || itemLabel(line.itemId) || '—',
-      itemCode: card.code || '—',
-      specText: card.specModel || '—',
-      stepText: line.stepNo ? `${line.stepNo} ${line.stepName || ''}`.trim() : '—',
-      planQtyText: formatQtyWithUnit(line.qty, unit),
-      toleranceText:
-        line.tolerance == null || line.tolerance === ''
-          ? '—'
-          : `±${Number((Number(line.tolerance) * 100).toFixed(2))}%`,
-      keyText: line.isKeyMaterial ? '是' : '否',
-      auxText: line.isAuxiliary ? '是' : '否',
-      postedText: feeds.length ? formatQtyWithUnit(postedQty, unit) : '—',
-      supplementText: feeds.length ? String(Math.max(0, feeds.length - 1)) : '—',
-      gapText: feeds.length && planQty > 0 ? formatQtyWithUnit(postedQty - planQty, unit) : '—',
-      postings: feeds.map((row, feedIndex) => ({
-        key: row.id || `${line.itemId}-${row.materialBatchId || row.batchNo}-${feedIndex}`,
-        feedId: row.id || '',
-        at: row.at || '—',
-        operator: row.operator || '—',
-        batchNo: row.batchNo || '—',
-        qtyText: formatQtyWithUnit(row.qty, unit),
-        contentPending: Boolean(row.contentPending),
-        contentText: row.contentPending ? '待补录' : contentWithUnit(row.contentUsed),
-      })),
+      key: `feed-stage-${stepNo || 'none'}`,
+      stepNo,
+      title,
+      defaultCollapsed: stageIndex > 0 && !stagePosts.length,
+      materialCount: materials.length,
+      planQtyText: planQty > 0 ? formatQtyWithUnit(planQty, unit) : '—',
+      postedQtyText: stagePosts.length ? formatQtyWithUnit(postedQty, unit) : '—',
+      postingCount: stagePosts.length,
+      materials,
     }
   })
 })
 
+const feedPostingExpandMap = reactive({})
+
+function isFeedPostingExpanded(rowKey) {
+  // 默认展开过账表
+  if (feedPostingExpandMap[rowKey] === undefined) return true
+  return Boolean(feedPostingExpandMap[rowKey])
+}
+
+function toggleFeedPostingExpand(rowKey) {
+  feedPostingExpandMap[rowKey] = !isFeedPostingExpanded(rowKey)
+}
+
+const feedTabFilter = reactive({
+  stepNo: undefined,
+  itemName: '',
+  itemCode: '',
+})
+const feedTabFilterApplied = reactive({
+  stepNo: undefined,
+  itemName: '',
+  itemCode: '',
+})
+
+const feedTabStageOptions = computed(() =>
+  (feedStageGroups.value || []).map((stage) => ({
+    value: stage.stepNo,
+    label: stage.title,
+  })),
+)
+
+function applyFeedTabFilter() {
+  feedTabFilterApplied.stepNo = feedTabFilter.stepNo
+  feedTabFilterApplied.itemName = String(feedTabFilter.itemName || '').trim()
+  feedTabFilterApplied.itemCode = String(feedTabFilter.itemCode || '').trim()
+}
+
+function resetFeedTabFilter() {
+  feedTabFilter.stepNo = undefined
+  feedTabFilter.itemName = ''
+  feedTabFilter.itemCode = ''
+  applyFeedTabFilter()
+}
+
+const filteredFeedStageGroups = computed(() => {
+  const nameKw = String(feedTabFilterApplied.itemName || '')
+    .trim()
+    .toLowerCase()
+  const codeKw = String(feedTabFilterApplied.itemCode || '')
+    .trim()
+    .toLowerCase()
+  const stepFilter =
+    feedTabFilterApplied.stepNo === undefined || feedTabFilterApplied.stepNo === null
+      ? null
+      : Number(feedTabFilterApplied.stepNo)
+
+  return (feedStageGroups.value || [])
+    .filter((stage) => (stepFilter == null ? true : Number(stage.stepNo) === stepFilter))
+    .map((stage) => {
+      const materials = (stage.materials || []).filter((row) => {
+        if (
+          nameKw &&
+          !String(row.item || '')
+            .toLowerCase()
+            .includes(nameKw)
+        )
+          return false
+        if (
+          codeKw &&
+          !String(row.itemCode || '')
+            .toLowerCase()
+            .includes(codeKw)
+        )
+          return false
+        return true
+      })
+      if (!materials.length) return null
+      const unit = itemUnit(materials[0]?.itemId) || order.value?.unit || ''
+      const planQty = materials.reduce((sum, row) => sum + Number(row.planQty || 0), 0)
+      const postedQty = materials.reduce((sum, row) => sum + Number(row.postedQty || 0), 0)
+      const postingCount = materials.reduce((sum, row) => sum + (row.postings?.length || 0), 0)
+      return {
+        ...stage,
+        materials,
+        materialCount: materials.length,
+        postingCount,
+        planQtyText: planQty > 0 ? formatQtyWithUnit(planQty, unit) : '—',
+        postedQtyText: postingCount > 0 || postedQty > 0 ? formatQtyWithUnit(postedQty, unit) : '—',
+        defaultCollapsed: false,
+      }
+    })
+    .filter(Boolean)
+})
+
+/** 投料弹窗：当前阶段已记账的每一次过账（新→旧） */
+const feedModalHistoryRows = computed(() => {
+  const stepNo = Number(feedForm.stepNo)
+  if (!Number.isFinite(stepNo)) return []
+  return (order.value?.feeds || [])
+    .filter((row) => Number(row.stepNo) === stepNo)
+    .map((row, index) => mapFeedPostingRow(row, index))
+    .reverse()
+    .map((row, index) => ({ ...row, seq: index + 1 }))
+})
+
+/** 过程检实测摘要：取检单行上已填检验项（不含结论/备注），列表展示；悬停看全文 */
+function summarizeQcTaskActual(task) {
+  if (!task) return { actual: '—', actualFull: '' }
+  const fields = Array.isArray(task.templateFields) ? task.templateFields : []
+  const lines = Array.isArray(task.lineItems) ? task.lineItems : []
+  const parts = []
+  lines.forEach((line) => {
+    const valueMap = {}
+    ;(line.fieldValues || []).forEach((v) => {
+      const code = v.fieldCode || v.code
+      if (code) valueMap[code] = v.value ?? v.fieldValue
+    })
+    const lineFields =
+      Array.isArray(line.templateFields) && line.templateFields.length
+        ? line.templateFields
+        : fields
+    lineFields.forEach((field) => {
+      if (!field?.code) return
+      if (isQcConclusionField(field) || isQcInspectRemarkField(field)) return
+      if (field.code === 'QC_INSPECT_METHOD' || field.code === 'QC_INSPECT_QTY') return
+      const raw = valueMap[field.code]
+      if (raw == null || raw === '' || (Array.isArray(raw) && !raw.length)) return
+      const text = formatFieldValueWithUnit(field, raw)
+      if (!text || text === '—') return
+      parts.push(`${field.name || field.code} ${text}`)
+    })
+  })
+  if (!parts.length) return { actual: '—', actualFull: '' }
+  const full = parts.join('；')
+  const short = parts.length <= 2 ? full : `${parts.slice(0, 2).join('；')} 等${parts.length}项`
+  return { actual: short, actualFull: full }
+}
+
+function assayStatusMeta(task, row) {
+  const qcStatus = task?.qcStatus || row?.qcStatus || ''
+  const qcResult = task?.qcResult || row?.qcResult || ''
+  if (qcStatus === QC_TASK_STATUS.COMPLETED || qcResult) {
+    return {
+      statusLabel: qcStatus === QC_TASK_STATUS.COMPLETED ? '已完成' : qcStatus || '已完成',
+      statusColor:
+        qcResult === QC_TASK_RESULT.PASS || qcResult === '合格' || qcResult === '质检通过'
+          ? 'success'
+          : qcResult
+            ? 'default'
+            : 'processing',
+    }
+  }
+  if (qcStatus === '检验中' || qcStatus === QC_TASK_STATUS.INSPECTING) {
+    return { statusLabel: '检验中', statusColor: 'processing' }
+  }
+  return { statusLabel: qcStatus || '待质检', statusColor: 'processing' }
+}
+
 const assayRows = computed(() => {
   const steps = order.value?.routeSnapshot || []
+  let seq = 0
   return steps.flatMap((step) =>
-    getStepQcRecords(order.value, step.stepNo).map((row, index) => ({
-      key: `${step.stepNo}-${row.taskId || index}`,
-      point: `${step.stepNo} ${step.name || ''}`.trim(),
-      at: row.inspectedAt || row.updatedAt || '—',
-      item: row.schemeName || '—',
-      taskId: row.taskId || '',
-      qcNo: row.qcNo || '—',
-      actual: '—',
-      judge: row.qcResult || row.qcStatus || '—',
-    })),
+    getStepQcRecords(order.value, step.stepNo).map((row, index) => {
+      seq += 1
+      const task = row.taskId ? getQcTaskById(row.taskId) : null
+      const actualMeta = summarizeQcTaskActual(task)
+      const statusMeta = assayStatusMeta(task, row)
+      const hardGate = Boolean(row.hardGate ?? task?.hardGate)
+      const typeLabel =
+        assayTypeLabel(row.assayType || task?.assayType, row.bizScope || task?.bizScope) ||
+        qcBizScopeLabel(row.bizScope || task?.bizScope) ||
+        '—'
+      const sampleLocation = String(task?.sampleLocation || row.sampleLocation || '').trim()
+      return {
+        key: `${step.stepNo}-${row.taskId || index}`,
+        seq,
+        point: `${step.stepNo} ${step.name || ''}`.trim(),
+        // 工序设备：来自工艺阶段快照，发起时即可带出；不是现场取样口
+        equipmentText: step.equipmentName || step.equipmentText || '—',
+        sampleLocation: sampleLocation || '—',
+        item: row.schemeName || task?.assaySchemeName || '—',
+        typeLabel,
+        hardGate,
+        taskId: row.taskId || task?.id || '',
+        qcNo: row.qcNo || task?.qcNo || '—',
+        statusLabel: statusMeta.statusLabel,
+        statusColor: statusMeta.statusColor,
+        createdAt: task?.createdAt || row.createdAt || row.updatedAt || '—',
+        actual: actualMeta.actual,
+        actualFull: actualMeta.actualFull,
+        // 化验结果 = 检单整单结论（qcResult）；与「实测」检验项值不同
+        judge: task?.qcResult || row.qcResult || '—',
+        inspectedAt: task?.inspectedAt || row.inspectedAt || '—',
+        inspector: formatOperatorLabel(task?.inspector || row.inspector || ''),
+      }
+    }),
   )
 })
 
@@ -1768,7 +3013,7 @@ const balanceRows = computed(() => {
     if (used.has(index)) return
     rows.push(build(null, [row], index))
   })
-  return rows
+  return rows.map((row, index) => ({ ...row, seq: index + 1 }))
 })
 
 const ebrRows = computed(() => {
@@ -1781,7 +3026,7 @@ const ebrRows = computed(() => {
       name: `${itemLabel(feed.itemId)} 实投`,
       source: 'feed',
       value: `${feed.qty} kg（批次 ${feed.batchNo}${
-        feed.contentUsed != null && feed.contentUsed !== '' ? `，含量 ${feed.contentUsed}` : ''
+        feed.contentUsed != null && feed.contentUsed !== '' ? `，有效含量 ${feed.contentUsed}` : ''
       }）`,
       at: feed.at || '—',
     })
@@ -1836,21 +3081,24 @@ const hasPendingOutput = computed(() => {
   )
 })
 
-function outputQcLinksFor(row) {
-  const records = (order.value?.outputQcRecords || []).filter((qc) => {
+function outputQcRecordsFor(row) {
+  return (order.value?.outputQcRecords || []).filter((qc) => {
     if (qc.itemId !== row.itemId) return false
     if (row.role && qc.role && qc.role !== row.role) return false
     if (row.stepNo && qc.stepNo && Number(qc.stepNo) !== Number(row.stepNo)) return false
     return Boolean(qc.taskId || qc.qcNo)
   })
+}
+
+function outputQcLinksFor(row) {
   const seen = new Set()
-  return records
+  return outputQcRecordsFor(row)
     .map((qc) => {
       const task = qc.taskId ? getQcTaskById(qc.taskId) : null
       return {
         taskId: qc.taskId || task?.id || '',
         qcNo: task?.qcNo || qc.qcNo || '—',
-        bizScope: qc.bizScope || '',
+        bizScope: qc.bizScope || task?.bizScope || '',
       }
     })
     .filter((link) => {
@@ -1861,8 +3109,91 @@ function outputQcLinksFor(row) {
     })
 }
 
+/** 产出行的检验方案 / 类型：优先最新关联检单，其次产出检勾选 */
+function resolveOutputAssayMeta(row) {
+  const records = outputQcRecordsFor(row)
+  const latest = records.length ? records[records.length - 1] : null
+  const task = latest?.taskId ? getQcTaskById(latest.taskId) : null
+  const bizScope = task?.bizScope || latest?.bizScope || ''
+  const scopes = Array.isArray(row.assayScopes) ? row.assayScopes : []
+  const hasAssay = Boolean(
+    scopes.length ||
+    row.assayHardGate ||
+    latest ||
+    (order.value && isOutputAssayHardGate(order.value, row)),
+  )
+  const schemeText =
+    task?.templateName ||
+    task?.assaySchemeName ||
+    latest?.templateName ||
+    latest?.schemeName ||
+    (hasAssay ? '产出化验' : '')
+  const typeLabel = hasAssay
+    ? assayTypeLabel(task?.assayType || latest?.assayType || 'finished', bizScope || '成品检') ||
+      qcBizScopeLabel(bizScope || '成品检') ||
+      '产出化验'
+    : ''
+  return {
+    assayHardGate: hasAssay,
+    assaySchemeText: schemeText || '—',
+    assayTypeLabel: typeLabel || '—',
+  }
+}
+
+function resolveOutputHandleStatus(disposition, batchStatus) {
+  if (disposition === 'pending_decide' || batchStatus === 'await_decide') {
+    return { key: 'await_decide', label: '待处理', color: 'default' }
+  }
+  if (disposition === 'reuse' || batchStatus === 'await_reuse') {
+    return { key: 'await_reuse', label: '待回用', color: 'processing' }
+  }
+  if (disposition === 'reextract' || batchStatus === 'await_reextract') {
+    return { key: 'await_reextract', label: '待再提', color: 'warning' }
+  }
+  if (disposition === 'scrap' || batchStatus === 'rejected') {
+    return { key: 'scrap', label: '已废弃', color: 'default' }
+  }
+  if (
+    disposition === 'warehouse' ||
+    disposition === 'tank' ||
+    batchStatus === 'await_inbound' ||
+    batchStatus === 'pending' ||
+    batchStatus === 'released'
+  ) {
+    if (batchStatus === 'released') {
+      return { key: 'inbound_done', label: '已入库', color: 'success' }
+    }
+    return { key: 'await_inbound', label: '待入库', color: 'processing' }
+  }
+  return { key: 'other', label: '—', color: 'default' }
+}
+
+function resolveOutputQcTaskStatus(row) {
+  const records = outputQcRecordsFor(row)
+  if (!records.length) {
+    const scopes = Array.isArray(row.assayScopes) ? row.assayScopes : []
+    if (!scopes.length && !row.assayHardGate) {
+      return { label: '—', color: 'default' }
+    }
+    return { label: '未发起', color: 'default' }
+  }
+  const latest = records[records.length - 1]
+  const task = latest.taskId ? getQcTaskById(latest.taskId) : null
+  const status = task?.qcStatus || latest.qcStatus || ''
+  if (status === QC_TASK_STATUS.COMPLETED || status === '已完成') {
+    return { label: '已完成', color: 'success' }
+  }
+  if (status === QC_TASK_STATUS.CANCELLED || status === '已终止') {
+    return { label: '已终止', color: 'default' }
+  }
+  if (status === QC_TASK_STATUS.INSPECTING || status === '检验中') {
+    return { label: '检验中', color: 'processing' }
+  }
+  return { label: status || '待质检', color: 'processing' }
+}
+
 const outRows = computed(() =>
-  (order.value?.outputs || []).map((row) => {
+  (order.value?.outputs || []).map((row, index) => {
     const batch = getMaterialBatch(row.batchId)
     const step = (order.value?.routeSnapshot || []).find(
       (s) => Number(s.stepNo) === Number(row.stepNo),
@@ -1878,26 +3209,69 @@ const outRows = computed(() =>
     const remainQty = Number(batch?.qty) || 0
     const qc = resolveMaterialBatchQc(batch)
     const qcLinks = outputQcLinksFor(row)
+    const assayMeta = resolveOutputAssayMeta(row)
+    const handle = resolveOutputHandleStatus(disposition, batch?.status)
+    const qcTask = resolveOutputQcTaskStatus(row)
     const fromLink = qcLinks
       .map((link) => {
         const task = link.taskId ? getQcTaskById(link.taskId) : null
         return displayInspectConclusion(task?.qcResult)
       })
       .find((text) => text && text !== '—')
+    const inspectConclusion = displayInspectConclusion(fromLink || qc.qcResult)
+    const assayPass = inspectConclusion === '合格' || inspectConclusion === '让步'
+    // 硬门禁且无合格/让步结论 → 确认去向置灰；记录门禁可点
+    const decideDisabled = Boolean(assayMeta.assayHardGate) && !assayPass
+    const decideDisabledReason = decideDisabled
+      ? '已挂产出化验硬门禁，须检验合格（或让步）后才能确认去向'
+      : ''
+    const inboundLinks = inboundLinksOf(
+      row.inboundOrderId && row.inboundOrderNo
+        ? [row]
+        : row.inboundOrderNo
+          ? [{ inboundOrderId: row.inboundOrderId, inboundOrderNo: row.inboundOrderNo }]
+          : [],
+    )
+    // 产出含量：行上 contentUsed 优先，否则取批次；空则待补录
+    const contentFrac =
+      row.contentUsed != null && row.contentUsed !== '' && Number(row.contentUsed) > 0
+        ? Number(row.contentUsed)
+        : batch?.content != null && batch.content !== '' && Number(batch.content) > 0
+          ? Number(batch.content)
+          : null
+    const contentPending =
+      Boolean(row.contentPending) || (Boolean(row.batchId) && !(contentFrac > 0))
+    const card = itemMasterCard(row.itemId)
     return {
       ...row,
+      seq: index + 1,
       roleLabel: roleLabel[row.role] || row.role,
       dispositionLabel: OUTPUT_DISPOSITION_LABEL[disposition] || '—',
+      itemName: card.name || name || '—',
+      itemCode: card.code || '—',
+      specText: card.specModel || '—',
       item: unit ? `${name} ${unit}` : name,
       batchNo: row.batchNo || '—',
       locationName: tankName(locationId),
       qtyText: formatQtyWithUnit(row.qty, unit),
       remainText: formatQtyWithUnit(remainQty, unit),
       remainQty,
+      contentPending,
+      contentText: contentPending ? '待补录' : contentWithUnit(contentFrac),
       stepText: row.stepNo ? `${row.stepNo}${step?.name ? ` ${step.name}` : ''}`.trim() : '—',
-      status: batch?.status,
-      inspectConclusion: fromLink || qc.qcResult,
+      assaySchemeText: assayMeta.assaySchemeText,
+      assayTypeLabel: assayMeta.assayTypeLabel,
+      assayHardGate: assayMeta.assayHardGate,
+      handleStatus: handle.key,
+      handleStatusLabel: handle.label,
+      handleStatusColor: handle.color,
+      qcTaskStatusLabel: qcTask.label,
+      qcTaskStatusColor: qcTask.color,
+      inspectConclusion,
+      decideDisabled,
+      decideDisabledReason,
       qcLinks,
+      inboundLinks,
     }
   }),
 )
@@ -1905,23 +3279,48 @@ const outRows = computed(() =>
 const detailTab = ref('info')
 const stepOpen = ref(false)
 const currentStep = ref(null)
+const stepConfirmModalTitle = computed(() => {
+  const stepName = currentStep.value?.name || currentStep.value?.processName || '本步'
+  const batchNo = String(order.value?.batchNo || '').trim()
+  return batchNo ? `确认本步 · ${stepName} · ${batchNo}` : `确认本步 · ${stepName}`
+})
 const stepActuals = ref([])
+const stepExecEquipmentId = ref('')
 const formValues = reactive({})
 const currentParams = computed(() => stepParamRows(currentStep.value || {}))
 const currentFormTemplate = computed(() => resolveStepFormTemplate(currentStep.value || {}))
 const currentFormFields = computed(() =>
   filterTemplateFieldsBeyondFixed(currentFormTemplate.value?.fields || []),
 )
-const formSystemCtx = computed(() => ({
-  operatedAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-  equipmentId: currentStep.value?.equipmentId || '',
-  equipmentLabel: currentStep.value?.equipmentName || '',
-  batchNo: order.value?.batchNo || '',
-}))
-const stepFixedSystem = computed(() => ({
-  equipment: resolveProcessFormSystemValue(PROCESS_FORM_SYSTEM_KEYS.EQUIPMENT, formSystemCtx.value),
-  batchNo: resolveProcessFormSystemValue(PROCESS_FORM_SYSTEM_KEYS.BATCH_NO, formSystemCtx.value),
-}))
+const stepEquipmentCandidates = computed(() => {
+  void equipmentState.devices
+  if (!stepOpen.value || !currentStep.value) return []
+  return resolveStepEquipmentCandidates(currentStep.value)
+})
+const stepEquipmentOptions = computed(() =>
+  stepEquipmentCandidates.value.map((id) => {
+    const device = getDeviceById(id)
+    const base = deviceLabelById(id) || id
+    const occupy = device?.occupyStatus ? ` · ${device.occupyStatus}` : ''
+    const status =
+      device?.status &&
+      device.status !== EQUIPMENT_STATUS.IN_USE &&
+      device.status !== EQUIPMENT_STATUS.IDLE
+        ? ` · ${device.status}`
+        : ''
+    return { value: id, label: `${base}${occupy}${status}` }
+  }),
+)
+const formSystemCtx = computed(() => {
+  const selectedId = String(stepExecEquipmentId.value || '').trim()
+  return {
+    operatedAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+    equipmentId: selectedId || currentStep.value?.equipmentId || '',
+    equipmentLabel:
+      (selectedId ? deviceLabelById(selectedId) : '') || currentStep.value?.equipmentName || '',
+    batchNo: order.value?.batchNo || '',
+  }
+})
 const stepOperatedAtPicker = computed({
   get: () => formValues.OP_OPERATED_AT || undefined,
   set: (value) => {
@@ -1929,6 +3328,8 @@ const stepOperatedAtPicker = computed({
   },
 })
 const openFeed = ref(false)
+const feedHistoryCollapsed = ref(false)
+const outputHistoryCollapsed = ref(false)
 const feedForm = reactive({ stepNo: undefined, extra: false })
 const feedSourceOptions = [
   { value: 'fresh', label: '线边新料' },
@@ -1940,7 +3341,7 @@ const feedSourceHint = computed(() => {
   if (isReextractOrder.value) {
     return '本单为再提指令，只可选对应的待再提批次。行内选批次或点「搜索更多」。'
   }
-  return '投料来源按行选择。新料 / 回流各自在「功能参数 · 生产与计划」配置扣减方式（选批 / 库位先进先出 / 两者皆可）。FIFO 行只选储罐/库位；选批行展示检验结论。含量可手填或空着后补。'
+  return '默认全部勾选「本次」；取消勾选后该行置灰不可填，确认时跳过。投料来源按行选择；新料 / 回流各自配置扣减方式。有效含量可手填或空着后补。'
 })
 
 function normalizeRowFeedSource(source) {
@@ -1975,9 +3376,9 @@ function needsFeedSourceLocation(record) {
 }
 
 function feedBatchPlaceholder(record) {
-  if (normalizeRowFeedSource(record?.feedSource) === 'recycle') return '搜索回流批次'
-  if (rowEither(record)) return '选批=按批扣；不选=再选储罐/库位'
-  return '搜索批次号'
+  if (normalizeRowFeedSource(record?.feedSource) === 'recycle') return '可多选回流批次'
+  if (rowEither(record)) return '可多选；不选=再选储罐/库位'
+  return '可多选批次'
 }
 
 function feedLocationFollowText(record) {
@@ -1991,7 +3392,24 @@ function feedLocationFollowText(record) {
 function feedLocationOptionsForItem(itemId, feedSource) {
   return listFeedSourceLocations(itemId, order.value, {
     source: normalizeRowFeedSource(feedSource) === 'recycle' ? 'recycle' : 'fresh',
-  })
+  }).map((opt) => ({
+    ...opt,
+    // 下拉放宽后仍保留完整文案；选中态窄列时可用 title 悬停看全
+    title: opt.label,
+  }))
+}
+
+function openFeedLocationPicker(record) {
+  if (record?.included === false) return
+  feedLocationPickerRow.value = record
+  feedLocationPickerOpen.value = true
+}
+
+/** 「选择更多」弹窗确认后来源库位。 */
+function onFeedLocationPicked(row) {
+  const target = feedLocationPickerRow.value
+  if (!target) return
+  target.locationId = row?.value || undefined
 }
 
 function feedContentPlaceholder(record) {
@@ -2038,7 +3456,7 @@ function closeFeedContentPatch() {
 function saveFeedContentPatch() {
   const frac = contentPctToFraction(feedContentPatch.contentPct)
   if (!(Number(frac) > 0)) {
-    message.warning('请填写含量')
+    message.warning('请填写有效含量')
     return
   }
   feedContentPatchSaving.value = true
@@ -2051,14 +3469,63 @@ function saveFeedContentPatch() {
       message.warning(res.message || '补录失败')
       return
     }
-    message.success('含量已补录')
+    message.success('有效含量已补录')
     feedContentPatchOpen.value = false
   } finally {
     feedContentPatchSaving.value = false
   }
 }
+
+const outputContentPatchOpen = ref(false)
+const outputContentPatchSaving = ref(false)
+const outputContentPatch = reactive({
+  outputId: '',
+  batchId: '',
+  batchNo: '',
+  contentPct: null,
+})
+
+function openOutputContentPatch(record) {
+  outputContentPatch.outputId = record.id || ''
+  outputContentPatch.batchId = record.batchId || ''
+  outputContentPatch.batchNo = record.batchNo || ''
+  outputContentPatch.contentPct = null
+  outputContentPatchOpen.value = true
+}
+
+function closeOutputContentPatch() {
+  outputContentPatchOpen.value = false
+}
+
+function saveOutputContentPatch() {
+  const frac = contentPctToFraction(outputContentPatch.contentPct)
+  if (!(Number(frac) > 0)) {
+    message.warning('请填写有效含量')
+    return
+  }
+  outputContentPatchSaving.value = true
+  try {
+    const res = backfillOutputContentFromAssay(order.value.id, {
+      outputId: outputContentPatch.outputId,
+      batchId: outputContentPatch.batchId,
+      content: frac,
+    })
+    if (!res.ok || !res.updated) {
+      message.warning(res.message || '补录失败')
+      return
+    }
+    message.success('产出有效含量已补录')
+    outputContentPatchOpen.value = false
+    assayListTick.value += 1
+  } finally {
+    outputContentPatchSaving.value = false
+  }
+}
+
 const feedLineDrafts = ref([])
 const feedBatchPickerOpen = ref(false)
+const feedLocationPickerOpen = ref(false)
+const feedLocationPickerRow = ref(null)
 const feedBatchPickerRow = ref(null)
 const openOutput = ref(false)
 const confirmOpen = ref(false)
@@ -2090,11 +3557,18 @@ function locationOptionsFor(disposition) {
     .map((row) => ({ value: row.id, label: row.name }))
 }
 
-function outputDispositionOptionsFor(role) {
-  if (role === 'main') {
-    return OUTPUT_DISPOSITION_OPTIONS.filter((item) => isStockOutputDisposition(item.value))
+function outputDispositionOptionsFor(role, itemId) {
+  // 主产：入仓/入罐/进暂存；其它角色含待判定等。未开「允许车间暂存」则隐藏进暂存池
+  let options =
+    role === 'main'
+      ? OUTPUT_DISPOSITION_OPTIONS.filter(
+          (item) => isStockOutputDisposition(item.value) || item.value === 'staging',
+        )
+      : OUTPUT_DISPOSITION_OPTIONS
+  if (!isProcessItemAllowWorkshopStaging(itemId)) {
+    options = options.filter((item) => item.value !== 'staging')
   }
-  return OUTPUT_DISPOSITION_OPTIONS
+  return options
 }
 
 function outputRowKey(row) {
@@ -2124,6 +3598,7 @@ function defaultOutputDisposition(role, itemId) {
 function locationPlaceholder(disposition) {
   if (disposition === 'tank') return '选择储罐'
   if (disposition === 'warehouse') return '选择仓库'
+  if (disposition === 'staging') return '选择暂存仓/罐'
   if (disposition === 'reuse') return '回流罐或仓'
   if (disposition === 'reextract') return '待再提位置'
   if (disposition === 'pending_decide') return '暂存位置'
@@ -2131,9 +3606,14 @@ function locationPlaceholder(disposition) {
   return '选择位置'
 }
 
-const finalDispositionOptions = OUTPUT_DISPOSITION_OPTIONS.filter(
-  (item) => item.value !== 'pending_decide',
-)
+const finalDispositionOptions = computed(() => {
+  const itemId = decideForm.itemId
+  return OUTPUT_DISPOSITION_OPTIONS.filter((item) => {
+    if (item.value === 'pending_decide') return false
+    if (item.value === 'staging' && !isProcessItemAllowWorkshopStaging(itemId)) return false
+    return true
+  })
+})
 
 function onOutputDispositionChange(record) {
   if (!createsOutputBatchDisposition(record.disposition)) {
@@ -2239,10 +3719,78 @@ function onOutputAssayCheck(record, checked) {
   if (!checked) record.forceNewAssay = false
 }
 
+const outputIncludeHeaderChecked = computed(() => {
+  const rows = outputDrafts.value || []
+  if (!rows.length) return false
+  return rows.every((row) => row.included !== false)
+})
+
+const outputIncludeHeaderIndeterminate = computed(() => {
+  const rows = outputDrafts.value || []
+  if (!rows.length) return false
+  const n = rows.filter((row) => row.included !== false).length
+  return n > 0 && n < rows.length
+})
+
+function onOutputIncludeCheckAll(checked) {
+  ;(outputDrafts.value || []).forEach((row) => {
+    row.included = Boolean(checked)
+  })
+}
+
+const feedIncludeHeaderChecked = computed(() => {
+  const rows = feedLineDrafts.value || []
+  if (!rows.length) return false
+  return rows.every((row) => row.included !== false)
+})
+
+const feedIncludeHeaderIndeterminate = computed(() => {
+  const rows = feedLineDrafts.value || []
+  if (!rows.length) return false
+  const n = rows.filter((row) => row.included !== false).length
+  return n > 0 && n < rows.length
+})
+
+function onFeedIncludeCheckAll(checked) {
+  ;(feedLineDrafts.value || []).forEach((row) => {
+    row.included = Boolean(checked)
+  })
+}
+
+/** 可被表头全选切换的行（配方必检行锁定，不参与全选） */
+const outputAssayToggleableRows = computed(() =>
+  (outputDrafts.value || []).filter((row) => !row.assayLocked && row.included !== false),
+)
+
+const outputAssayHeaderChecked = computed(() => {
+  const rows = outputAssayToggleableRows.value
+  if (!rows.length) return false
+  return rows.every((row) => (row.assayScopes || []).includes('成品检'))
+})
+
+const outputAssayHeaderIndeterminate = computed(() => {
+  const rows = outputAssayToggleableRows.value
+  if (!rows.length) return false
+  const checked = rows.filter((row) => (row.assayScopes || []).includes('成品检')).length
+  return checked > 0 && checked < rows.length
+})
+
+/** 表头勾选：全选/取消发起产出化验（不影响配方必检行） */
+function onOutputAssayCheckAll(checked) {
+  outputAssayToggleableRows.value.forEach((row) => {
+    onOutputAssayCheck(row, Boolean(checked))
+  })
+}
+
 /** 同物料同角色同阶段是否已有有效产出化验单（用于显示「强制新建」） */
 function hasExistingOutputAssay(record) {
+  return listOutputAssayRecordsFor(record).length > 0
+}
+
+/** 本物料本阶段产出化验记录（成品检、未终止） */
+function listOutputAssayRecordsFor(record) {
   const stepNo = Number(record?.stepNo || outputForm.stepNo)
-  return (order.value?.outputQcRecords || []).some((qc) => {
+  return (order.value?.outputQcRecords || []).filter((qc) => {
     if (qc.itemId !== record?.itemId) return false
     if (record?.role && qc.role && qc.role !== record.role) return false
     if (stepNo > 0 && qc.stepNo && Number(qc.stepNo) !== stepNo) return false
@@ -2253,6 +3801,20 @@ function hasExistingOutputAssay(record) {
     if (task && task.qcStatus === QC_TASK_STATUS.CANCELLED) return false
     return true
   })
+}
+
+/** 最新一张已完成的产出检（滞后登记：可带出含量、默认不发起） */
+function findLatestCompletedOutputAssay(record) {
+  const rows = listOutputAssayRecordsFor(record)
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    const qc = rows[i]
+    const task = qc.taskId ? getQcTaskById(qc.taskId) : null
+    const status = task?.qcStatus || qc.qcStatus || ''
+    if (status === QC_TASK_STATUS.COMPLETED || status === '已完成') {
+      return { qc, task }
+    }
+  }
+  return null
 }
 
 function buildOutputDrafts() {
@@ -2277,19 +3839,40 @@ function buildOutputDrafts() {
     const name = itemLabel(line.itemId) || '—'
     const forcedScopes = formulaAssayScopes(line)
     const assayLocked = forcedScopes.length > 0
+    const draftKey = {
+      itemId: line.itemId,
+      role: line.role,
+      stepNo: lineStep,
+    }
+    const completed = findLatestCompletedOutputAssay(draftKey)
+    const hasCompletedAssay = Boolean(completed)
+    const assayContent = completed?.task ? extractContentFractionFromQcTask(completed.task) : null
+    // 滞后：已有完成检单且配方未强制 → 默认不勾发起；含量尽量带出
+    const assayScopes = assayLocked ? forcedScopes : []
+    const contentPct = assayContent != null ? contentToPct(assayContent) : null
+    const card = itemMasterCard(line.itemId)
     return {
       key: `${line.role}-${line.itemId}-${index}`,
       role: line.role,
       stepNo: lineStep,
       roleLabel: roleLabel[line.role] || line.role,
       itemId: line.itemId,
+      // 名称 / 编码 / 规格拆列展示，避免挤在一格被截断
+      itemName: card.name || name || '—',
+      itemCode: card.code || '—',
+      specText: card.specModel || '—',
       item: unit ? `${name} ${unit}` : name,
       unit,
       qty: line.qty,
       qtyText: formatQtyWithUnit(line.qty, unit),
       posted,
       postedText: posted > 0 ? formatQtyWithUnit(posted, unit) : '—',
+      // 默认全部勾选本次；取消勾选后整行置灰不可填
+      included: true,
       actual: remain > 0 ? remain : null,
+      contentPct,
+      contentFromAssay: contentPct != null,
+      hasCompletedAssay,
       disposition: defaultOutputDisposition(line.role, line.itemId),
       locationId: (() => {
         const way = defaultOutputDisposition(line.role, line.itemId)
@@ -2298,7 +3881,7 @@ function buildOutputDrafts() {
           : ''
       })(),
       assayLocked,
-      assayScopes: assayLocked ? forcedScopes : [],
+      assayScopes,
       forceNewAssay: false,
     }
   })
@@ -2320,7 +3903,10 @@ function defaultOutputStepNo() {
 function openOutputFor(stepNo) {
   outputForm.stepNo = stepNo || defaultOutputStepNo()
   outputForm.extra = false
-  deviation.value = order.value?.deviation || ''
+  // 补充框默认空：留空不改整单；有新情况再填，追加到偏差流水
+  deviation.value = ''
+  outputHistoryCollapsed.value = false
+  syncOutputModalWidth()
   openOutput.value = true
   buildOutputDrafts()
 }
@@ -2423,6 +4009,19 @@ function buildFeedLineDrafts() {
     const qc = selected
       ? resolveMaterialBatchQc(selected)
       : { qcNo: '—', qcResult: '—', qcTaskId: '' }
+    const convertByContent = Boolean(line.convertByContent)
+    const assumedContent = resolveAssumedContentForLine(line)
+    // 预选批次且按含量折算时，实投量用含量反算建议值
+    let qty = remain > 0 ? remain : null
+    if (qty != null && selected) {
+      qty = suggestActualFeedQty({
+        planRemainQty: remain,
+        convertByContent,
+        assumedContent,
+        batchContent: selected.content,
+        availableQty: selected.qty,
+      })
+    }
     return {
       key: `${line.itemId}-${index}`,
       itemId: line.itemId,
@@ -2434,16 +4033,90 @@ function buildFeedLineDrafts() {
       planQtyText: formatQtyWithUnit(line.qty, unit),
       posted,
       postedText: formatQtyWithUnit(posted, unit),
-      convertByContent: Boolean(line.convertByContent),
+      // 默认全部勾选本次；取消勾选后整行置灰不可填
+      included: true,
+      convertByContent,
+      assumedContent,
       feedSource,
       batchId: selected?.id || undefined,
       locationId: selected?.locationId || undefined,
-      qty: remain > 0 ? remain : null,
+      qty,
       contentPct: selected ? contentToPct(selected.content) : null,
       qcNo: qc.qcNo,
       qcResult: qc.qcResult,
       qcTaskId: qc.qcTaskId,
     }
+  })
+}
+
+/** 本弹窗是否含「按含量折算」行（用于提示文案） */
+const feedHasConvertByContent = computed(() =>
+  (feedLineDrafts.value || []).some((row) => row.convertByContent),
+)
+
+/** 剩余理论毛重 = 计划 − 已过账 */
+function planRemainGross(row) {
+  return round3(Math.max(0, Number(row?.planQty || 0) - Number(row?.posted || 0)))
+}
+
+/**
+ * 解析配方假定含量（0~1）：优先理论行快照 assumedContent，否则回查当前配方行。
+ */
+function resolveAssumedContentForLine(line) {
+  if (!line?.convertByContent) return null
+  const fromSnap = contentAsFraction(line.assumedContent)
+  if (fromSnap > 0) return fromSnap
+  const formula = getFormula(order.value?.formulaId)
+  const source = (formula?.lines || []).find((item) => item.itemId === line.itemId)
+  return contentAsFraction(source?.content)
+}
+
+function resolveAssumedContent(row) {
+  return resolveAssumedContentForLine(row)
+}
+
+/**
+ * 指导量（只读）：按含量折算时 = 剩余理论 × 配方假定含量 ÷ 批次有效含量；
+ * 非折算或条件不足时显示 —。
+ */
+function calcFeedGuideQty(record) {
+  if (!record?.convertByContent) return null
+  const remain = planRemainGross(record)
+  if (!(remain > 0)) return null
+  const assumed = resolveAssumedContent(record)
+  const batchC = contentPctToFraction(record?.contentPct)
+  if (!(assumed > 0) || !(batchC > 0)) return null
+  return suggestActualFeedQty({
+    planRemainQty: remain,
+    convertByContent: true,
+    assumedContent: assumed,
+    batchContent: batchC,
+    // 指导量按公式展示，不按库存截断，便于对照「该投多少」
+    availableQty: undefined,
+  })
+}
+
+function feedGuideQtyText(record) {
+  const qty = calcFeedGuideQty(record)
+  if (qty == null) return '—'
+  return formatQtyWithUnit(qty, record?.unit || '')
+}
+
+/** 改有效含量后，折算物料同步重算建议实投（可再手改） */
+function onFeedContentPctChange(record) {
+  if (!record?.convertByContent) return
+  const remain = planRemainGross(record)
+  if (!(remain > 0)) return
+  const assumed = resolveAssumedContent(record)
+  const batchC = contentPctToFraction(record.contentPct)
+  if (!(assumed > 0) || !(batchC > 0)) return
+  const batch = record.batchId ? getMaterialBatch(record.batchId) : null
+  record.qty = suggestActualFeedQty({
+    planRemainQty: remain,
+    convertByContent: true,
+    assumedContent: assumed,
+    batchContent: batchC,
+    availableQty: batch?.qty,
   })
 }
 
@@ -2459,26 +4132,62 @@ function batchOptionsForItem(itemId, feedSource) {
     const qcTag = qc.qcResult && qc.qcResult !== '—' ? ` 检验${qc.qcResult}` : ''
     return {
       value: batch.id,
-      label: `${batch.batchNo}${qcTag} 剩余 ${batch.qty}${batch.unit || ''} 含量 ${contentWithUnit(batch.content)} 效期 ${batch.expiryDate || '—'}`,
+      label: `${batch.batchNo}${qcTag} 剩余 ${batch.qty}${batch.unit || ''} 有效含量 ${contentWithUnit(batch.content)} 效期 ${batch.expiryDate || '—'}`,
     }
   })
+}
+
+function feedBatchSelectValue(record) {
+  return record?.batchId ? [record.batchId] : []
 }
 
 function onFeedBatchChange(record, batchId) {
   const batch = batchId ? getMaterialBatch(batchId) : null
   record.batchId = batchId || undefined
+  const remain = planRemainGross(record)
   if (batch) {
     record.contentPct = contentToPct(batch.content)
     record.locationId = batch.locationId || undefined
+    // 选批后按含量反算建议实投；理论量列仍用 planQty 对照
+    record.qty = suggestActualFeedQty({
+      planRemainQty: remain,
+      convertByContent: Boolean(record.convertByContent),
+      assumedContent: resolveAssumedContent(record),
+      batchContent: batch.content,
+      availableQty: batch.qty,
+    })
   } else {
-    // 清空批次 → 改走选罐/库位：含量置空，库位留给用户选（不预填）
+    // 清空批次 → 改走选罐/库位：含量置空，实投回到剩余理论量
     record.contentPct = null
     record.locationId = undefined
+    record.qty = remain > 0 ? remain : null
   }
   const qc = resolveMaterialBatchQc(batch)
   record.qcNo = qc.qcNo
   record.qcResult = qc.qcResult
   record.qcTaskId = qc.qcTaskId
+}
+
+/** 行内多选：一台落本行；多台按可投量拆成多行（与「搜索更多」一致）。 */
+function onFeedBatchSelectChange(record, ids) {
+  const list = (Array.isArray(ids) ? ids : ids ? [ids] : [])
+    .map((id) => String(id || '').trim())
+    .filter(Boolean)
+  if (!list.length) {
+    onFeedBatchChange(record, undefined)
+    return
+  }
+  if (list.length === 1) {
+    onFeedBatchChange(record, list[0])
+    return
+  }
+  const batches = list.map((id) => getMaterialBatch(id)).filter((batch) => batch?.id)
+  if (!batches.length) {
+    onFeedBatchChange(record, undefined)
+    return
+  }
+  feedBatchPickerRow.value = record
+  onFeedBatchesPicked(batches)
 }
 
 function openFeedBatchQc(record) {
@@ -2501,6 +4210,7 @@ const feedBatchPickerSelectedIds = computed(() => {
 })
 
 function openFeedBatchPicker(record) {
+  if (record?.included === false) return
   feedBatchPickerRow.value = record
   feedBatchPickerOpen.value = true
 }
@@ -2516,7 +4226,9 @@ function cloneFeedDraftBase(row) {
     planQtyText: row.planQtyText,
     posted: row.posted,
     postedText: row.postedText,
+    included: row.included !== false,
     convertByContent: row.convertByContent,
+    assumedContent: row.assumedContent ?? null,
     feedSource: normalizeRowFeedSource(row.feedSource),
   }
 }
@@ -2536,7 +4248,10 @@ function makeFeedDraftRow(base, batch, qty) {
   }
 }
 
-/** 搜索更多多选确认后：一个批次一行，实投量按剩余量顺序分摊原行数量。 */
+/**
+ * 搜索更多多选确认后：一个批次一行。
+ * 按含量折算 → 按「目标有效量」FIFO 分摊再反算各批实投；否则按剩余理论毛重 FIFO。
+ */
 function onFeedBatchesPicked(batches) {
   const row = feedBatchPickerRow.value
   const list = (Array.isArray(batches) ? batches : batches ? [batches] : []).filter((b) => b?.id)
@@ -2551,19 +4266,13 @@ function onFeedBatchesPicked(batches) {
   }
   const idx = feedLineDrafts.value.findIndex((item) => item.key === row.key)
   if (idx < 0) return
-  let left = Number(row.qty) > 0 ? round3(row.qty) : null
-  const nextRows = list.map((batch) => {
-    let qty = null
-    if (left != null && left > 0) {
-      const available = Number(batch.qty) || 0
-      const take = round3(Math.min(left, available))
-      if (take > 0) {
-        qty = take
-        left = round3(left - take)
-      }
-    }
-    return makeFeedDraftRow(row, batch, qty)
+  const allocated = allocateSuggestedFeedQtys({
+    planRemainQty: planRemainGross(row),
+    convertByContent: Boolean(row.convertByContent),
+    assumedContent: resolveAssumedContent(row),
+    batches: list,
   })
+  const nextRows = allocated.map(({ batch, qty }) => makeFeedDraftRow(row, batch, qty))
   feedLineDrafts.value.splice(idx, 1, ...nextRows)
 }
 
@@ -2617,6 +4326,19 @@ function cancelOrder() {
   })
 }
 
+function paramPlaceholder(field) {
+  const parts = []
+  if (field?.target != null && field.target !== '') parts.push(`目标 ${field.target}`)
+  if (field?.min != null && field.min !== '' && field?.max != null && field.max !== '') {
+    parts.push(`${field.min}~${field.max}`)
+  } else if (field?.min != null && field.min !== '') {
+    parts.push(`≥${field.min}`)
+  } else if (field?.max != null && field.max !== '') {
+    parts.push(`≤${field.max}`)
+  }
+  return parts.join(' · ') || '请输入'
+}
+
 function paramLabel(field) {
   return field.unit ? `${field.name}（${field.unit}）` : field.name || '参数'
 }
@@ -2644,6 +4366,7 @@ function defaultFeedStepNo() {
 function openFeedFor(stepNo) {
   feedForm.stepNo = stepNo || defaultFeedStepNo()
   feedForm.extra = false
+  feedHistoryCollapsed.value = false
   openFeed.value = true
   buildFeedLineDrafts()
 }
@@ -2666,6 +4389,37 @@ function stepHasFeeds(stepNo) {
   return (order.value?.theoreticalFeeds || []).some(
     (line) => Number(line.stepNo) === Number(stepNo),
   )
+}
+
+/** 列表入口置灰原因（不含弹窗内才填的参数；参数仍在弹窗里校验）。 */
+function stepConfirmListBlockers(step) {
+  void functionParamState.params.enableSequentialBatchStep
+  const errors = []
+  if (!step || order.value?.status !== 'running') return errors
+  errors.push(...stepSequenceConfirmErrors(order.value, step))
+  errors.push(...stepFeedConfirmErrors(order.value, step))
+  const gate = normalizeProcessGate(step.gateMode)
+  if (gate === PROCESS_GATE_HARD) {
+    const rows = buildAssayChecklistForStep(step, { processOnly: true })
+    const hardRows = rows.filter((row) => row.hardGate)
+    const targets = hardRows.length ? hardRows : rows
+    if (targets.length && targets.some((row) => !row.passed)) {
+      errors.push('硬门禁化验未完成或未通过')
+    }
+  }
+  if (!resolveStepEquipmentCandidates(step).length) {
+    errors.push('本步没有候选设备')
+  }
+  return errors
+}
+
+function stepConfirmListBlocked(step) {
+  return stepConfirmListBlockers(step).length > 0
+}
+
+function stepConfirmListBlockTip(step) {
+  const errors = stepConfirmListBlockers(step)
+  return errors.length ? errors.join('；') : ''
 }
 
 function stepAssaySchemes(step) {
@@ -2733,12 +4487,14 @@ function buildAssayChecklistForStep(step, { processOnly = true } = {}) {
     const allowMultiple = scheme.allowMultiple !== false
     // 待检时不在「发起」列再点开抽屉，状态列已展示检单号
     const canStart = order.value?.status === 'running' && !pending && (!completed || allowMultiple)
+    const sampleLocation = String(task?.sampleLocation || latest?.sampleLocation || '').trim()
     return {
       schemeId: scheme.id,
       typeLabel: assayTypeLabel(scheme.assayType, scheme.bizScope) || scheme.name || '化验',
       bizLabel: qcBizScopeLabel(scheme.bizScope),
       hardGate,
       gateLabel: hardGate ? '硬门禁' : '记录',
+      sampleLocation,
       statusLabel,
       statusColor,
       qcNo,
@@ -2843,6 +4599,24 @@ function stepAssaySummaryLines(step) {
   return [...processRows, ...stepOutputAssayChecklist(step)]
 }
 
+/** 弹窗：本阶段已登记产出（支持就地补含量，不必再走「本次登记」） */
+const outputModalHistoryRows = computed(() => {
+  void assayListTick.value
+  if (!openOutput.value) return []
+  const stepNo = Number(outputForm.stepNo)
+  return (outRows.value || [])
+    .filter((row) => {
+      if (!(stepNo > 0)) return true
+      return Number(row.stepNo) === stepNo
+    })
+    .map((row, index) => ({
+      ...row,
+      key: row.id || `${row.batchId || row.itemId}-${index}`,
+      seq: index + 1,
+      at: row.at || '—',
+    }))
+})
+
 const outputRelatedQcRows = computed(() => {
   const stepNo = Number(outputForm.stepNo)
   const draftKeys = new Set((outputDrafts.value || []).map((row) => `${row.role}|${row.itemId}`))
@@ -2898,20 +4672,41 @@ const assayStep = ref(null)
 const assayStartingId = ref('')
 const assayListTick = ref(0)
 const assayModalWidth = ref(960)
+/** 产出登记弹窗宽度：随视口加宽，上限约 1600 */
+const outputModalWidth = ref(1400)
+/** 异常偏差历史流水弹窗 */
+const deviationLogsOpen = ref(false)
 const assayQcDrawerOpen = ref(false)
 const assayQcPreviewTask = ref(null)
+/** 各化验类型独立的取样位置（schemeId → 文本） */
+const assaySampleLocationByScheme = reactive({})
+
+function resetAssaySampleLocations() {
+  Object.keys(assaySampleLocationByScheme).forEach((key) => {
+    delete assaySampleLocationByScheme[key]
+  })
+}
 
 function syncAssayModalWidth() {
   if (typeof window === 'undefined') return
   assayModalWidth.value = Math.min(1200, Math.max(960, Math.floor(window.innerWidth * 0.9)))
 }
 
+/** 产出登记多表并行，默认比化验弹窗更宽 */
+function syncOutputModalWidth() {
+  if (typeof window === 'undefined') return
+  outputModalWidth.value = Math.min(1600, Math.max(1320, Math.floor(window.innerWidth * 0.92)))
+}
+
 onMounted(() => {
   syncAssayModalWidth()
+  syncOutputModalWidth()
   window.addEventListener('resize', syncAssayModalWidth)
+  window.addEventListener('resize', syncOutputModalWidth)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('resize', syncAssayModalWidth)
+  window.removeEventListener('resize', syncOutputModalWidth)
 })
 
 function openAssayQcPreview(taskId) {
@@ -2928,6 +4723,30 @@ function openAssayQcPreview(taskId) {
 const assayChecklistRows = computed(() =>
   buildAssayChecklistForStep(assayStep.value || {}, { processOnly: true }),
 )
+
+const assayEquipmentText = computed(() => {
+  const step = assayStep.value
+  if (!step) return '—'
+  return step.equipmentName || step.equipmentText || '—'
+})
+
+const stepConfirmEquipmentText = computed(() => {
+  const selectedId = String(stepExecEquipmentId.value || '').trim()
+  if (selectedId) return deviceLabelById(selectedId) || selectedId
+  const step = currentStep.value
+  if (!step) return '—'
+  return step.equipmentName || step.equipmentText || '—'
+})
+
+const stepConfirmNoEquipmentCandidates = computed(
+  () => stepOpen.value && !stepEquipmentCandidates.value.length,
+)
+
+const stepConfirmEquipmentBlocked = computed(() => {
+  if (!stepOpen.value || order.value?.status !== 'running') return false
+  if (!stepEquipmentCandidates.value.length) return true
+  return !String(stepExecEquipmentId.value || '').trim()
+})
 
 const assayFinishedHint = computed(() => {
   const finished = stepAssaySchemes(assayStep.value || {}).filter(isFinishedAssayScheme)
@@ -2951,6 +4770,36 @@ const stepConfirmHardGateBlocked = computed(() => {
   return targets.some((row) => !row.passed)
 })
 
+const stepConfirmSequenceBlocked = computed(() => {
+  void functionParamState.params.enableSequentialBatchStep
+  if (!stepOpen.value || order.value?.status !== 'running' || !currentStep.value) return false
+  return stepSequenceConfirmErrors(order.value, currentStep.value).length > 0
+})
+
+const stepConfirmSequenceMessage = computed(() => {
+  const errors = currentStep.value ? stepSequenceConfirmErrors(order.value, currentStep.value) : []
+  return errors[0] || '请先确认上一步后再确认本步。'
+})
+
+const stepConfirmFeedBlocked = computed(() => {
+  if (!stepOpen.value || order.value?.status !== 'running' || !currentStep.value) return false
+  return stepFeedConfirmErrors(order.value, currentStep.value).length > 0
+})
+
+const stepConfirmParamBlocked = computed(() => {
+  if (!stepOpen.value || order.value?.status !== 'running' || !currentStep.value) return false
+  return stepParamConfirmErrors(currentStep.value, stepActuals.value).length > 0
+})
+
+const stepConfirmSubmitBlocked = computed(
+  () =>
+    stepConfirmHardGateBlocked.value ||
+    stepConfirmEquipmentBlocked.value ||
+    stepConfirmSequenceBlocked.value ||
+    stepConfirmFeedBlocked.value ||
+    stepConfirmParamBlocked.value,
+)
+
 function priorAssayHint(stepNo) {
   return buildPriorInProcessAssayHint({
     order: order.value,
@@ -2973,6 +4822,7 @@ const priorAssayHintForAssay = computed(() =>
 function openAssay(step) {
   syncAssayModalWidth()
   assayStep.value = step
+  resetAssaySampleLocations()
   assayOpen.value = true
 }
 
@@ -2984,6 +4834,7 @@ async function startAssayFromChecklist(row, step) {
       orderId: order.value.id,
       stepNo: step.stepNo,
       schemeId: row.schemeId,
+      sampleLocation: assaySampleLocationByScheme[row.schemeId],
     })
     if (!result.ok) {
       message.error(result.message || '发起化验失败')
@@ -2992,6 +4843,7 @@ async function startAssayFromChecklist(row, step) {
     assayListTick.value += 1
     if (result.created) {
       message.success(`已发起化验 ${result.task.qcNo}`)
+      delete assaySampleLocationByScheme[row.schemeId]
     } else {
       message.info(`已有待检单 ${result.task.qcNo}，状态列可查看`)
     }
@@ -3000,13 +4852,6 @@ async function startAssayFromChecklist(row, step) {
   } finally {
     assayStartingId.value = ''
   }
-}
-
-function goRequisition() {
-  if (!order.value?.id) return
-  const path = `/production/material-requisition/create?batchId=${order.value.id}`
-  openTab(path, '申请领料')
-  router.push(path)
 }
 
 function goInbound(link) {
@@ -3020,24 +4865,60 @@ function goQcTask(taskId) {
   openAssayQcPreview(taskId)
 }
 
+function pickDefaultStepEquipment(step) {
+  const candidates = resolveStepEquipmentCandidates(step)
+  const current = String(step?.equipmentId || '').trim()
+  if (current && candidates.includes(current)) return current
+  if (candidates.length === 1) return candidates[0]
+  return ''
+}
+
 function openStep(step) {
   currentStep.value = step
-  stepActuals.value = stepParamRows(step).map((param) =>
-    param.target == null ? null : param.target,
+  const stepNo = Number(step.stepNo)
+  const prevParams = (order.value?.paramActuals || []).filter(
+    (row) => Number(row.stepNo) === stepNo,
   )
+  const prevParamByKey = new Map(prevParams.map((row) => [row.key, row.value]))
+  const prevForms = (order.value?.formActuals || []).filter((row) => Number(row.stepNo) === stepNo)
+  const prevFormByCode = new Map(
+    prevForms.map((row) => [String(row.fieldCode || '').toUpperCase(), row.value]),
+  )
+
+  stepActuals.value = stepParamRows(step).map((param) => {
+    const key = param.unit ? `${param.name}（${param.unit}）` : param.name
+    if (prevParamByKey.has(key)) return prevParamByKey.get(key)
+    return param.target == null ? null : param.target
+  })
+
+  stepExecEquipmentId.value = pickDefaultStepEquipment(step)
+
   Object.keys(formValues).forEach((key) => delete formValues[key])
+  const selectedId = String(stepExecEquipmentId.value || '').trim()
   const ctx = {
-    equipmentId: step.equipmentId || '',
-    equipmentLabel: step.equipmentName || '',
+    equipmentId: selectedId || step.equipmentId || '',
+    equipmentLabel: (selectedId ? deviceLabelById(selectedId) : '') || step.equipmentName || '',
     batchNo: order.value?.batchNo || '',
     operatedAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
   }
-  formValues.OP_OPERATOR = resolveProcessFormSystemValue(PROCESS_FORM_SYSTEM_KEYS.OPERATOR, ctx)
-  formValues.OP_OPERATED_AT = ctx.operatedAt
-  formValues.OP_OUTPUT_QTY = null
-  formValues.OP_REMARK = ''
+  // 重新确认：带回上次确认内容，便于改错；首次确认仍默认当前人/当前时间
+  formValues.OP_OPERATOR =
+    prevFormByCode.get('OP_OPERATOR') ??
+    resolveProcessFormSystemValue(PROCESS_FORM_SYSTEM_KEYS.OPERATOR, ctx)
+  formValues.OP_OPERATED_AT = prevFormByCode.get('OP_OPERATED_AT') ?? ctx.operatedAt
+  formValues.OP_OUTPUT_QTY = prevFormByCode.has('OP_OUTPUT_QTY')
+    ? prevFormByCode.get('OP_OUTPUT_QTY')
+    : null
+  formValues.OP_REMARK = prevFormByCode.get('OP_REMARK') ?? ''
   const tpl = resolveStepFormTemplate(step)
   filterTemplateFieldsBeyondFixed(tpl?.fields || []).forEach((field) => {
+    const code = String(field.code || '').toUpperCase()
+    if (prevFormByCode.has(code) || prevFormByCode.has(field.code)) {
+      formValues[field.code] = prevFormByCode.has(code)
+        ? prevFormByCode.get(code)
+        : prevFormByCode.get(field.code)
+      return
+    }
     if (isProcessFormSystemField(field)) {
       formValues[field.code] = resolveProcessFormSystemValue(field.systemKey, ctx)
       return
@@ -3051,14 +4932,27 @@ function openStep(step) {
             ? null
             : ''
   })
+  resetAssaySampleLocations()
   stepOpen.value = true
 }
 
 function saveStep() {
   try {
-    confirmStep(order.value.id, currentStep.value.stepNo, stepActuals.value, { ...formValues })
+    confirmStep(
+      order.value.id,
+      currentStep.value.stepNo,
+      stepActuals.value,
+      { ...formValues },
+      { equipmentId: stepExecEquipmentId.value },
+    )
     stepOpen.value = false
-    message.success('本步已确认，已写入批记录')
+    if (order.value?.status === 'done') {
+      message.success('本步已确认，批次指令已自动完成')
+    } else if (allRouteStepsConfirmed(order.value) && completionErrors(order.value).length) {
+      message.warning('本步已确认；完成条件未齐，未能自动关单，原因见详情页提示')
+    } else {
+      message.success('本步已确认，已写入批记录')
+    }
   } catch (error) {
     message.error(error.message)
   }
@@ -3073,6 +4967,8 @@ function saveFeed() {
     let pendingContent = false
     let anyFifoOrEither = false
     for (const row of feedLineDrafts.value || []) {
+      // 未勾选「本次」直接跳过，不必清实投量
+      if (row.included === false) continue
       if (!(Number(row.qty) > 0)) continue
       const feedSource = normalizeRowFeedSource(row.feedSource)
       const deductSource = feedSource === 'recycle' ? 'recycle' : 'fresh'
@@ -3107,7 +5003,7 @@ function saveFeed() {
       }
       if (!row.batchId) continue
       if (row.convertByContent && !(Number(row.contentPct) > 0)) {
-        throw new Error(`${row.item || '原料'} 按含量折算，请填写含量`)
+        throw new Error(`${row.item || '原料'} 按有效含量折算，请填写有效含量`)
       }
       const batch = getMaterialBatch(row.batchId)
       const available = Number(batch?.qty) || 0
@@ -3136,7 +5032,7 @@ function saveFeed() {
     else if (usedRecycle && !usedFifo && usedPick) tip = '回流投料已记账'
     else if (usedFifo && usedPick) tip = '投料已记账，部分选手选批次、部分按库位先进先出扣减'
     else if (usedFifo) tip = '投料已记账，已按所选储罐/库位扣减'
-    if (pendingContent) tip += '；含量待补录（可手补或化验回填）'
+    if (pendingContent) tip += '；有效含量待补录（可手补或化验回填）'
     message.success(tip)
   } catch (error) {
     message.error(error.message)
@@ -3144,7 +5040,10 @@ function saveFeed() {
 }
 
 function saveOutput() {
-  const postedRows = (outputDrafts.value || []).filter((row) => Number(row.actual) > 0)
+  // 仅提交勾选「本次」且实产 > 0 的行
+  const postedRows = (outputDrafts.value || []).filter(
+    (row) => row.included !== false && Number(row.actual) > 0,
+  )
   const missingWay = postedRows.find((row) => !row.disposition)
   if (missingWay) {
     message.warning(`${missingWay.item} 请选择处理方式`)
@@ -3173,6 +5072,7 @@ function saveOutput() {
           locationId: createsOutputBatchDisposition(row.disposition) ? row.locationId : '',
           assayScopes: scopes,
           assayHardGate: scopes.length > 0,
+          contentUsed: contentPctToFraction(row.contentPct),
         }
       }),
     })
@@ -3180,6 +5080,11 @@ function saveOutput() {
     message.error(error.message)
     return
   }
+  const pendingOutputContent = postedRows.some(
+    (row) =>
+      createsOutputBatchDisposition(row.disposition) &&
+      !(Number(contentPctToFraction(row.contentPct)) > 0),
+  )
   const created = []
   const skipped = []
   const failed = []
@@ -3206,28 +5111,37 @@ function saveOutput() {
   assayListTick.value += 1
   const lead = outputSaveLead(postedRows)
   const stockOnly = postedRows.every((row) => isStockOutputDisposition(row.disposition))
+  const contentTip = pendingOutputContent ? '；有效含量待补录（可手补或产出化验回填）' : ''
   if (failed.length) {
-    message.warning(`${lead}。化验单未全部生成：${failed.join('；')}`)
+    message.warning(`${lead}。化验单未全部生成：${failed.join('；')}${contentTip}`)
     return
   }
   if (created.length) {
-    message.success(`${lead}，已生成化验单 ${created.join('、')}`)
+    message.success(`${lead}，已生成化验单 ${created.join('、')}${contentTip}`)
     return
   }
   if (skipped.length) {
-    message.success(`${lead}。已关联既有化验单 ${skipped.join('、')}（多次过账共用，未新建）`)
+    message.success(
+      `${lead}。已关联既有化验单 ${skipped.join('、')}（多次过账共用，未新建）${contentTip}`,
+    )
     return
   }
   message.success(
-    stockOnly ? `${lead}，得率差已计算。产出批次待成品放行后才能发货` : `${lead}，得率差已计算`,
+    stockOnly
+      ? `${lead}，得率差已计算。已生成生产入库单，仓管确认入库后才可发货${contentTip}`
+      : `${lead}，得率差已计算${contentTip}`,
   )
 }
 
 function openDecideDisposition(record) {
+  if (record?.decideDisabled) {
+    message.warning(record.decideDisabledReason || '硬门禁未合格，不能确认去向')
+    return
+  }
   decideForm.outputId = record.id || ''
   decideForm.batchId = record.batchId || ''
   decideForm.itemLabel = record.item || itemLabel(record.itemId) || '—'
-  decideForm.batchNo = record.batchNo || '—'
+  decideForm.batchNo = record.batchNo && record.batchNo !== '—' ? record.batchNo : ''
   decideForm.inspectConclusion = record.inspectConclusion || '—'
   decideForm.itemId = record.itemId || ''
   decideForm.role = record.role || ''
@@ -3267,7 +5181,7 @@ function saveDecideDisposition() {
   try {
     confirmOutputDisposition(order.value.id, {
       outputId: decideForm.outputId,
-      batchId: decideForm.batchId,
+      batchId: decideForm.batchId || decideForm.batchNo,
       disposition: decideForm.disposition,
       locationId: decideForm.locationId,
     })
@@ -3294,40 +5208,26 @@ function openReextract(record) {
 }
 
 function finish() {
-  const errors = completionErrors(order.value)
-  if (errors.length) {
-    message.error(errors.join('；'))
-    return
-  }
-  completeOrder(order.value.id)
-  message.success('批次指令已完成')
-}
-
-function releaseOut(batchId) {
   try {
-    releaseOutputBatch(batchId)
-    message.success('产出批次已放行')
+    completeOrder(order.value.id)
+    message.success('批次指令已完成')
   } catch (error) {
-    message.error(error.message)
-  }
-}
-
-function rework(record) {
-  try {
-    const created = createRework({
-      sourceBatchId: record.batchId,
-      qty: record.remainQty || record.qty,
-    })
-    message.success(`已生成返工指令 ${created.batchNo}，投料时扣原批次`)
-    openTab(`/production/batch-instructions/${created.id}`, `批次指令 ${created.batchNo}`)
-  } catch (error) {
-    message.error(error.message)
+    message.error(error.message || '完成失败')
   }
 }
 </script>
 
 <style scoped lang="less">
 @import '@/styles/process-batch-page.less';
+
+.completion-blocker-alert {
+  margin-bottom: 8px;
+
+  :deep(.ant-alert-description) {
+    white-space: pre-line;
+  }
+}
+
 .hint {
   color: #4e5969;
   font-size: 13px;
@@ -3477,80 +5377,156 @@ function rework(record) {
   color: #1f2329;
 }
 
-.feed-groups {
+.feed-tab-filter {
+  margin-bottom: 0;
+}
+
+.feed-stage-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-left: 12px;
+  color: #4e5969;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.feed-stage-body {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.feed-group {
+.feed-material-card {
   border: 1px solid #e5e6eb;
   border-radius: 8px;
-  overflow: hidden;
   background: #fff;
+  overflow: hidden;
 }
 
-.feed-group-head {
+.feed-material-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 16px;
+  padding: 12px 14px;
 }
 
-.feed-formula {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 20px;
+.feed-material-main {
   min-width: 0;
   flex: 1;
+}
+
+.feed-material-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.feed-material-name .name {
   font-size: 14px;
-  line-height: 22px;
+  font-weight: 600;
   color: #1f2329;
+  line-height: 22px;
 }
 
-.feed-formula i,
-.feed-summary i {
-  font-style: normal;
-  color: #4e5969;
-}
-
-.feed-summary {
+.feed-material-sub {
   display: flex;
-  flex-shrink: 0;
-  gap: 16px;
-  padding: 8px 12px;
-  background: #e7f3f1;
-  border-radius: 8px;
-}
-
-.feed-summary span {
-  display: flex;
-  flex-direction: column;
-  min-width: 72px;
-}
-
-.feed-summary i {
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  color: #86909c;
   font-size: 12px;
   line-height: 18px;
 }
 
-.feed-summary b {
+.feed-material-metrics {
+  display: flex;
+  flex-shrink: 0;
+  gap: 12px;
+  padding: 6px 10px;
+  background: #e7f3f1;
+  border-radius: 8px;
+}
+
+.feed-material-metrics .metric {
+  display: flex;
+  flex-direction: column;
+  min-width: 64px;
+}
+
+.feed-material-metrics i {
+  font-style: normal;
+  font-size: 12px;
+  line-height: 18px;
+  color: #4e5969;
+}
+
+.feed-material-metrics b {
   font-size: 14px;
   font-weight: 600;
   line-height: 22px;
   color: #1f2329;
 }
 
+.feed-posting-block {
+  border-top: 1px solid #f0f0f0;
+  padding: 0 12px 10px;
+}
+
+.feed-posting-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+}
+
+.feed-posting-label {
+  font-size: 13px;
+  color: #4e5969;
+  line-height: 20px;
+}
+
 .feed-empty {
-  padding: 8px 16px 12px;
+  padding: 0 14px 12px;
   color: #86909c;
   font-size: 13px;
   line-height: 22px;
 }
 
 .feed-posting-table {
-  margin: 0 12px 12px;
+  margin-top: 0;
+}
+
+.feed-lines-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2329;
+  line-height: 22px;
+}
+
+.feed-guide-qty {
+  color: #307068;
+  font-variant-numeric: tabular-nums;
+}
+
+.feed-history-block {
+  margin-top: 16px;
+}
+
+.feed-history-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 0;
+}
+
+.feed-modal-history-table {
+  margin-bottom: 4px;
 }
 
 .section-hint {
@@ -3570,22 +5546,114 @@ function rework(record) {
   font-size: 13px;
 }
 
-.qc-line {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
+.step-stage-table {
+  :deep(.ant-table-thead > tr > th),
+  :deep(.ant-table-tbody > tr > td) {
+    vertical-align: middle;
+    padding: 8px 10px;
+  }
+
+  :deep(.ant-table-tbody > tr > td) {
+    line-height: 20px;
+  }
+
+  :deep(.ant-tag) {
+    margin-inline-end: 0;
+  }
 }
 
-.qc-scheme-name {
+.step-stack-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.stack-card {
+  min-width: 0;
+  padding: 4px 8px;
+  background: #f7f8fa;
+  border-radius: 6px;
+}
+
+.stack-card-top,
+.stack-card-bottom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.stack-card-top {
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.stack-card-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 12px;
+  font-weight: 500;
+  color: #1f2329;
+  line-height: 18px;
+}
+
+.stack-card-value,
+.stack-card-link,
+.stack-card-muted {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.stack-card-value {
   color: #4e5969;
 }
 
-.qc-no-inline {
-  margin-left: 4px;
-  font-size: 12px;
+.stack-card-link {
   color: #307068;
+  cursor: pointer;
+}
+
+.stack-card-link:hover {
+  text-decoration: underline;
+}
+
+.stack-card-muted {
+  color: #86909c;
+}
+
+.stack-toggle {
+  align-self: flex-start;
+  height: 22px;
+  padding-inline: 0;
+  line-height: 20px;
+}
+
+.step-action-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 2px;
+  row-gap: 0;
+  margin: 0 -4px;
+
+  :deep(.ant-btn-link) {
+    padding-inline: 4px;
+    height: 24px;
+    line-height: 22px;
+  }
+}
+
+.step-confirm-btn-wrap {
+  display: inline-flex;
 }
 
 .output-assay-cell {
@@ -3593,6 +5661,74 @@ function rework(record) {
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
+}
+
+.output-assay-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.output-assay-label {
+  font-size: 13px;
+  color: #1f2329;
+  white-space: nowrap;
+}
+
+.output-assay-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.output-assay-header-text {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.deviation-log-meta {
+  font-size: 12px;
+  color: #86909c;
+}
+
+.deviation-log-text {
+  margin-top: 2px;
+  font-size: 14px;
+  color: #1f2329;
+  word-break: break-word;
+}
+
+.info-label {
+  color: #4e5969;
+  font-size: 14px;
+}
+
+.info-value {
+  color: #1f2329;
+  font-size: 14px;
+}
+
+:deep(.draft-row-skipped) td {
+  background: #f5f5f5 !important;
+  color: #86909c;
+}
+
+:deep(.draft-row-skipped) .ant-input-number,
+:deep(.draft-row-skipped) .ant-select-selector,
+:deep(.draft-row-skipped) .ant-checkbox-wrapper {
+  opacity: 0.65;
+}
+
+/* 「本次」勾选保持可点、不发灰 */
+:deep(.draft-row-skipped) .draft-include-cell .ant-checkbox-wrapper {
+  opacity: 1;
+}
+
+.search-more-row.is-disabled {
+  color: #c0c4cc;
+  cursor: not-allowed;
 }
 
 .output-qc-list-block {
@@ -3627,65 +5763,43 @@ function rework(record) {
   background: #f2f3f5;
 }
 
-.step-rich-trigger {
-  display: inline-flex;
+.readonly-text {
+  color: #1f2329;
+  line-height: 32px;
+}
+
+.section-meta {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #4e5969;
+  line-height: 22px;
+}
+
+.route-stage-ref {
+  margin-left: 6px;
+  font-size: 12px;
+}
+
+.route-occupy-batch {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.route-assay-line {
+  display: flex;
   align-items: center;
   gap: 6px;
-  max-width: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-}
-
-.step-rich-main {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #1f2329;
-  font-size: 13px;
-}
-
-.step-rich-more {
-  flex-shrink: 0;
-  color: #307068;
   font-size: 12px;
+  line-height: 20px;
+}
+
+.route-gate-tag {
+  margin-inline-end: 0;
 }
 </style>
 
 <style lang="less">
-.step-rich-popover {
-  .step-rich-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    min-width: 220px;
-    max-width: 360px;
-  }
-
-  .step-rich-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    line-height: 20px;
-  }
-
-  .step-rich-label {
-    flex-shrink: 0;
-    color: #4e5969;
-    font-size: 13px;
-  }
-
-  .step-rich-value {
-    color: #1f2329;
-    font-size: 13px;
-    word-break: break-all;
-  }
-}
-
 .batch-assay-modal-wrap {
   .ant-modal {
     max-width: min(1200px, 90vw);
@@ -3697,6 +5811,46 @@ function rework(record) {
     display: flex;
     flex-direction: column;
     max-height: 90vh;
+  }
+
+  .ant-modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+}
+
+.batch-feed-modal-wrap {
+  .ant-modal {
+    max-width: min(1600px, 96vw);
+    top: 16px;
+    padding-bottom: 0;
+  }
+
+  .ant-modal-content {
+    display: flex;
+    flex-direction: column;
+    max-height: 94vh;
+  }
+
+  .ant-modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+}
+
+.batch-step-confirm-modal-wrap {
+  .ant-modal {
+    max-width: min(1200px, 94vw);
+    top: 24px;
+    padding-bottom: 0;
+  }
+
+  .ant-modal-content {
+    display: flex;
+    flex-direction: column;
+    max-height: 92vh;
   }
 
   .ant-modal-body {

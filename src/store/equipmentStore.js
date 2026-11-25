@@ -17,7 +17,8 @@ import {
 
 const STORAGE_KEY = 'i_doms_equipment_v1'
 const SEED_VERSION_KEY = 'i_doms_equipment_seed_v'
-const CURRENT_SEED_VERSION = '4'
+/** v7：所属车间改为所属工作中心（workCenterId） */
+const CURRENT_SEED_VERSION = '7'
 
 /** 运行时再取，避免与 materialBatchStore 顶层互相引用导致 eslint/打包异常 */
 function tankLocationApi() {
@@ -97,16 +98,19 @@ function persist() {
 watch(equipmentState, persist, { deep: true })
 persist()
 
-/** 储罐设备 ↔ 库存位置挂接；启动时把已有储罐设备同步一遍。 */
-function syncDeviceStockLocation(device, previousCategory = '') {
+/**
+ * 设备 ↔ 库存位置挂接：以 asStockLocation(作为库存存放点) 为准，不看设备类型。
+ * 关闭勾选时只解除挂接，不删库存位置（罐内可能仍有批次）。
+ */
+function syncDeviceStockLocation(device, previouslyAsStock = false) {
   if (!device) return
   const { upsertTankLocationFromEquipment, detachTankLocationFromEquipment } = tankLocationApi()
-  if (device.category === '储罐') {
+  if (device.asStockLocation) {
     const loc = upsertTankLocationFromEquipment(device)
     if (loc) device.inventoryLocationId = loc.id
     return
   }
-  if (previousCategory === '储罐' || device.inventoryLocationId) {
+  if (previouslyAsStock || device.inventoryLocationId) {
     detachTankLocationFromEquipment(device.id)
     device.inventoryLocationId = ''
   }
@@ -193,7 +197,8 @@ export function addDevice(payload = {}, operator = 'admin1') {
 export function updateDevice(id, payload = {}, operator = 'admin1') {
   const row = getDeviceById(id)
   if (!row) return { ok: false, message: '设备不存在' }
-  const previousCategory = row.category
+  // 记下改前是否库存存放点，供关勾选时解除挂接
+  const previouslyAsStock = Boolean(row.asStockLocation)
   const nextCode = payload.code != null ? String(payload.code).trim() : row.code
   if (nextCode && equipmentState.devices.some((d) => d.id !== id && d.code === nextCode)) {
     return { ok: false, message: `设备编码「${nextCode}」已存在` }
@@ -207,7 +212,7 @@ export function updateDevice(id, payload = {}, operator = 'admin1') {
     updater: operator,
     updatedAt: nowText(),
   })
-  syncDeviceStockLocation(row, previousCategory)
+  syncDeviceStockLocation(row, previouslyAsStock)
   return { ok: true, device: row }
 }
 

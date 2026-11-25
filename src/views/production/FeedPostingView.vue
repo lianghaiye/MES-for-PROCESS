@@ -27,7 +27,7 @@ const columns = [
   { title: '原料批次', dataIndex: 'batchNo' },
   { title: '物料', key: 'item' },
   { title: '投料量', dataIndex: 'qty', align: 'right' },
-  { title: '含量', dataIndex: 'contentUsed', align: 'right' },
+  { title: '有效含量', dataIndex: 'contentUsed', align: 'right' },
   { title: '步骤', dataIndex: 'stepNo', width: 80 },
   { title: '时间', dataIndex: 'at', width: 160 },
 ]

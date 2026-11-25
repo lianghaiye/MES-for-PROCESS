@@ -394,7 +394,7 @@ import { theoreticalOutput } from '@/utils/processBatchMath'
 import { useFormCreatePage } from '@/composables/useFormCreatePage'
 import { useTabs } from '@/composables/useTabs'
 import { getFormula, itemLabel, itemUnit, OUTPUT_ROLE_LABEL } from '@/store/processFormulaStore'
-import { formatPlanLineLabel } from '@/store/productionLineStore'
+import { formatWorkCenterLabel } from '@/store/workCenterStore'
 import {
   ORDER_STATUS_LABEL,
   batchInstructionState,
@@ -591,7 +591,7 @@ const processKpiCards = computed(() => {
       tone: 'teal',
       label: '主元素收率',
       value: pctText(k.recovery),
-      tip: '（产出×含量）÷（投料×含量）。投料/产出缺含量时为 —。',
+      tip: '（产出×有效含量）÷（投料×有效含量）。投料/产出缺有效含量时为 —。',
     },
     {
       key: 'yieldGap',
@@ -687,7 +687,7 @@ const compareTips = {
   theory: '这张子计划的目标投料量 × 理论得率。',
   output: '主产出实收。下级批次的产出计入这一周。',
   cycle: '已完成批次从创建到完成的平均小时数。下级已完成批次一并计入。',
-  recovery: '（产出 × 含量）÷（投料 × 含量）。投料或产出缺含量时为 —。',
+  recovery: '（产出 × 有效含量）÷（投料 × 有效含量）。投料或产出缺有效含量时为 —。',
   gap: '已完成批次的实际产出减理论产出，取平均。下级已完成批次一并计入。',
 }
 
@@ -755,7 +755,7 @@ const basicFields = computed(() => {
   return [
     { label: '计划名称', value: plan.value.planName || '—' },
     { label: '期间', value: plan.value.periodLabel || '—' },
-    { label: '产线', value: formatPlanLineLabel(plan.value.productionLineId) },
+    { label: '工作中心', value: formatWorkCenterLabel(plan.value.workCenterId) },
     { label: '计划来源', value: FEED_PLAN_SOURCE_LABEL[plan.value.source] || '—' },
     { label: '来源单号', value: plan.value.sourceRef || '—' },
     { label: '主产品', value: itemLabel(plan.value.itemId) },
@@ -882,7 +882,7 @@ function buildPlanNode(planRow, seqNo) {
     start: planRow.start,
     end: planRow.end,
     formulaId: planRow.formulaId,
-    productionLineId: planRow.productionLineId,
+    workCenterId: planRow.workCenterId,
     parentId: planRow.parentId,
     splitTo: planRow.splitTo,
     source: planRow.source,
@@ -1151,7 +1151,7 @@ function handleEditSave() {
         planNo: row.planNo,
         planName: editForm.planName,
         formulaId: row.formulaId,
-        productionLineId: row.productionLineId,
+        workCenterId: row.workCenterId,
         targetQty: editForm.targetQty,
         parentId: row.parentId,
         source: editForm.source,

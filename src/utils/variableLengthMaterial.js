@@ -1,5 +1,7 @@
 /** 双物料单位（采购单位 ≠ 库存单位）主数据与单据辅助 */
 
+import { deriveIsVariableLength } from '@/utils/unitCaliber'
+
 export const UOM_RELATION_PER_PIECE_LENGTH = 'per_piece_length'
 export const UOM_RELATION_PER_PIECE_WEIGHT = 'per_piece_weight'
 export const UOM_RELATION_PER_PIECE_AREA = 'per_piece_area'
@@ -193,9 +195,14 @@ export function resolveLineStockUnit(line, material) {
   return line?.inventoryUnit || line?.stockUnit || line?.unit || '—'
 }
 
+/**
+ * 是否双物料单位。
+ * 优先看显式标志；未写标志时按库存/采购单位口径推导（避免种子只写了采购单位、入库仍当单单位）。
+ */
 export function isVariableLengthMaterial(item) {
   if (!item) return false
-  return Boolean(item.isVariableLength)
+  if (item.isVariableLength) return true
+  return deriveIsVariableLength(item.inventoryUnit || item.stockUnit, item.purchaseUnit)
 }
 
 /** 根据库存单位推断双单位换算关系 */
@@ -208,7 +215,7 @@ export function inferUomRelation(stockUnit, explicit = '') {
 
 /** 从物料档案解析双单位相关字段（带默认） */
 export function resolveVariableLengthFields(item = {}) {
-  const isVL = Boolean(item.isVariableLength)
+  const isVL = isVariableLengthMaterial(item)
   const stockUnit = item.stockUnit || item.inventoryUnit || (isVL ? '米' : '件')
   const uomRelation = isVL ? inferUomRelation(stockUnit, item.uomRelation) : ''
   const areaBased = uomRelation === UOM_RELATION_PER_PIECE_AREA

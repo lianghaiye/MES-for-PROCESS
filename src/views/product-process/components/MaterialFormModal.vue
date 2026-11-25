@@ -381,6 +381,32 @@
                 </a-form-item>
               </a-col>
               <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <span>允许车间暂存</span>
+                    <a-tooltip
+                      title="开=产出登记可选「进暂存池」，攒料后再合并入库；关则不能进暂存。"
+                    >
+                      <InfoCircleOutlined class="info-icon" />
+                    </a-tooltip>
+                  </template>
+                  <a-switch v-model:checked="form.allowWorkshopStaging" :disabled="viewOnly" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <span>允许回流</span>
+                    <a-tooltip
+                      title="开=车间暂存批可作为回流料投料；关则暂存批不能回流（发货/普通投料本就不允许）。"
+                    >
+                      <InfoCircleOutlined class="info-icon" />
+                    </a-tooltip>
+                  </template>
+                  <a-switch v-model:checked="form.allowRecycle" :disabled="viewOnly" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
                 <a-form-item label="默认工艺路线">
                   <a-select
                     v-model:value="form.production.defaultProcessRoute"
@@ -807,6 +833,8 @@ const form = reactive({
   inventoryUnit: undefined,
   isVariableLength: false,
   needsBlankingSettle: false,
+  allowWorkshopStaging: false,
+  allowRecycle: false,
   purchaseUnit: undefined,
   settleUnit: undefined,
   standardUnitWeight: undefined,
@@ -893,6 +921,8 @@ function resetForm() {
   form.inventoryUnit = undefined
   form.isVariableLength = false
   form.needsBlankingSettle = false
+  form.allowWorkshopStaging = false
+  form.allowRecycle = false
   form.purchaseUnit = undefined
   form.settleUnit = undefined
   form.standardUnitWeight = undefined
@@ -936,6 +966,8 @@ function loadEditRecord(record) {
   form.inventoryUnit = source.inventoryUnit
   form.isVariableLength = Boolean(source.isVariableLength)
   form.needsBlankingSettle = Boolean(source.needsBlankingSettle)
+  form.allowWorkshopStaging = Boolean(source.allowWorkshopStaging)
+  form.allowRecycle = Boolean(source.allowRecycle)
   form.purchaseUnit = source.purchaseUnit || source.inventoryUnit
   form.settleUnit = source.settleUnit || undefined
   form.standardUnitWeight =
@@ -1177,6 +1209,8 @@ function buildPayload() {
     inventoryUnit: form.inventoryUnit,
     isVariableLength: form.isVariableLength,
     needsBlankingSettle: Boolean(form.needsBlankingSettle),
+    allowWorkshopStaging: Boolean(form.allowWorkshopStaging),
+    allowRecycle: Boolean(form.allowRecycle),
     purchaseUnit: form.isVariableLength ? form.purchaseUnit : form.inventoryUnit,
     settleUnit: form.settleUnit ? String(form.settleUnit).trim() : '',
     settleConvertType: form.settleUnit ? 'floating' : '',

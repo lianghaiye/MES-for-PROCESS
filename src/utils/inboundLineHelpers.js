@@ -4,22 +4,18 @@ import { materialInfoState } from '@/store/materialInfoStore'
 import { getStockQty, stockState } from '@/store/stockStore'
 import { demoStockQty } from '@/utils/productionPlanWorkItem'
 import {
-  DUAL_UNIT_MEASURE_MODE,
-  INBOUND_ENTRY_MODE,
-  allowsInboundTotalEntry,
-  calcAreaSquareMeters,
-  coerceInboundEntryMode,
-  isAreaBasedDualUnit,
-  isAreaStockUnit,
-  resolveVariableLengthFields,
-} from '@/utils/variableLengthMaterial'
+  purchaseQtyToStockQty,
+  resolveInventoryUnit,
+  resolvePurchaseConvertRate,
+  resolvePurchaseUnit,
+} from '@/utils/purchaseUomConvert'
+import { normalizeUnit } from '@/utils/unitCaliber'
 import {
   applySettleFieldsFromMaterial,
   estimateSettleQty,
   hasSettleUnit,
   resolvePricingQty,
 } from '@/utils/settleUnit'
-import { isPlateAreaMeasureEnabled } from '@/store/functionParamStore'
 
 function roundQty(val) {
   return Math.round((Number(val) || 0) * 1000) / 1000
@@ -29,93 +25,66 @@ function roundMoney(val) {
   return Math.round((Number(val) || 0) * 100) / 100
 }
 
+/** 结算数量录入方式（流程型仅合计） */
+export const SETTLE_ENTRY_MODE = {
+  UNIFORM: 'uniform',
+  PIECE: 'piece',
+  TOTAL: 'total',
+}
+
 export function findMaterialByCode(itemCode) {
   if (!itemCode) return null
   return materialInfoState.materials.find((m) => m.code === itemCode) || null
 }
 
-/** 是否双物料单位行 */
+/**
+ * 入库是否走「采购辅助单位」口径：采购单位 ≠ 库存单位。
+ * 流程型已取消旧双单位按件填法；本判断只决定是否拆点收/入库两列。
+ */
 export function isInboundDualUnitLine(line = {}, material = null) {
   const mat = material || findMaterialByCode(line.itemCode)
-  return Boolean(line.isVariableLength || mat?.isVariableLength)
+  const inv = normalizeUnit(line.stockUnit || line.unit || resolveInventoryUnit(mat || {}))
+  const pur = normalizeUnit(line.purchaseUnit || resolvePurchaseUnit(mat || {}))
+  return Boolean(inv && pur && inv !== pur)
 }
 
-/** 点收数量对应单位（双单位=采购单位，单单位=库存单位） */
+/** 点收数量单位（有采购辅助单位用采购单位，否则库存单位） */
 export function resolveInboundQtyUnit(line = {}, material = null) {
   const mat = material || findMaterialByCode(line.itemCode)
   if (isInboundDualUnitLine(line, mat)) {
-    return line.purchaseUnit || mat?.purchaseUnit || '件'
+    return line.purchaseUnit || resolvePurchaseUnit(mat || {}) || '件'
   }
-  return line.unit || mat?.inventoryUnit || mat?.stockUnit || '件'
+  return line.unit || resolveInventoryUnit(mat || {}) || '件'
 }
 
-/** 入库数量（库存单位）展示 */
+/** 入库数量单位（库存 / 主单位） */
 export function resolveInboundStockUnit(line = {}, material = null) {
   const mat = material || findMaterialByCode(line.itemCode)
-  if (isInboundDualUnitLine(line, mat)) {
-    return line.stockUnit || line.unit || mat?.stockUnit || mat?.inventoryUnit || '米'
-  }
-  return line.unit || mat?.inventoryUnit || mat?.stockUnit || '件'
+  return line.stockUnit || line.unit || resolveInventoryUnit(mat || {}) || '件'
 }
 
-/** 点收数量（双单位取采购件数） */
+/** 点收数量：有采购辅助单位取 purchaseQty，否则同入库数量 */
 export function getInboundQtyValue(line = {}) {
   if (isInboundDualUnitLine(line)) return line.purchaseQty
   return line.qty
 }
 
-/** 入库数量/库存单位量（双单位：按填写方式取合计；单单位同点收数量） */
+/** 入库数量（库存单位合计）；不再按统一单件/逐件展开 */
 export function getStockUnitQtyValue(line = {}) {
   if (!isInboundDualUnitLine(line)) return line.qty
-  const mode = coerceInboundEntryMode(line.inboundEntryMode, line.barcodeType)
-  if (mode === INBOUND_ENTRY_MODE.UNIFORM) {
-    let per = Number(line.uniformValue ?? line.uniformLength ?? line.uniformWeight)
-    if (!(per > 0) && isAreaBasedDualUnit(line)) {
-      per =
-        calcAreaSquareMeters(
-          line.uniformLength ?? line.uniformDimLength,
-          line.uniformWidth ?? line.uniformDimWidth,
-          line.dimUnit || line.uniformDimUnit,
-        ) || 0
-    }
-    const n = Number(line.purchaseQty)
-    if (Number.isFinite(per) && per > 0 && Number.isFinite(n) && n > 0) {
-      return Math.round(per * n * 10000) / 10000
-    }
-  }
-  if (mode === INBOUND_ENTRY_MODE.PIECE) {
-    if (isAreaBasedDualUnit(line) && Array.isArray(line.pieceDims) && line.pieceDims.length) {
-      const sum = line.pieceDims.reduce((s, d) => {
-        const area = calcAreaSquareMeters(d?.length, d?.width, d?.unit || line.dimUnit)
-        return s + (area || 0)
-      }, 0)
-      if (sum > 0) return Math.round(sum * 10000) / 10000
-    }
-    const pieces = line.pieceValues || line.pieceLengths || line.pieceWeights || []
-    if (pieces.length) {
-      const sum = pieces.reduce((s, v) => s + (Number(v) || 0), 0)
-      return Math.round(sum * 10000) / 10000
-    }
-  }
-  const v = line.totalValue ?? line.qty
+  const v = line.qty
   return v == null || v === '' ? null : v
 }
 
-/** 统一单件数量（一物一码列表可直接填）；板材优先用长×宽换算面积 */
-export function getUniformPieceValue(line = {}) {
-  if (isAreaBasedDualUnit(line)) {
-    const fromDims = calcAreaSquareMeters(
-      line.uniformLength ?? line.uniformDimLength,
-      line.uniformWidth ?? line.uniformDimWidth,
-      line.dimUnit || line.uniformDimUnit,
-    )
-    if (fromDims != null && fromDims > 0) return fromDims
-  }
-  const v = line.uniformValue ?? line.uniformLength ?? line.uniformWeight
-  return v == null || v === '' ? null : v
+/** @deprecated 旧按件填法已移除；保留空实现避免列表引用报错 */
+export function getUniformPieceValue() {
+  return null
 }
 
-/** 按物料档案写入双单位相关字段 */
+/**
+ * 按物料档案写入采购/结算辅助单位字段。
+ * 清除旧「怎么填」按件残留，固定换算率用于预填入库数量。
+ */
 export function applyDualUnitFieldsToInboundLine(line = {}, itemCode = '') {
   const code = itemCode || line.itemCode
   const mat = findMaterialByCode(code)
@@ -123,51 +92,52 @@ export function applyDualUnitFieldsToInboundLine(line = {}, itemCode = '') {
     line.stockUnit = line.unit || '件'
     return line
   }
-  const vl = resolveVariableLengthFields(mat)
-  line.barcodeType = mat.barcodeType || vl.barcodeType || line.barcodeType || '一批一码'
-  if (vl.isVariableLength) {
-    line.isVariableLength = true
-    line.purchaseUnit = vl.purchaseUnit
-    line.stockUnit = vl.stockUnit
-    line.unit = vl.stockUnit
-    line.uomRelation = vl.uomRelation
-    // 计量形态后台静默写入：仅㎡且开启面积快捷时用 plate，否则 length
-    const useArea =
-      isPlateAreaMeasureEnabled() && isAreaStockUnit(vl.stockUnit || line.stockUnit || line.unit)
-    line.inboundMeasureMode = useArea ? DUAL_UNIT_MEASURE_MODE.PLATE : DUAL_UNIT_MEASURE_MODE.LENGTH
-    if (useArea && !line.dimUnit) {
-      line.dimUnit = 'mm'
-    }
-    const defaultMode = allowsInboundTotalEntry(line.barcodeType)
-      ? INBOUND_ENTRY_MODE.TOTAL
-      : INBOUND_ENTRY_MODE.UNIFORM
-    line.inboundEntryMode = coerceInboundEntryMode(
-      line.inboundEntryMode || defaultMode,
-      line.barcodeType,
-    )
-    if (line.purchaseQty == null || line.purchaseQty === '') {
-      line.purchaseQty = 1
-    }
-    if (allowsInboundTotalEntry(line.barcodeType) && line.totalValue == null && line.qty != null) {
-      line.totalValue = line.qty
+  const inv = resolveInventoryUnit(mat)
+  const pur = resolvePurchaseUnit(mat)
+  const dual = Boolean(inv && pur && normalizeUnit(inv) !== normalizeUnit(pur))
+  const rate = resolvePurchaseConvertRate(mat)
+
+  line.barcodeType = mat.barcodeType || line.barcodeType || '一批一码'
+  line.stockUnit = inv
+  line.unit = inv
+  // 明确关闭旧双单位按件链路
+  line.isVariableLength = false
+  line.inboundEntryMode = undefined
+  line.inboundMeasureMode = undefined
+  line.uniformValue = undefined
+  line.uniformLength = undefined
+  line.uniformWidth = undefined
+  line.totalValue = undefined
+  line.pieceValues = undefined
+  line.pieceLengths = undefined
+  line.pieceWeights = undefined
+  line.pieceDims = undefined
+
+  if (dual) {
+    line.purchaseUnit = pur
+    line.purchaseConvertRate = rate
+    line.packageContent = rate
+    // 有换算率且已填点收、尚未填入库 → 预填库存数量
+    if (rate != null && Number(line.purchaseQty) > 0 && !(Number(line.qty) > 0)) {
+      line.qty = purchaseQtyToStockQty(line.purchaseQty, rate)
     }
   } else {
-    line.isVariableLength = false
-    line.purchaseUnit = mat.inventoryUnit || line.unit || '件'
-    line.stockUnit = mat.inventoryUnit || line.unit || '件'
-    line.unit = line.stockUnit
-    line.inboundEntryMode = undefined
+    line.purchaseUnit = inv
     line.purchaseQty = undefined
-    line.totalValue = undefined
+    line.purchaseConvertRate = undefined
+    line.packageContent = undefined
   }
+
   applySettleFieldsFromMaterial(line, mat)
   if (hasSettleUnit(line)) {
-    const pieceQty = Number(line.purchaseQty ?? line.qty) || 0
+    const baseQty = Number(line.purchaseQty ?? line.qty) || 0
     if (!(Number(line.settleQty) > 0)) {
-      const est = estimateSettleQty(line, pieceQty)
+      const est = estimateSettleQty(line, baseQty)
       if (est != null) line.settleQty = est
     }
     if (line.settledSettleQty == null) line.settledSettleQty = 0
+    // 结算只保留合计填法
+    line.settleEntryMode = SETTLE_ENTRY_MODE.TOTAL
   } else {
     line.settleQty = undefined
     line.settledSettleQty = undefined
@@ -175,99 +145,37 @@ export function applyDualUnitFieldsToInboundLine(line = {}, itemCode = '') {
   return line
 }
 
-/** 结算数量录入方式（与入库数量的录入方式分开） */
-export const SETTLE_ENTRY_MODE = {
-  UNIFORM: 'uniform',
-  PIECE: 'piece',
-  TOTAL: 'total',
-}
-
 export function getSettleEntryModeOptions() {
-  return [
-    { label: '统一单件', value: SETTLE_ENTRY_MODE.UNIFORM },
-    { label: '逐件数量', value: SETTLE_ENTRY_MODE.PIECE },
-    { label: '直接填合计', value: SETTLE_ENTRY_MODE.TOTAL },
-  ]
+  // 流程型仅合计；保留函数供旧引用
+  return [{ label: '直接填合计', value: SETTLE_ENTRY_MODE.TOTAL }]
 }
 
-/** 未写过录入方式的旧行，按「直接填合计」使用已有 settleQty */
-export function resolveSettleEntryMode(line = {}) {
-  const mode = String(line?.settleEntryMode || '')
-  if (
-    mode === SETTLE_ENTRY_MODE.UNIFORM ||
-    mode === SETTLE_ENTRY_MODE.PIECE ||
-    mode === SETTLE_ENTRY_MODE.TOTAL
-  ) {
-    return mode
-  }
+/** 结算一律按合计 */
+export function resolveSettleEntryMode() {
   return SETTLE_ENTRY_MODE.TOTAL
 }
 
-/**
- * 结算录入用的入库件数。
- * 采购单位≠库存单位时取点收件数；否则取整数入库数量。
- */
-export function resolveInboundPieceCount(line = {}) {
-  if (isInboundDualUnitLine(line)) {
-    const n = Number(line.purchaseQty)
-    if (!Number.isFinite(n) || n <= 0) return 0
-    return Math.round(n)
-  }
-  const n = Number(line.qty)
-  if (!Number.isFinite(n) || n <= 0) return 0
-  if (Math.abs(n - Math.round(n)) > 1e-6) return 0
-  return Math.round(n)
+/** @deprecated 按件结算已移除 */
+export function resolveInboundPieceCount() {
+  return 0
 }
 
 function roundSettleQty(val) {
   return Math.round((Number(val) || 0) * 10000) / 10000
 }
 
-/** 按当前录入方式回写结算数量合计；输入不完整时保留原合计 */
+/** 回写结算数量合计 */
 export function materializeSettleQty(line = {}) {
   if (!hasSettleUnit(line)) return line.settleQty
-  const mode = resolveSettleEntryMode(line)
-  if (mode === SETTLE_ENTRY_MODE.UNIFORM) {
-    const n = resolveInboundPieceCount(line)
-    const per = Number(line.settleUniformValue)
-    if (n > 0 && per > 0) line.settleQty = roundSettleQty(per * n)
-  } else if (mode === SETTLE_ENTRY_MODE.PIECE) {
-    const pieces = Array.isArray(line.settlePieceValues) ? line.settlePieceValues.map(Number) : []
-    const sum = pieces.reduce((acc, v) => acc + (v > 0 ? v : 0), 0)
-    if (sum > 0) line.settleQty = roundSettleQty(sum)
-  }
+  line.settleEntryMode = SETTLE_ENTRY_MODE.TOTAL
   return line.settleQty
 }
 
-/** 校验并回写结算数量合计 */
+/** 校验结算数量合计 */
 export function validateSettleEntry(line = {}) {
   if (!hasSettleUnit(line)) return { ok: true }
   const unit = line.settleUnit || 'kg'
-  const mode = resolveSettleEntryMode(line)
-  line.settleEntryMode = mode
-  const n = resolveInboundPieceCount(line)
-  if (mode === SETTLE_ENTRY_MODE.UNIFORM) {
-    const per = Number(line.settleUniformValue)
-    if (!(n > 0)) {
-      return { ok: false, message: '请先填写整数入库件数，或改用直接填合计' }
-    }
-    if (!(per > 0)) return { ok: false, message: `请填写单件结算数量（${unit}）` }
-    line.settleQty = roundSettleQty(per * n)
-    line.settlePieceValues = undefined
-    return { ok: true, settleQty: line.settleQty }
-  }
-  if (mode === SETTLE_ENTRY_MODE.PIECE) {
-    const pieces = Array.isArray(line.settlePieceValues) ? line.settlePieceValues.map(Number) : []
-    if (!(n > 0)) {
-      return { ok: false, message: '请先填写整数入库件数，或改用直接填合计' }
-    }
-    if (pieces.length !== n || pieces.some((v) => !(v > 0))) {
-      return { ok: false, message: `须录入 ${n} 条结算数量（${unit}），且每条大于 0` }
-    }
-    line.settleQty = roundSettleQty(pieces.reduce((sum, v) => sum + v, 0))
-    line.settleUniformValue = undefined
-    return { ok: true, settleQty: line.settleQty }
-  }
+  line.settleEntryMode = SETTLE_ENTRY_MODE.TOTAL
   const total = Number(line.settleQty)
   if (!(total > 0)) return { ok: false, message: `请填写结算数量合计（${unit}）` }
   line.settleQty = roundSettleQty(total)

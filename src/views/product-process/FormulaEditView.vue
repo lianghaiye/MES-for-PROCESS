@@ -338,7 +338,7 @@
         </a-space>
       </div>
       <p class="block-hint">
-        投料量与配比二选一。开启「按含量折算」时，右侧「理论投料」=（投料量或基准批量×配比）×(1+损耗)÷含量；配方含量只用于算出计划领用量。现场实投以手填或原料批次含量为准，缺含量不能过账。
+        投料量与配比二选一。开启「按有效含量折算」时，右侧「理论投料」=（投料量或基准批量×配比）×(1+损耗)÷有效含量；配方有效含量只用于算出计划领用量。现场实投以手填或原料批次有效含量为准，缺有效含量不能过账。
       </p>
       <div class="ratio-bar">
         <span>配比合计 {{ ratioPercentText }}</span>
@@ -781,8 +781,8 @@ const lineColumns = [
   { title: '所属阶段', key: 'stage', width: 160 },
   { title: '关键物料', key: 'keyMaterial', width: 100 },
   { title: '辅料', key: 'auxiliary', width: 80 },
-  { title: '按含量折算', key: 'contentFlag', width: 110 },
-  { title: '含量(%)', key: 'content', width: 130 },
+  { title: '按有效含量折算', key: 'contentFlag', width: 110 },
+  { title: '有效含量(%)', key: 'content', width: 130 },
   { title: '理论投料', key: 'theoreticalQty', width: 120, align: 'right' },
   { title: '操作', key: 'action', width: 80 },
 ]

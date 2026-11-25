@@ -6,20 +6,21 @@
 import dayjs from 'dayjs'
 import { PROCESS_MASTER_ITEMS } from '@/mock/processMasterSeed'
 
+/** 演示用库存位置；managerName 与仓库管理员同语义，入罐/投料选位时可带出仓管员 */
 export const PROCESS_TANKS = [
-  { id: 'tank-resin', name: '树脂罐', kind: 'tank', capacity: 800 },
-  { id: 'tank-solvent', name: '溶剂罐', kind: 'tank', capacity: 600 },
-  { id: 'tank-alkyd', name: '树脂液罐', kind: 'tank', capacity: 400 },
-  { id: 'tank-paint', name: '成品漆罐', kind: 'tank', capacity: 400 },
-  { id: 'silo-pigment', name: '颜料仓', kind: 'silo', capacity: 200 },
-  { id: 'shelf-aux', name: '助剂架', kind: 'silo', capacity: 40 },
-  { id: 'tank-recycle', name: '回收稀料罐', kind: 'tank', capacity: 80 },
-  { id: 'yard-black', name: '黑粉堆场', kind: 'silo', capacity: 500000 },
-  { id: 'tank-acid', name: '硫酸罐', kind: 'tank', capacity: 100000 },
-  { id: 'silo-wet', name: '湿法辅料仓', kind: 'silo', capacity: 40000 },
-  { id: 'tank-brine', name: '卤水罐', kind: 'tank', capacity: 120000 },
-  { id: 'wh-licarbon', name: '工碳库', kind: 'silo', capacity: 40000 },
-  { id: 'yard-waste', name: '渣场', kind: 'silo', capacity: 60000 },
+  { id: 'tank-resin', name: '树脂罐', kind: 'tank', capacity: 800, managerName: '储运班长' },
+  { id: 'tank-solvent', name: '溶剂罐', kind: 'tank', capacity: 600, managerName: '储运班长' },
+  { id: 'tank-alkyd', name: '树脂液罐', kind: 'tank', capacity: 400, managerName: '储运班长' },
+  { id: 'tank-paint', name: '成品漆罐', kind: 'tank', capacity: 400, managerName: '储运班长' },
+  { id: 'silo-pigment', name: '颜料仓', kind: 'silo', capacity: 200, managerName: 'admin1' },
+  { id: 'shelf-aux', name: '助剂架', kind: 'silo', capacity: 40, managerName: 'admin1' },
+  { id: 'tank-recycle', name: '回收稀料罐', kind: 'tank', capacity: 80, managerName: '储运班长' },
+  { id: 'yard-black', name: '黑粉堆场', kind: 'silo', capacity: 500000, managerName: 'admin1' },
+  { id: 'tank-acid', name: '硫酸罐', kind: 'tank', capacity: 100000, managerName: '储运班长' },
+  { id: 'silo-wet', name: '湿法辅料仓', kind: 'silo', capacity: 40000, managerName: 'admin1' },
+  { id: 'tank-brine', name: '卤水罐', kind: 'tank', capacity: 120000, managerName: '储运班长' },
+  { id: 'wh-licarbon', name: '工碳库', kind: 'silo', capacity: 40000, managerName: 'admin1' },
+  { id: 'yard-waste', name: '渣场', kind: 'silo', capacity: 60000, managerName: 'admin1' },
 ]
 
 /** 配方投料与产出都会用到的批次目录 */

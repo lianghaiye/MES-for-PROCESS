@@ -438,6 +438,7 @@ const basicFields = computed(() => {
       { key: 'workCenter', label: '工作中心', value: header.workCenter },
       { key: 'processRoute', label: '工艺路线', value: header.processRoute },
       { key: 'scheduleQty', label: '排产数量', value: formatQty(header.scheduleQty) },
+      { key: 'sampleLocation', label: '取样位置', value: t.sampleLocation },
     )
   } else {
     fields.push(

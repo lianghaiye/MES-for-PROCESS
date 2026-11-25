@@ -14,13 +14,15 @@
             </a-form-item>
           </a-col>
           <a-col :xs="24" :sm="12" :md="8">
-            <a-form-item label="岗位">
+            <a-form-item label="工作中心">
               <a-select
-                v-model:value="filters.position"
+                v-model:value="filters.workCenterId"
                 allow-clear
                 size="small"
-                placeholder="请选择 岗位"
-                :options="positionOpts"
+                placeholder="全部"
+                :options="workCenterOpts"
+                show-search
+                option-filter-prop="label"
               />
             </a-form-item>
           </a-col>
@@ -124,11 +126,8 @@ import { useRouter } from 'vue-router'
 import { Modal, message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import EmployeeGroupModal from './components/EmployeeGroupModal.vue'
-import {
-  employeeGroupState,
-  deleteEmployeeGroups,
-  positionOptions,
-} from '@/store/employeeGroupStore'
+import { employeeGroupState, deleteEmployeeGroups } from '@/store/employeeGroupStore'
+import { listEnabledWorkCenters, workCenterState } from '@/store/workCenterStore'
 import { useTabs } from '@/composables/useTabs'
 import { openCreateTab } from '@/utils/openCreateTab'
 import { findCreatePageByListPath } from '@/config/createPages'
@@ -139,19 +138,21 @@ import { useTableColumnSettings } from '@/composables/useTableColumnSettings'
 const router = useRouter()
 const { openTab } = useTabs()
 
-const filters = reactive({ name: '', position: undefined })
-const applied = reactive({ name: '', position: undefined })
+const filters = reactive({ name: '', workCenterId: undefined })
+const applied = reactive({ name: '', workCenterId: '' })
 const selectedRowKeys = ref([])
 const modalOpen = ref(false)
 const editRecord = ref(null)
 
-const positionOpts = positionOptions.map((v) => ({ label: v, value: v }))
+const workCenterOpts = computed(() => {
+  void workCenterState.centers
+  return listEnabledWorkCenters().map((row) => ({ value: row.id, label: row.name }))
+})
 
 const baseColumns = [
   { title: '编码', key: 'code', dataIndex: 'code', width: 140 },
   { title: '名称', dataIndex: 'name', width: 120 },
-  { title: '工作中心', dataIndex: 'workCenter', width: 100 },
-  { title: '岗位', dataIndex: 'position', width: 120 },
+  { title: '工作中心', dataIndex: 'workCenter', width: 120 },
   { title: '允许生成任务', key: 'allowTaskGen', width: 110 },
   { title: '组长参与生产', key: 'leaderParticipates', width: 120 },
   { title: '执行人多选', key: 'multiExecutor', width: 100 },
@@ -166,7 +167,13 @@ const { columnSettings, columnDrawerOpen, displayColumns, tableScrollX, defaultC
 const filteredList = computed(() =>
   employeeGroupState.groups.filter((g) => {
     if (applied.name && !g.name?.includes(applied.name)) return false
-    if (applied.position && g.position !== applied.position) return false
+    if (
+      applied.workCenterId &&
+      g.workCenterId !== applied.workCenterId &&
+      g.workCenter !== applied.workCenterId
+    ) {
+      return false
+    }
     return true
   }),
 )
@@ -180,14 +187,14 @@ const rowSelection = computed(() => ({
 
 function handleSearch() {
   applied.name = filters.name
-  applied.position = filters.position
+  applied.workCenterId = filters.workCenterId || ''
 }
 
 function handleReset() {
   filters.name = ''
-  filters.position = undefined
+  filters.workCenterId = undefined
   applied.name = ''
-  applied.position = undefined
+  applied.workCenterId = ''
 }
 
 function openCreate() {

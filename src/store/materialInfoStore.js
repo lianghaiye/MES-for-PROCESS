@@ -12,7 +12,7 @@ import { persistJson } from '@/utils/safeStorage'
 
 const STORAGE_KEY = 'i_doms_material_info'
 /** v28：锂盐副产品/回收料角色口径（洗渣水、母液等） */
-const DATA_VERSION = 28
+const DATA_VERSION = 31
 let codeSeq = 100048
 
 function cloneProcessMaterials() {

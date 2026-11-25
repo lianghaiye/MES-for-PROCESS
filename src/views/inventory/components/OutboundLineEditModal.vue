@@ -83,12 +83,29 @@
             <template #label>
               <span class="field-label">
                 <HomeOutlined />
-                仓库
+                位置类型
+              </span>
+            </template>
+            <a-select
+              v-model:value="locationType"
+              :options="inboundLocationTypeOptions"
+              @change="onLocationTypeChange"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col :span="8">
+          <a-form-item required>
+            <template #label>
+              <span class="field-label">
+                <HomeOutlined />
+                出库位置
               </span>
             </template>
             <a-select
               v-model:value="draft.shipWarehouse"
-              placeholder="请选择仓库"
+              allow-clear
+              show-search
+              :placeholder="locationType === 'tank' ? '请选择储罐' : '请选择仓库'"
               :options="warehouseOpts"
               @change="onWarehouseChange"
             />
@@ -171,7 +188,12 @@
               <div class="vl-tip">
                 {{ OUTBOUND_BATCH_PICK_TIP_MANUAL }}
                 <a class="manual-pick-inline" @click="batchSearchOpen = true">搜索更多</a>
-                <a class="manual-pick-inline" @click="restoreAutoBatchPick">恢复自动</a>
+                <a
+                  v-if="!isForcedManualOutboundIssue"
+                  class="manual-pick-inline"
+                  @click="restoreAutoBatchPick"
+                  >恢复自动</a
+                >
               </div>
               <div v-if="manualAllocPreview" class="vl-tip">{{ manualAllocPreview }}</div>
             </template>
@@ -179,9 +201,15 @@
               <a-input :value="autoAllocPreviewText" disabled />
               <div class="vl-tip">
                 {{ OUTBOUND_BATCH_PICK_TIP_AUTO }}
-                <a class="manual-pick-inline" @click="enableManualBatchPick">自主拣选</a>
+                <a
+                  v-if="allowManualBatchPickEntry"
+                  class="manual-pick-inline"
+                  @click="enableManualBatchPick"
+                  >自主拣选</a
+                >
               </div>
             </template>
+            <div class="vl-tip">有效含量：{{ contentText }}（只读，来自拣选批次）</div>
           </a-form-item>
         </a-col>
       </a-row>
@@ -229,10 +257,18 @@ import {
   HomeOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
-import { getWarehouseSelectOptions, warehouseState } from '@/store/warehouseStore'
+import { warehouseState } from '@/store/warehouseStore'
+import { materialBatchState } from '@/store/materialBatchStore'
+import {
+  getInboundLocationSelectOptions,
+  inboundLocationTypeOptions,
+  INBOUND_LOCATION_TYPE,
+  resolveInboundLocationType,
+} from '@/utils/inboundBatchDisplay'
 import {
   canOutboundBatchPick,
   enrichOutboundLine,
+  formatOutboundLineContentText,
   isOutboundDualUnitLine,
   resolveOutboundStockUnit,
   syncLineTotalFromUnit,
@@ -246,6 +282,8 @@ import {
 import {
   getOutboundIssueRule,
   OUTBOUND_ISSUE_RULE_OPTIONS,
+  canOutboundManualBatchPick,
+  isManualOutboundIssue,
   functionParamState,
 } from '@/store/functionParamStore'
 import {
@@ -257,6 +295,8 @@ import {
   getManualPickBatchIds,
   getOutboundAvailableBatchQty,
   isLineManualBatchPick,
+  isStockBatchNotExpired,
+  sortBatchesSimpleFifo,
   syncManualPickBatchesToLine,
   validateManualBatchAllocations,
 } from '@/utils/outboundBatchAllocate'
@@ -278,10 +318,22 @@ const draft = ref(null)
 const preview = ref(null)
 const batchSearchOpen = ref(false)
 
+const locationType = ref(INBOUND_LOCATION_TYPE.WAREHOUSE)
+
 const warehouseOpts = computed(() => {
   void warehouseState.warehouses
-  return getWarehouseSelectOptions()
+  void materialBatchState.tanks
+  return getInboundLocationSelectOptions(locationType.value)
 })
+
+/** 切换位置类型后清空不匹配的出库位置 */
+function onLocationTypeChange() {
+  const allowed = new Set(warehouseOpts.value.map((o) => o.value))
+  if (draft.value?.shipWarehouse && !allowed.has(draft.value.shipWarehouse)) {
+    draft.value.shipWarehouse = undefined
+    onWarehouseChange()
+  }
+}
 
 const isDualUnitLine = computed(() => isOutboundDualUnitLine(draft.value || {}))
 const canBatchPick = computed(() => canOutboundBatchPick(draft.value || {}))
@@ -295,8 +347,19 @@ const manualPick = computed(() => {
 })
 
 const issueRuleLabel = computed(() => {
+  void functionParamState.params.outboundIssueRule
   const rule = getOutboundIssueRule()
-  return OUTBOUND_ISSUE_RULE_OPTIONS.find((o) => o.value === rule)?.label || '先进先出'
+  return OUTBOUND_ISSUE_RULE_OPTIONS.find((o) => o.value === rule)?.label || 'FEFO'
+})
+
+const allowManualBatchPickEntry = computed(() => {
+  void functionParamState.params.outboundIssueRule
+  return canOutboundManualBatchPick()
+})
+
+const isForcedManualOutboundIssue = computed(() => {
+  void functionParamState.params.outboundIssueRule
+  return isManualOutboundIssue()
 })
 
 const stockUnitLabel = computed(() => resolveOutboundStockUnit(draft.value || {}))
@@ -356,27 +419,49 @@ const autoAllocPreviewText = computed(() => {
   return formatBatchAllocationPreview(res.allocations, stockUnitLabel.value)
 })
 
+const contentText = computed(() => {
+  void stockBatchState.batches
+  void functionParamState.params.outboundIssueRule
+  const line = draft.value
+  if (!line) return '—'
+  if (manualPick.value) return formatOutboundLineContentText(line)
+  if (!line.itemCode || !line.shipWarehouse || !(Number(line.shipQty) > 0)) {
+    return formatOutboundLineContentText(line)
+  }
+  const res = allocateOutboundBatches({
+    warehouse: line.shipWarehouse,
+    itemCode: line.itemCode,
+    demandQty: line.shipQty,
+    rule: getOutboundIssueRule(),
+    line,
+  })
+  if (res.ok && res.allocations?.length) {
+    return formatOutboundLineContentText(line, res.allocations)
+  }
+  return formatOutboundLineContentText(line)
+})
+
 const batchOpts = computed(() => {
   void stockBatchState.batches
   const line = draft.value
   if (!line?.itemCode || !line.shipWarehouse) return []
   const unit = stockUnitLabel.value
-  return listBatches({
-    warehouse: line.shipWarehouse,
-    itemCode: line.itemCode,
-    inStockOnly: true,
-  })
-    .slice()
-    .sort((a, b) => {
-      const da = Number(a.currentLength) || 0
-      const db = Number(b.currentLength) || 0
-      if (da !== db) return da - db
-      return String(a.batchNo || '').localeCompare(String(b.batchNo || ''), 'zh-CN')
-    })
-    .map((b) => ({
-      label: `${b.batchNo}（当前 ${formatQty(b.currentLength)}${unit}）`,
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  return sortBatchesSimpleFifo(
+    listBatches({
+      warehouse: line.shipWarehouse,
+      itemCode: line.itemCode,
+      inStockOnly: true,
+    }).filter((b) => isStockBatchNotExpired(b, today)),
+  ).map((b) => {
+    const exp = b.expiryDate || b.attrs?.expiryDate
+    const expHint = exp ? ` 效期${exp}` : ''
+    return {
+      label: `${b.batchNo}（当前 ${formatQty(b.currentLength)}${unit}${expHint}）`,
       value: b.id,
-    }))
+    }
+  })
 })
 
 watch(
@@ -388,6 +473,7 @@ watch(
       return
     }
     draft.value = reactive(enrichOutboundLine({ ...props.line }))
+    locationType.value = resolveInboundLocationType(draft.value.shipWarehouse)
     if (canOutboundBatchPick(draft.value) && isLineManualBatchPick(draft.value)) {
       draft.value.manualBatchPick = true
       applyBatchAllocationsToLine(draft.value, getLineBatchAllocations(draft.value))
@@ -533,7 +619,7 @@ function handleOk() {
     return
   }
   if (!draft.value.shipWarehouse) {
-    message.warning('请选择仓库')
+    message.warning(locationType.value === 'tank' ? '请选择储罐' : '请选择仓库')
     return
   }
   const qty = Number(draft.value.shipQty)

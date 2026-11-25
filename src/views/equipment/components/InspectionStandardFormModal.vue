@@ -27,7 +27,7 @@
           </a-form-item>
         </a-col>
         <a-col :span="12">
-          <a-form-item label="适用类别" name="category">
+          <a-form-item label="适用类型" name="category">
             <a-select
               v-model:value="form.category"
               :options="EQUIPMENT_CATEGORY_OPTIONS"
@@ -91,7 +91,7 @@ const checkTypeOpts = [
 const form = reactive(emptyForm())
 const rules = {
   name: [{ required: true, message: '请输入标准名称' }],
-  category: [{ required: true, message: '请选择适用类别' }],
+  category: [{ required: true, message: '请选择适用类型' }],
   cycle: [{ required: true, message: '请选择点检周期' }],
 }
 

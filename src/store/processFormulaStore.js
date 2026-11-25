@@ -65,6 +65,7 @@ export const OUTPUT_ROLE_LABEL = Object.fromEntries(
  * 记产出去向：
  * 待判定 → 先落暂存位，化验后再定回用/再提/入库/废弃；
  * 入仓库 / 入储罐 → 库存批次 + 入库单；
+ * 进暂存池 → 车间暂存批，不生成入库单，后续合并入库；
  * 回用 / 再提 → 待回用 / 待再提批次；
  * 废弃 → 已拒收，不生成入库单。
  */
@@ -72,6 +73,7 @@ export const OUTPUT_DISPOSITION_OPTIONS = [
   { value: 'pending_decide', label: '待判定' },
   { value: 'warehouse', label: '入仓库' },
   { value: 'tank', label: '入储罐' },
+  { value: 'staging', label: '进暂存池' },
   { value: 'reuse', label: '回用' },
   { value: 'reextract', label: '再提' },
   { value: 'scrap', label: '废弃' },
@@ -92,6 +94,7 @@ export function createsOutputBatchDisposition(value) {
   const text = String(value || '').trim()
   return (
     isStockOutputDisposition(text) ||
+    text === 'staging' ||
     text === 'reuse' ||
     text === 'reextract' ||
     text === 'pending_decide' ||
@@ -99,7 +102,7 @@ export function createsOutputBatchDisposition(value) {
   )
 }
 
-/** 位置主数据 kind：warehouse→silo，tank→tank；其它不限 */
+/** 位置主数据 kind：warehouse→silo，tank→tank；暂存池不限仓/罐 */
 export function locationKindForDisposition(value) {
   const text = String(value || '').trim()
   if (text === 'tank') return 'tank'
@@ -112,7 +115,10 @@ export function batchStatusForDisposition(value) {
   if (text === 'reuse') return 'await_reuse'
   if (text === 'reextract') return 'await_reextract'
   if (text === 'pending_decide') return 'await_decide'
+  if (text === 'staging') return 'await_staging'
   if (text === 'scrap') return 'rejected'
+  // 入仓库 / 入储罐：先待仓管确认入库，确认后才变为可用（released）
+  if (text === 'warehouse' || text === 'tank' || text === 'inbound') return 'await_inbound'
   return 'pending'
 }
 

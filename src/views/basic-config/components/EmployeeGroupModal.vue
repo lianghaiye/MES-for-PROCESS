@@ -3,120 +3,122 @@
     :page-mode="pageMode"
     :open="open"
     :title="shellTitle"
-    width="900px"
+    width="1100px"
     @cancel="handleCancel"
     @update:open="(val) => emit('update:open', val)"
   >
-    <a-form ref="formRef" :model="form" :rules="rules" layout="vertical" class="group-form">
-      <a-row :gutter="16">
-        <a-col :span="8">
-          <a-form-item label="编码" name="code" required>
-            <a-input-group compact>
-              <a-input
-                v-model:value="form.code"
-                placeholder="请输入编码"
-                style="width: calc(100% - 88px)"
+    <a-form
+      ref="formRef"
+      :model="form"
+      :rules="rules"
+      layout="inline"
+      class="group-form horizontal-form"
+    >
+      <div class="form-section-box modal-basic-card">
+        <div class="section-title">基本信息</div>
+        <a-row :gutter="[12, 8]" style="width: 100%">
+          <a-col :span="8" class="field-col">
+            <a-form-item label="编码" name="code" required>
+              <a-input-group compact>
+                <a-input
+                  v-model:value="form.code"
+                  size="small"
+                  placeholder="请输入编码"
+                  style="width: calc(100% - 88px)"
+                />
+                <a-button size="small" @click="genCode">生成编码</a-button>
+              </a-input-group>
+            </a-form-item>
+          </a-col>
+          <a-col :span="8" class="field-col">
+            <a-form-item label="名称" name="name" required>
+              <a-input v-model:value="form.name" size="small" placeholder="请输入名称" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8" class="field-col">
+            <a-form-item label="工作中心" name="workCenterId" required>
+              <a-select
+                v-model:value="form.workCenterId"
+                size="small"
+                placeholder="请选择工作中心"
+                :options="workCenterOpts"
+                show-search
+                option-filter-prop="label"
+                style="width: 100%"
               />
-              <a-button @click="genCode">生成编码</a-button>
-            </a-input-group>
-          </a-form-item>
-        </a-col>
-        <a-col :span="8">
-          <a-form-item label="名称" name="name" required>
-            <a-input v-model:value="form.name" placeholder="请输入名称" />
-          </a-form-item>
-        </a-col>
-        <a-col :span="8">
-          <a-form-item label="工作中心" name="workCenter" required>
-            <a-select
-              v-model:value="form.workCenter"
-              placeholder="请选择工作中心"
-              :options="workCenterOpts"
-            />
-          </a-form-item>
-        </a-col>
-        <a-col :span="8">
-          <a-form-item label="岗位" name="position" required>
-            <a-select
-              v-model:value="form.position"
-              placeholder="请选择岗位"
-              :options="positionOpts"
-            />
-          </a-form-item>
-        </a-col>
-        <a-col :span="8">
-          <a-form-item label="组长" name="leaderId" required>
-            <a-select
-              v-model:value="form.leaderId"
-              show-search
-              placeholder="请选择组长"
-              :options="employeeOpts"
-              @change="onLeaderChange"
-            />
-          </a-form-item>
-        </a-col>
-        <a-col :span="8">
-          <a-form-item label="允许生成任务">
-            <a-switch v-model:checked="form.allowTaskGen" />
-          </a-form-item>
-        </a-col>
-        <a-col :span="8">
-          <a-form-item label="组长参与生产">
-            <a-switch v-model:checked="form.leaderParticipates" />
-          </a-form-item>
-        </a-col>
-        <a-col :span="8">
-          <a-form-item label="执行人多选">
-            <a-switch v-model:checked="form.multiExecutor" />
-          </a-form-item>
-        </a-col>
-        <a-col :span="8">
-          <a-form-item label="状态">
-            <a-switch
-              v-model:checked="statusEnabled"
-              checked-children="启用"
-              un-checked-children="禁用"
-            />
-          </a-form-item>
-        </a-col>
-        <a-col :span="24">
-          <a-form-item label="备注">
-            <a-textarea v-model:value="form.remark" placeholder="请输入备注" :rows="2" />
-          </a-form-item>
-        </a-col>
-      </a-row>
-    </a-form>
+            </a-form-item>
+          </a-col>
+          <a-col :span="8" class="field-col">
+            <a-form-item label="允许生成任务">
+              <a-switch v-model:checked="form.allowTaskGen" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8" class="field-col">
+            <a-form-item label="组长参与生产">
+              <a-switch v-model:checked="form.leaderParticipates" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8" class="field-col">
+            <a-form-item label="执行人多选">
+              <a-switch v-model:checked="form.multiExecutor" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8" class="field-col">
+            <a-form-item label="状态">
+              <a-switch
+                v-model:checked="statusEnabled"
+                checked-children="启用"
+                un-checked-children="禁用"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="24">
+            <a-form-item label="备注" class="remark-item">
+              <a-textarea v-model:value="form.remark" size="small" placeholder="选填" :rows="2" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+      </div>
 
-    <div class="worker-section">
-      <a-button type="primary" size="small" @click="openWorkerPicker">
-        <PlusOutlined />
-        选择工人
-      </a-button>
-      <a-table
-        class="worker-table"
-        :columns="workerCols"
-        :data-source="form.workers"
-        row-key="id"
-        size="small"
-        bordered
-        :pagination="false"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'isLeader'">
-            <a-tag v-if="record.isLeader" color="blue">组长</a-tag>
-            <span v-else>—</span>
+      <div class="form-section-box modal-basic-card">
+        <div class="section-head">
+          <div class="section-title">组内人员</div>
+          <a-button size="small" type="primary" @click="openWorkerPicker">
+            <PlusOutlined />
+            选择工人
+          </a-button>
+        </div>
+        <p class="section-hint">
+          选择工人后自动带出岗位。在列表中勾选「组长」（仅一人）；组内可含不同岗位与早晚班人员。
+        </p>
+        <a-table
+          :columns="workerCols"
+          :data-source="form.workers"
+          :pagination="false"
+          size="small"
+          row-key="id"
+          :locale="{ emptyText: '请选择工人' }"
+        >
+          <template #bodyCell="{ column, record, index }">
+            <template v-if="column.key === 'seq'">{{ index + 1 }}</template>
+            <template v-else-if="column.key === 'position'">
+              <span class="readonly-cell">{{ record.position || '—' }}</span>
+            </template>
+            <template v-else-if="column.key === 'isLeader'">
+              <a-checkbox
+                :checked="Boolean(record.isLeader)"
+                @change="(e) => onLeaderCheck(record, e.target.checked)"
+              />
+            </template>
+            <template v-else-if="column.key === 'actions'">
+              <a-button type="link" size="small" danger @click="removeWorker(record.id)">
+                删除
+              </a-button>
+            </template>
           </template>
-          <template v-else-if="column.key === 'actions'">
-            <a-button type="link" size="small" danger @click="removeWorker(record.id)"
-              >删除</a-button
-            >
-          </template>
-        </template>
-        <template #emptyText>
-          <a-empty description="暂无数据" />
-        </template>
-      </a-table>
-    </div>
+        </a-table>
+      </div>
+    </a-form>
 
     <template #footer>
       <a-button :size="pageMode ? 'small' : 'middle'" @click="handleCancel">
@@ -147,12 +149,8 @@ import FormCreateShell from '@/components/FormCreateShell.vue'
 import { useFormCreateModal } from '@/composables/useFormCreateModal'
 import SelectPersonModal from '@/views/production/components/SelectPersonModal.vue'
 import { mockEmployees } from '@/mock/workOrderMaster'
-import {
-  addEmployeeGroup,
-  updateEmployeeGroup,
-  workCenterOptions,
-  positionOptions,
-} from '@/store/employeeGroupStore'
+import { addEmployeeGroup, updateEmployeeGroup } from '@/store/employeeGroupStore'
+import { listEnabledWorkCenters, workCenterState } from '@/store/workCenterStore'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -169,10 +167,7 @@ const workerPickerOpen = ref(false)
 const form = reactive({
   code: '',
   name: '',
-  workCenter: undefined,
-  position: undefined,
-  leaderId: undefined,
-  leaderName: '',
+  workCenterId: undefined,
   allowTaskGen: true,
   leaderParticipates: true,
   multiExecutor: true,
@@ -185,20 +180,22 @@ const isEdit = computed(() => !!props.record?.id)
 
 const { isActive, shellTitle, handleCancel, closeAfterSave } = useFormCreateModal(props, emit, {
   listPath: '/basic-config/employee-groups',
-  getTitle: () => (isEdit.value ? '编辑' : '新增'),
+  getTitle: () => (isEdit.value ? '编辑员工组别' : '新增员工组别'),
 })
 
 const rules = {
   code: [{ required: true, message: '请输入编码' }],
   name: [{ required: true, message: '请输入名称' }],
-  workCenter: [{ required: true, message: '请选择工作中心' }],
-  position: [{ required: true, message: '请选择岗位' }],
-  leaderId: [{ required: true, message: '请选择组长' }],
+  workCenterId: [{ required: true, message: '请选择工作中心' }],
 }
 
-const workCenterOpts = workCenterOptions.map((v) => ({ label: v, value: v }))
-const positionOpts = positionOptions.map((v) => ({ label: v, value: v }))
-const employeeOpts = mockEmployees.map((e) => ({ label: e.name, value: e.id }))
+const workCenterOpts = computed(() => {
+  void workCenterState.centers
+  return listEnabledWorkCenters().map((row) => ({
+    value: row.id,
+    label: row.name,
+  }))
+})
 
 const statusEnabled = computed({
   get: () => form.status === '启用',
@@ -208,11 +205,22 @@ const statusEnabled = computed({
 })
 
 const workerCols = [
-  { title: '#', width: 48, customRender: ({ index }) => index + 1 },
-  { title: '工人', dataIndex: 'name' },
-  { title: '组长', key: 'isLeader', width: 80 },
+  { title: '#', key: 'seq', width: 56 },
+  { title: '工人', dataIndex: 'name', width: 140 },
+  { title: '岗位', key: 'position', width: 140 },
+  { title: '组长', key: 'isLeader', width: 80, align: 'center' },
   { title: '操作', key: 'actions', width: 80 },
 ]
+
+function enrichWorker(row) {
+  const emp = mockEmployees.find((e) => e.id === row.id || e.name === row.name)
+  return {
+    id: row.id || emp?.id || `tmp-${row.name}`,
+    name: row.name || emp?.name || '',
+    position: row.position || emp?.position || '',
+    isLeader: Boolean(row.isLeader),
+  }
+}
 
 watch(
   () => isActive.value,
@@ -222,25 +230,26 @@ watch(
       Object.assign(form, {
         code: props.record.code,
         name: props.record.name,
-        workCenter: props.record.workCenter,
-        position: props.record.position,
-        leaderId: props.record.leaderId,
-        leaderName: props.record.leaderName,
+        workCenterId: props.record.workCenterId || undefined,
         allowTaskGen: props.record.allowTaskGen,
         leaderParticipates: props.record.leaderParticipates,
         multiExecutor: props.record.multiExecutor,
         status: props.record.status,
         remark: props.record.remark || '',
-        workers: [...(props.record.workers || [])],
+        workers: (props.record.workers || []).map(enrichWorker),
       })
+      // 兼容旧数据：有 leaderId 但未标 isLeader
+      if (props.record.leaderId && !form.workers.some((w) => w.isLeader)) {
+        form.workers = form.workers.map((w) => ({
+          ...w,
+          isLeader: w.id === props.record.leaderId,
+        }))
+      }
     } else {
       Object.assign(form, {
         code: '',
         name: '',
-        workCenter: undefined,
-        position: undefined,
-        leaderId: undefined,
-        leaderName: '',
+        workCenterId: undefined,
         allowTaskGen: true,
         leaderParticipates: true,
         multiExecutor: true,
@@ -257,40 +266,47 @@ function genCode() {
   form.code = `WG${dayjs().format('YYYYMMDD')}${String(Math.floor(Math.random() * 900) + 100)}`
 }
 
-function onLeaderChange(leaderId) {
-  const emp = mockEmployees.find((e) => e.id === leaderId)
-  form.leaderName = emp?.name || ''
-  if (emp) {
-    const exists = form.workers.some((w) => w.id === emp.id)
-    if (!exists) {
-      form.workers.unshift({ id: emp.id, name: emp.name, isLeader: true })
-    }
-    form.workers = form.workers.map((w) => ({ ...w, isLeader: w.id === emp.id }))
-  }
-}
-
 function openWorkerPicker() {
   workerPickerOpen.value = true
 }
 
 function onWorkersSelected(names) {
-  const leaderName = form.leaderName
+  const prevMap = new Map(form.workers.map((w) => [w.name, w]))
   form.workers = names.map((name) => {
     const emp = mockEmployees.find((e) => e.name === name)
+    const prev = prevMap.get(name)
     return {
-      id: emp?.id || `tmp-${name}`,
+      id: emp?.id || prev?.id || `tmp-${name}`,
       name,
-      isLeader: name === leaderName,
+      position: emp?.position || prev?.position || '',
+      isLeader: Boolean(prev?.isLeader),
     }
   })
+  // 若原组长被移除且无人勾选，不自动指定
+}
+
+function onLeaderCheck(record, checked) {
+  if (checked) {
+    form.workers = form.workers.map((w) => ({
+      ...w,
+      isLeader: w.id === record.id,
+    }))
+    return
+  }
+  // 取消勾选：允许暂时无组长，保存时再校验
+  record.isLeader = false
 }
 
 function removeWorker(id) {
-  if (id === form.leaderId) {
-    message.warning('不能删除组长，请先更换组长')
-    return
-  }
   form.workers = form.workers.filter((w) => w.id !== id)
+}
+
+function resolveLeader() {
+  const leader = form.workers.find((w) => w.isLeader)
+  return {
+    leaderId: leader?.id || '',
+    leaderName: leader?.name || '',
+  }
 }
 
 async function handleSave() {
@@ -303,13 +319,29 @@ async function handleSave() {
     message.warning('请至少选择一名工人')
     return
   }
-  const payload = { ...form }
+  const leaderCount = form.workers.filter((w) => w.isLeader).length
+  if (leaderCount !== 1) {
+    message.warning('请在列表中勾选一名组长')
+    return
+  }
+  const { leaderId, leaderName } = resolveLeader()
+  const payload = {
+    ...form,
+    leaderId,
+    leaderName,
+    workers: form.workers.map((w) => ({
+      id: w.id,
+      name: w.name,
+      position: w.position || '',
+      isLeader: Boolean(w.isLeader),
+    })),
+  }
   if (isEdit.value) {
     updateEmployeeGroup(props.record.id, payload)
-    message.success('员工组别已更新')
+    message.success('保存成功')
   } else {
     addEmployeeGroup(payload)
-    message.success('员工组别已创建')
+    message.success('保存成功')
   }
   emit('saved')
   closeAfterSave()
@@ -317,15 +349,90 @@ async function handleSave() {
 </script>
 
 <style lang="less" scoped>
-.group-form {
+.form-section-box {
   margin-bottom: 12px;
+  width: 100%;
 }
 
-.worker-section {
-  margin-top: 8px;
+.section-title {
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2329;
+}
 
-  .worker-table {
-    margin-top: 12px;
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+
+  .section-title {
+    margin-bottom: 0;
+  }
+}
+
+.section-hint {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #86909c;
+  line-height: 1.5;
+}
+
+.readonly-cell {
+  color: #1f2329;
+  font-size: 13px;
+}
+
+.group-form {
+  width: 100%;
+
+  :deep(.ant-form-item) {
+    margin-inline-end: 0;
+    margin-bottom: 0;
+    width: 100%;
+  }
+
+  :deep(.ant-form-item-row) {
+    flex-wrap: nowrap;
+    align-items: center;
+    width: 100%;
+  }
+
+  :deep(.ant-form-item-label) {
+    flex: 0 0 88px;
+    width: 88px;
+    max-width: 88px;
+    padding: 0;
+  }
+
+  :deep(.ant-form-item-label > label) {
+    height: auto;
+    min-height: 32px;
+    line-height: 32px;
+    font-size: 14px;
+    white-space: nowrap;
+  }
+
+  :deep(.ant-form-item-control) {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  :deep(.ant-select),
+  :deep(.ant-input) {
+    width: 100%;
+  }
+
+  .remark-item {
+    :deep(.ant-form-item-row) {
+      align-items: flex-start;
+    }
+
+    :deep(.ant-form-item-label > label) {
+      height: 32px;
+    }
   }
 }
 </style>

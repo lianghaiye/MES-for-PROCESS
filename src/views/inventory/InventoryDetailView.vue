@@ -960,7 +960,7 @@ const batchQueryColumns = [
   { title: '产品编码', dataIndex: 'itemCode', key: 'itemCode', width: 130 },
   { title: '产品名称', dataIndex: 'itemName', key: 'itemName', width: 140, ellipsis: true },
   { title: '单位', dataIndex: 'unit', key: 'unit', width: 64 },
-  { title: '含量', key: 'content', width: 80, align: 'right' },
+  { title: '有效含量', key: 'content', width: 80, align: 'right' },
   { title: '在库数量', key: 'currentLength', width: 100, align: 'right' },
   { title: '批次成本', key: 'unitCost', width: 100, align: 'right' },
   { title: '状态', dataIndex: 'status', key: 'status', width: 80 },
@@ -1170,7 +1170,7 @@ const drawerBatchColumns = computed(() => {
     { title: '来源类型', dataIndex: 'sourceType', key: 'sourceType', width: 100 },
     { title: '来源单号', dataIndex: 'sourceDocNo', key: 'sourceDocNo', width: 132, ellipsis: true },
     { title: '在库数量', key: 'currentLength', width: 110, align: 'right' },
-    { title: '含量', key: 'content', width: 80, align: 'right' },
+    { title: '有效含量', key: 'content', width: 80, align: 'right' },
     { title: '批次成本', key: 'unitCost', width: 100, align: 'right' },
     { title: '点收数量', key: 'inboundQty', width: 110, align: 'right' },
   )

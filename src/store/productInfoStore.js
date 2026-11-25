@@ -19,7 +19,7 @@ import {
 
 const STORAGE_KEY = 'i_doms_product_info'
 /** v21：锂盐产出角色口径（卤水副产、洗渣水/母液回收等） */
-const DATA_VERSION = 21
+const DATA_VERSION = 24
 
 export { PRODUCT_STATUS, isProductActive, isProductArchived, normalizeProductStatus }
 let codeSeq = 20000

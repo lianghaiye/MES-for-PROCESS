@@ -14,7 +14,7 @@
             </a-form-item>
           </a-col>
           <a-col :xs="24" :sm="12" :md="8">
-            <a-form-item label="适用类别">
+            <a-form-item label="适用类型">
               <a-select
                 v-model:value="filters.category"
                 allow-clear
@@ -99,7 +99,7 @@ const columns = [
   { title: '序号', key: 'index', width: 56, align: 'center' },
   { title: '标准编码', dataIndex: 'code', width: 130 },
   { title: '标准名称', dataIndex: 'name', width: 160 },
-  { title: '适用类别', dataIndex: 'category', width: 120 },
+  { title: '适用类型', dataIndex: 'category', width: 120 },
   { title: '周期', dataIndex: 'cycle', width: 80 },
   { title: '点检项数', key: 'itemCount', width: 90, align: 'center' },
   { title: '状态', key: 'enabled', width: 80 },

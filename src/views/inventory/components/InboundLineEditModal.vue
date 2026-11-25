@@ -8,6 +8,7 @@
     class="inventory-line-edit-modal"
     @cancel="handleCancel"
   >
+    <!-- 与出库明细同壳：纵向标签、820 宽、gutter 16，避免横向紧凑 -->
     <a-form v-if="draft" layout="vertical" class="edit-form">
       <a-form-item>
         <template #label>
@@ -56,13 +57,29 @@
             <template #label>
               <span class="field-label">
                 <HomeOutlined />
-                入库仓库
+                位置类型
+              </span>
+            </template>
+            <a-select
+              v-model:value="locationType"
+              :options="inboundLocationTypeOptions"
+              @change="onLocationTypeChange"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col :span="8">
+          <a-form-item required>
+            <template #label>
+              <span class="field-label">
+                <HomeOutlined />
+                入库位置
               </span>
             </template>
             <a-select
               v-model:value="draft.warehouse"
               allow-clear
-              placeholder="请选择仓库"
+              show-search
+              :placeholder="locationType === 'tank' ? '请选择储罐' : '请选择仓库'"
               :options="warehouseOpts"
               @change="refreshPreviewStock"
             />
@@ -92,7 +109,29 @@
             />
           </a-form-item>
         </a-col>
-        <a-col v-if="isVariableLengthLine" :span="8">
+      </a-row>
+
+      <a-row :gutter="16">
+        <a-col :span="8">
+          <a-form-item>
+            <template #label>
+              <span class="field-label">
+                <UnorderedListOutlined />
+                有效含量(%)
+              </span>
+            </template>
+            <a-input-number
+              :value="contentToPct(draft.content)"
+              :min="0"
+              :max="100"
+              :precision="4"
+              placeholder="可按 COA 暂填"
+              style="width: 100%"
+              @update:value="(v) => (draft.content = contentPctToFraction(v))"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col v-if="hasPurchaseAux" :span="8">
           <a-form-item required>
             <template #label>
               <span class="field-label">
@@ -102,15 +141,17 @@
             </template>
             <a-input-number
               v-model:value="draft.purchaseQty"
-              :min="1"
-              :precision="0"
+              :min="0.0001"
+              :precision="4"
+              :formatter="inputNumberFormatter"
+              :parser="inputNumberParser"
               :placeholder="`按${purchaseUnitLabel}计`"
               style="width: 100%"
               @change="onPurchaseQtyChange"
             />
           </a-form-item>
         </a-col>
-        <a-col v-if="!isVariableLengthLine" :span="8">
+        <a-col :span="8">
           <a-form-item required>
             <template #label>
               <span class="field-label">
@@ -120,25 +161,38 @@
             </template>
             <a-input-number
               v-model:value="draft.qty"
-              :min="0"
+              :min="0.0001"
               :precision="4"
               :formatter="inputNumberFormatter"
               :parser="inputNumberParser"
-              placeholder="请输入"
+              placeholder="请填写入库数量"
               style="width: 100%"
               @change="onQtyChange"
             />
           </a-form-item>
         </a-col>
-        <a-col v-if="!isVariableLengthLine && hasSettleUnitLine" :span="24">
+      </a-row>
+
+      <!-- 提示挂在数量行下方，换算工具做成文字链（同出库「自主拣选」） -->
+      <div v-if="hasPurchaseAux" class="vl-tip qty-convert-tip">
+        <template v-if="convertHint">{{ convertHint }}。</template>
+        点收按采购单位，入库按库存单位；有默认换算率时可预填，也可改。
+        <a class="manual-pick-inline" @click="openConvertTool">换算工具</a>
+      </div>
+
+      <a-row v-if="hasSettleUnitLine" :gutter="16">
+        <a-col :span="24">
           <InboundSettleQtyEditor :line="draft" @patch="onSettlePatch" />
         </a-col>
-        <a-col v-if="!isVariableLengthLine" :span="8">
+      </a-row>
+
+      <a-row :gutter="16">
+        <a-col :span="8">
           <a-form-item>
             <template #label>
               <span class="field-label">
                 <DollarOutlined />
-                入库成本价{{ hasSettleUnitLine ? `（元/${draft.settleUnit || 'kg'}）` : '' }}
+                {{ costPriceLabel }}
               </span>
             </template>
             <a-input-number
@@ -151,7 +205,7 @@
             />
           </a-form-item>
         </a-col>
-        <a-col v-if="!isVariableLengthLine" :span="8">
+        <a-col :span="8">
           <a-form-item>
             <template #label>
               <span class="field-label">
@@ -163,330 +217,68 @@
           </a-form-item>
         </a-col>
       </a-row>
+    </a-form>
 
-      <template v-if="isVariableLengthLine">
-        <a-form-item required class="entry-mode-item">
-          <template #label>
-            <span class="field-label">
-              <UnorderedListOutlined />
-              入库数量怎么填
-            </span>
-          </template>
-          <a-radio-group
-            v-model:value="draft.inboundEntryMode"
-            :options="entryModeOpts"
-            @change="onEntryModeChange"
-          />
-          <div class="vl-tip">
-            采购单位（{{ purchaseUnitLabel }}）与库存单位（{{
-              stockUnitLabel
-            }}）不同：先填点收数量，再填入库数量。
-            <template v-if="showAreaShortcut">
-              库存单位为面积时，可用「长 × 宽」换算，也可直接填合计{{ stockUnitLabel }}。
-            </template>
-            <template v-if="isPieceManagedBarcode">
-              一物一码须按件填写，不支持「直接填合计」。确认入库后 1 个父批，件码为批次号+四位 SN。
-            </template>
-            <template v-else>
-              「直接填合计」只生成一个批次、无 SN。选「统一单件」或「逐件」时，同一物一码：1 个父批
-              + 四位 SN 件码。
-            </template>
-          </div>
-        </a-form-item>
-
-        <a-form-item v-if="showAreaShortcut && (isUniformMode || isPieceMode)" label="尺寸单位">
-          <a-radio-group
-            v-model:value="draft.dimUnit"
-            :options="plateDimUnitOpts"
-            option-type="button"
-            size="small"
-          />
-        </a-form-item>
-
-        <template v-if="isUniformMode && showAreaShortcut">
-          <a-row :gutter="12">
-            <a-col :span="8">
-              <a-form-item required>
-                <template #label>
-                  <span class="field-label">长（{{ draft.dimUnit || 'mm' }}）</span>
-                </template>
-                <a-input-number
-                  v-model:value="draft.uniformLength"
-                  :min="0.001"
-                  :precision="4"
-                  :formatter="inputNumberFormatter"
-                  :parser="inputNumberParser"
-                  placeholder="长"
-                  style="width: 100%"
-                  @change="syncUniformAreaFromDims"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item required>
-                <template #label>
-                  <span class="field-label">宽（{{ draft.dimUnit || 'mm' }}）</span>
-                </template>
-                <a-input-number
-                  v-model:value="draft.uniformWidth"
-                  :min="0.001"
-                  :precision="4"
-                  :formatter="inputNumberFormatter"
-                  :parser="inputNumberParser"
-                  placeholder="宽"
-                  style="width: 100%"
-                  @change="syncUniformAreaFromDims"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item required>
-                <template #label>
-                  <span class="field-label">单件面积（{{ stockUnitLabel }}）</span>
-                </template>
-                <a-input-number
-                  v-model:value="draft.uniformValue"
-                  :min="0.001"
-                  :precision="4"
-                  :formatter="inputNumberFormatter"
-                  :parser="inputNumberParser"
-                  placeholder="自动计算，可改"
-                  style="width: 100%"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </template>
-
-        <a-form-item v-else-if="isUniformMode" required>
-          <template #label>
-            <span class="field-label">
-              <UnorderedListOutlined />
-              单件数量（{{ stockUnitLabel }}）
-            </span>
-          </template>
-          <a-input-number
-            v-model:value="draft.uniformValue"
-            :min="0.001"
-            :precision="4"
-            :formatter="inputNumberFormatter"
-            :parser="inputNumberParser"
-            placeholder="每件相同数量"
-            style="width: 100%"
-          />
-        </a-form-item>
-
-        <a-form-item v-else-if="isTotalMode" required>
-          <template #label>
-            <span class="field-label">
-              <UnorderedListOutlined />
-              {{ showAreaShortcut ? '合计面积' : '合计数量' }}（{{ stockUnitLabel }}）
-            </span>
-          </template>
-          <a-input-number
-            v-model:value="draft.totalValue"
-            :min="0.001"
-            :precision="4"
-            :formatter="inputNumberFormatter"
-            :parser="inputNumberParser"
-            placeholder="本次入库合计"
-            style="width: 100%"
-          />
-        </a-form-item>
-
-        <div v-else-if="isPieceMode && showAreaShortcut" class="piece-list">
-          <div class="piece-list-head">
-            <span>逐张尺寸（单位：{{ draft.dimUnit || 'mm' }} → {{ stockUnitLabel }}）</span>
-            <span class="piece-progress">
-              已填 {{ pieceDimFilledCount }}/{{ pieceExpectedCount }}
-            </span>
-          </div>
-          <div v-if="!pieceExpectedCount" class="vl-tip">
-            请先填写点收数量（{{ purchaseUnitLabel }}）
-          </div>
-          <template v-else>
-            <div class="piece-quick-fill">
+    <!-- 与配方编辑同款：体积/质量 → 公斤，可填入入库数量 -->
+    <a-modal
+      v-model:open="convertOpen"
+      title="换算工具"
+      :width="520"
+      :mask-closable="true"
+      destroy-on-close
+      :z-index="1100"
+    >
+      <div class="mode-switch">
+        <div class="mode-switch-label">换算方式</div>
+        <a-radio-group
+          v-model:value="convertDraft.unit"
+          option-type="button"
+          button-style="solid"
+          size="small"
+          :options="feedConvertUnitOptions"
+        />
+        <div class="mode-switch-hint">{{ convertModeHint }}</div>
+      </div>
+      <a-form layout="inline" class="horizontal-form">
+        <a-row :gutter="[12, 8]" style="width: 100%">
+          <a-col :span="12">
+            <a-form-item label="数量">
               <a-input-number
-                v-model:value="pieceQuickLength"
-                :min="0.001"
-                :precision="4"
-                placeholder="快捷长"
-                style="width: 110px"
-              />
-              <a-input-number
-                v-model:value="pieceQuickWidth"
-                :min="0.001"
-                :precision="4"
-                placeholder="快捷宽"
-                style="width: 110px"
-              />
-              <a-button size="small" @click="fillEmptyPieceDims">填充未填项</a-button>
-              <a-button size="small" @click="fillAllPieceDims">全部覆盖</a-button>
-            </div>
-            <div class="piece-dim-grid">
-              <div v-for="idx in piecePageIndexes" :key="idx" class="piece-dim-row">
-                <span class="piece-idx">{{ idx + 1 }}</span>
-                <a-input-number
-                  v-model:value="pieceDimDraftList[idx].length"
-                  :min="0.001"
-                  :precision="4"
-                  size="small"
-                  placeholder="长"
-                  style="width: 100px"
-                />
-                <span class="dim-x">×</span>
-                <a-input-number
-                  v-model:value="pieceDimDraftList[idx].width"
-                  :min="0.001"
-                  :precision="4"
-                  size="small"
-                  placeholder="宽"
-                  style="width: 100px"
-                />
-                <span class="dim-area">
-                  = {{ formatQty(pieceDimArea(idx)) }} {{ stockUnitLabel }}
-                </span>
-              </div>
-            </div>
-            <div v-if="piecePageCount > 1" class="piece-pagination">
-              <a-pagination
-                v-model:current="piecePage"
+                v-model:value="convertDraft.qty"
                 size="small"
-                :total="pieceExpectedCount"
-                :page-size="PIECE_PAGE_SIZE"
-                :show-size-changer="false"
-                show-less-items
-              />
-            </div>
-          </template>
-        </div>
-
-        <div v-else-if="isPieceMode" class="piece-list">
-          <div class="piece-list-head">
-            <span>逐件数量（单位：{{ stockUnitLabel }}）</span>
-            <span class="piece-progress">
-              已填 {{ pieceFilledCount }}/{{ pieceExpectedCount }}
-            </span>
-          </div>
-
-          <div v-if="!pieceExpectedCount" class="vl-tip">
-            请先填写点收数量（{{ purchaseUnitLabel }}）
-          </div>
-
-          <template v-else>
-            <a-radio-group
-              v-model:value="pieceEditMode"
-              size="small"
-              option-type="button"
-              class="piece-edit-mode"
-              @change="onPieceEditModeChange"
-            >
-              <a-radio-button value="paste">批量粘贴</a-radio-button>
-              <a-radio-button value="grid">逐条编辑</a-radio-button>
-            </a-radio-group>
-
-            <div v-if="pieceEditMode === 'paste'" class="piece-paste">
-              <a-textarea
-                v-model:value="piecePasteText"
-                :rows="8"
-                :placeholder="`从 Excel 复制后粘贴，每行一个数值，或用逗号/空格分隔。\n共需 ${pieceExpectedCount} 个（单位：${stockUnitLabel}）`"
-              />
-              <div class="piece-paste-bar">
-                <a-button type="primary" size="small" @click="applyPiecePaste">
-                  应用粘贴内容
-                </a-button>
-                <span class="vl-tip">当前识别 {{ pasteParsedCount }} 个数值</span>
-              </div>
-            </div>
-
-            <div v-else class="piece-grid-panel">
-              <div class="piece-quick-fill">
-                <a-input-number
-                  v-model:value="pieceQuickFill"
-                  :min="0.001"
-                  :precision="4"
-                  :formatter="inputNumberFormatter"
-                  :parser="inputNumberParser"
-                  placeholder="快捷填充值"
-                  style="width: 140px"
-                />
-                <a-button size="small" @click="fillEmptyPieces">填充未填项</a-button>
-                <a-button size="small" @click="fillAllPieces">全部覆盖</a-button>
-              </div>
-              <div class="piece-grid">
-                <div v-for="idx in piecePageIndexes" :key="idx" class="piece-cell">
-                  <span class="piece-idx">{{ idx + 1 }}</span>
-                  <a-input-number
-                    v-model:value="pieceDraftList[idx]"
-                    :min="0.001"
-                    :precision="4"
-                    :formatter="inputNumberFormatter"
-                    :parser="inputNumberParser"
-                    size="small"
-                    style="flex: 1"
-                    placeholder="数量"
-                  />
-                </div>
-              </div>
-              <div v-if="piecePageCount > 1" class="piece-pagination">
-                <a-pagination
-                  v-model:current="piecePage"
-                  size="small"
-                  :total="pieceExpectedCount"
-                  :page-size="PIECE_PAGE_SIZE"
-                  :show-size-changer="false"
-                  show-less-items
-                />
-              </div>
-            </div>
-          </template>
-        </div>
-
-        <div class="vl-tip preview-sum">
-          入库合计预览：<strong>{{ formatQty(stockQtyPreview) }}</strong> {{ stockUnitLabel }}
-        </div>
-
-        <a-row :gutter="16">
-          <a-col v-if="hasSettleUnitLine" :span="24">
-            <InboundSettleQtyEditor :line="draft" @patch="onSettlePatch" />
-          </a-col>
-          <a-col :span="8">
-            <a-form-item>
-              <template #label>
-                <span class="field-label">
-                  <DollarOutlined />
-                  入库成本价{{ hasSettleUnitLine ? `（元/${draft.settleUnit || 'kg'}）` : '' }}
-                </span>
-              </template>
-              <a-input-number
-                v-model:value="draft.unitPrice"
                 :min="0"
-                :precision="2"
-                placeholder="请输入"
+                :addon-after="convertUnitAddon"
                 style="width: 100%"
-                @change="onUnitPriceChange"
               />
             </a-form-item>
           </a-col>
-          <a-col :span="8">
-            <a-form-item>
-              <template #label>
-                <span class="field-label">
-                  <AccountBookOutlined />
-                  总价
-                </span>
-              </template>
+          <a-col v-if="convertDraft.unit !== 'g'" :span="12">
+            <a-form-item label="密度">
               <a-input-number
-                :value="draft.totalPrice"
-                :precision="2"
-                disabled
+                v-model:value="convertDraft.density"
+                size="small"
+                :min="0"
+                addon-after="kg/L"
                 style="width: 100%"
               />
             </a-form-item>
           </a-col>
         </a-row>
+      </a-form>
+      <div class="convert-result-card">
+        <span class="convert-result-label">折合公斤</span>
+        <span class="convert-result-value">{{ convertKgText }}</span>
+      </div>
+      <p class="convert-tip">
+        可把结果填入「入库数量」。若换算方式为升且点收单位也是升，会同步点收数量。
+      </p>
+      <template #footer>
+        <a-button @click="convertOpen = false">关闭</a-button>
+        <a-button type="primary" :disabled="!(convertKgNum > 0)" @click="applyConvertToInbound">
+          填入入库数量
+        </a-button>
       </template>
-    </a-form>
+    </a-modal>
 
     <template #footer>
       <a-button @click="handleCancel">取消</a-button>
@@ -496,6 +288,10 @@
 </template>
 
 <script setup>
+/**
+ * 入库明细编辑：采购辅助单位用点收+入库两列；样式沿用原图标标签；
+ * 提供与配方页同款的体积/质量换算工具。
+ */
 import { formatNumber, inputNumberFormatter, inputNumberParser } from '@/utils/numberFormat'
 import { computed, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
@@ -506,32 +302,32 @@ import {
   HomeOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
-import { getWarehouseSelectOptions, warehouseState } from '@/store/warehouseStore'
+import { warehouseState } from '@/store/warehouseStore'
+import { materialBatchState } from '@/store/materialBatchStore'
+import {
+  getInboundLocationSelectOptions,
+  inboundLocationTypeOptions,
+  INBOUND_LOCATION_TYPE,
+  resolveInboundLocationType,
+} from '@/utils/inboundBatchDisplay'
 import { getLocationSelectOptions, warehouseLocationState } from '@/store/warehouseLocationStore'
 import {
   enrichInboundLine,
+  isInboundDualUnitLine,
   syncInboundLineTotalFromUnit,
   validateSettleEntry,
 } from '@/utils/inboundLineHelpers'
 import InboundSettleQtyEditor from './InboundSettleQtyEditor.vue'
 import { hasSettleUnit } from '@/utils/settleUnit'
-import { isPlateAreaMeasureEnabled } from '@/store/functionParamStore'
+import { contentPctToFraction, contentToPct } from '@/utils/batchContent'
 import { materialInfoState } from '@/store/materialInfoStore'
 import {
-  DEFAULT_PLATE_DIM_UNIT,
-  DUAL_UNIT_MEASURE_MODE,
-  INBOUND_ENTRY_MODE,
-  PLATE_DIM_UNIT_OPTIONS,
-  calcAreaSquareMeters,
-  coerceInboundEntryMode,
-  defaultInboundEntryMode,
-  expandDualUnitInboundPieces,
-  getInboundEntryModeOptions,
-  isAreaStockUnit,
-  isOneItemOneCodeBarcode,
-  roundQty,
-  sumPieceValues,
-} from '@/utils/variableLengthMaterial'
+  purchaseQtyToStockQty,
+  resolveInventoryUnit,
+  resolvePurchaseConvertRate,
+  resolvePurchaseUnit,
+} from '@/utils/purchaseUomConvert'
+import { convertToFeedKg } from '@/utils/processBatchMath'
 
 function formatQty(val) {
   return formatNumber(val, 4, { empty: '0' })
@@ -547,72 +343,20 @@ const emit = defineEmits(['update:open', 'confirm'])
 
 const draft = ref(null)
 const preview = ref(null)
-const pieceDraftList = ref([])
-const pieceDimDraftList = ref([])
-/** 逐件录入：paste | grid */
-const pieceEditMode = ref('paste')
-const piecePasteText = ref('')
-const pieceQuickFill = ref(null)
-const pieceQuickLength = ref(null)
-const pieceQuickWidth = ref(null)
-const piecePage = ref(1)
-
-const PIECE_PASTE_THRESHOLD = 12
-const PIECE_PAGE_SIZE = 24
-const plateDimUnitOpts = PLATE_DIM_UNIT_OPTIONS
-
-const pieceExpectedCount = computed(() => Number(draft.value?.purchaseQty) || 0)
-
-const pieceFilledCount = computed(
-  () => pieceDraftList.value.filter((v) => Number.isFinite(Number(v)) && Number(v) > 0).length,
-)
-
-const pieceDimFilledCount = computed(
-  () => pieceDimDraftList.value.filter((d) => Number(d?.length) > 0 && Number(d?.width) > 0).length,
-)
-
-const pasteParsedCount = computed(() => parsePiecePasteText(piecePasteText.value).length)
-
-const piecePageCount = computed(() =>
-  Math.max(1, Math.ceil(pieceExpectedCount.value / PIECE_PAGE_SIZE)),
-)
-
-const piecePageIndexes = computed(() => {
-  const n = pieceExpectedCount.value
-  const start = (piecePage.value - 1) * PIECE_PAGE_SIZE
-  const end = Math.min(start + PIECE_PAGE_SIZE, n)
-  const indexes = []
-  for (let i = start; i < end; i += 1) indexes.push(i)
-  return indexes
-})
-
-function parsePiecePasteText(text) {
-  return String(text || '')
-    .split(/[\s,;，；\t\n\r]+/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map(Number)
-    .filter((n) => Number.isFinite(n) && n > 0)
-}
-
-function preferredPieceEditMode(count) {
-  return count >= PIECE_PASTE_THRESHOLD ? 'paste' : 'grid'
-}
-
-function syncPasteTextFromList() {
-  piecePasteText.value = pieceDraftList.value
-    .map((v) => {
-      if (v == null || v === '') return ''
-      const n = Number(v)
-      return Number.isFinite(n) && n > 0 ? String(n) : ''
-    })
-    .join('\n')
-}
+const locationType = ref(INBOUND_LOCATION_TYPE.WAREHOUSE)
 
 const warehouseOpts = computed(() => {
   void warehouseState.warehouses
-  return getWarehouseSelectOptions()
+  void materialBatchState.tanks
+  return getInboundLocationSelectOptions(locationType.value)
 })
+
+function onLocationTypeChange() {
+  const allowed = new Set(warehouseOpts.value.map((o) => o.value))
+  if (draft.value?.warehouse && !allowed.has(draft.value.warehouse)) {
+    draft.value.warehouse = undefined
+  }
+}
 
 const locationOpts = computed(() => {
   void warehouseLocationState.locations
@@ -625,118 +369,96 @@ const resolvedMaterial = computed(() => {
   return materialInfoState.materials.find((m) => m.code === code) || null
 })
 
-const isVariableLengthLine = computed(() => {
-  const line = draft.value
-  if (!line) return false
-  if (line.isVariableLength) return true
-  return Boolean(resolvedMaterial.value?.isVariableLength)
-})
+/** 采购单位 ≠ 库存单位 → 点收 + 入库两列 */
+const hasPurchaseAux = computed(() =>
+  isInboundDualUnitLine(draft.value || {}, resolvedMaterial.value),
+)
 
 const hasSettleUnitLine = computed(() => hasSettleUnit(draft.value || {}))
 
 const stockUnitLabel = computed(() => {
   const mat = resolvedMaterial.value
-  return mat?.stockUnit || mat?.inventoryUnit || draft.value?.unit || '米'
+  return draft.value?.stockUnit || resolveInventoryUnit(mat || {}) || draft.value?.unit || '件'
 })
 
 const purchaseUnitLabel = computed(() => {
   const mat = resolvedMaterial.value
-  return mat?.purchaseUnit || draft.value?.purchaseUnit || '件'
+  return draft.value?.purchaseUnit || resolvePurchaseUnit(mat || {}) || '件'
 })
 
-const barcodeTypeLabel = computed(() => {
-  const mat = resolvedMaterial.value
-  return mat?.barcodeType || draft.value?.barcodeType || '一批一码'
+const convertRate = computed(() =>
+  resolvePurchaseConvertRate(resolvedMaterial.value || draft.value || {}),
+)
+
+const convertHint = computed(() => {
+  const rate = convertRate.value
+  if (!(rate > 0)) return ''
+  return `换算：1 ${purchaseUnitLabel.value} = ${rate} ${stockUnitLabel.value}`
 })
 
-const isPieceManagedBarcode = computed(() => isOneItemOneCodeBarcode(barcodeTypeLabel.value))
-
-const enablePlateAreaMeasure = computed(() => isPlateAreaMeasureEnabled())
-
-/** 仅库存为面积单位且开启「按面积计量」时，提供长×宽快捷；不再展示计量形态三选一 */
-const showAreaShortcut = computed(
-  () =>
-    isVariableLengthLine.value &&
-    enablePlateAreaMeasure.value &&
-    isAreaStockUnit(stockUnitLabel.value),
+const costPriceLabel = computed(() =>
+  hasSettleUnitLine.value ? `入库成本价（元/${draft.value?.settleUnit || 'kg'}）` : '入库成本价',
 )
 
-const entryModeOpts = computed(() =>
-  getInboundEntryModeOptions(barcodeTypeLabel.value, { areaBased: showAreaShortcut.value }),
+// —— 换算工具（对齐 FormulaEditView）——
+const feedConvertUnitOptions = [
+  { value: 'g', label: '克' },
+  { value: 'mL', label: '毫升' },
+  { value: 'L', label: '升' },
+]
+const convertOpen = ref(false)
+const convertDraft = reactive({ qty: null, unit: 'L', density: null })
+const convertUnitAddon = computed(() => ({ g: 'g', mL: 'mL', L: 'L' })[convertDraft.unit] || 'g')
+const convertModeHint = computed(() => {
+  if (convertDraft.unit === 'g') return '1000 g = 1 kg，不使用密度'
+  if (convertDraft.unit === 'mL') return '公斤 = 毫升 × 密度（kg/L）÷ 1000'
+  return '公斤 = 升 × 密度（kg/L）'
+})
+const convertKgNum = computed(() =>
+  convertToFeedKg(convertDraft.qty, convertDraft.unit, convertDraft.density),
 )
-
-/** 后台静默写入计量形态，界面不再让用户选 */
-function autoInboundMeasureMode(stockUnit, isVL) {
-  if (!isVL) return undefined
-  if (isPlateAreaMeasureEnabled() && isAreaStockUnit(stockUnit)) {
-    return DUAL_UNIT_MEASURE_MODE.PLATE
-  }
-  return DUAL_UNIT_MEASURE_MODE.LENGTH
-}
-
-const currentMode = computed(() =>
-  coerceInboundEntryMode(
-    draft.value?.inboundEntryMode || defaultInboundEntryMode(barcodeTypeLabel.value),
-    barcodeTypeLabel.value,
-  ),
-)
-
-const isUniformMode = computed(() => currentMode.value === INBOUND_ENTRY_MODE.UNIFORM)
-const isPieceMode = computed(() => currentMode.value === INBOUND_ENTRY_MODE.PIECE)
-const isTotalMode = computed(() => currentMode.value === INBOUND_ENTRY_MODE.TOTAL)
-
-const stockQtyPreview = computed(() => {
-  const line = draft.value
-  if (!line || !isVariableLengthLine.value) return 0
-  const mode = currentMode.value
-  if (mode === INBOUND_ENTRY_MODE.UNIFORM) {
-    let per = Number(line.uniformValue ?? line.uniformLength ?? line.uniformWeight) || 0
-    if (!(per > 0) && showAreaShortcut.value) {
-      per = calcAreaSquareMeters(line.uniformLength, line.uniformWidth, line.dimUnit) || 0
-    }
-    return roundQty((Number(line.purchaseQty) || 0) * per)
-  }
-  if (mode === INBOUND_ENTRY_MODE.TOTAL) {
-    return roundQty(Number(line.totalValue ?? line.totalWeight ?? line.qty) || 0)
-  }
-  if (mode === INBOUND_ENTRY_MODE.PIECE) {
-    if (showAreaShortcut.value) {
-      return sumPieceValues(
-        pieceDimDraftList.value.map((d) => calcAreaSquareMeters(d?.length, d?.width, line.dimUnit)),
-      )
-    }
-    return sumPieceValues(pieceDraftList.value)
-  }
-  return 0
+const convertKgText = computed(() => {
+  const kg = convertKgNum.value
+  return kg == null ? '—' : `${formatNumber(kg, 4)} kg`
 })
 
-function pieceDimArea(idx) {
-  const d = pieceDimDraftList.value[idx]
-  return calcAreaSquareMeters(d?.length, d?.width, draft.value?.dimUnit) || 0
+/** 打开换算工具：预填密度、点收升数 */
+function openConvertTool() {
+  const mat = resolvedMaterial.value || {}
+  const density = Number(mat.density ?? convertRate.value)
+  convertDraft.density = density > 0 ? density : null
+  // 点收单位是升时，用点收数量作默认体积
+  const pur = String(purchaseUnitLabel.value || '')
+  if (pur === '升' || pur === 'L' || pur === 'l') {
+    convertDraft.unit = 'L'
+    convertDraft.qty = Number(draft.value?.purchaseQty) > 0 ? Number(draft.value.purchaseQty) : null
+  } else {
+    convertDraft.unit = 'L'
+    convertDraft.qty = null
+  }
+  convertOpen.value = true
 }
 
-function syncUniformAreaFromDims() {
-  const line = draft.value
-  if (!line) return
-  const area = calcAreaSquareMeters(line.uniformLength, line.uniformWidth, line.dimUnit)
-  if (area != null && area > 0) line.uniformValue = area
-}
-
-function resolveLegacyUniformValue(line) {
-  const v = Number(line.uniformValue ?? line.uniformLength ?? line.uniformWeight)
-  return Number.isFinite(v) && v > 0 ? v : null
-}
-
-function resolveLegacyTotalValue(line) {
-  const v = Number(line.totalValue ?? line.totalWeight ?? line.qty)
-  return Number.isFinite(v) && v > 0 ? v : null
-}
-
-function resolveLegacyPieceValues(line) {
-  if (Array.isArray(line.pieceValues) && line.pieceValues.length) return [...line.pieceValues]
-  if (Array.isArray(line.pieceLengths) && line.pieceLengths.length) return [...line.pieceLengths]
-  if (Array.isArray(line.pieceWeights) && line.pieceWeights.length) return [...line.pieceWeights]
-  return []
+/** 折合公斤写入入库数量；升↔点收同步 */
+function applyConvertToInbound() {
+  const kg = convertKgNum.value
+  if (!(kg > 0) || !draft.value) {
+    message.warning('请先填写有效数量与密度')
+    return
+  }
+  draft.value.qty = kg
+  // 换算按「升」且点收也是升：同步点收，避免两列对不上
+  const pur = String(purchaseUnitLabel.value || '')
+  if (
+    convertDraft.unit === 'L' &&
+    (pur === '升' || pur === 'L' || pur === 'l') &&
+    Number(convertDraft.qty) > 0
+  ) {
+    draft.value.purchaseQty = Number(convertDraft.qty)
+  }
+  syncInboundLineTotalFromUnit(draft.value)
+  convertOpen.value = false
+  message.success('已填入入库数量')
 }
 
 watch(
@@ -745,177 +467,42 @@ watch(
     if (!visible || !props.line) {
       draft.value = null
       preview.value = null
-      pieceDraftList.value = []
-      pieceDimDraftList.value = []
-      piecePasteText.value = ''
-      pieceQuickFill.value = null
-      pieceQuickLength.value = null
-      pieceQuickWidth.value = null
-      piecePage.value = 1
+      convertOpen.value = false
       return
     }
     const next = enrichInboundLine({ ...props.line })
     const mat = materialInfoState.materials.find((m) => m.code === next.itemCode)
-    const isVL = Boolean(next.isVariableLength || mat?.isVariableLength)
-    const stockUnit = mat?.stockUnit || mat?.inventoryUnit || next.unit || '米'
-    if (isVL) {
+    const inv = resolveInventoryUnit(mat || next)
+    const pur = resolvePurchaseUnit(mat || next)
+    next.unit = inv
+    next.stockUnit = inv
+    // 固定换算入库不再走旧「按件填法」
+    next.inboundEntryMode = undefined
+    if (pur && inv && pur !== inv) {
+      next.purchaseUnit = pur
       next.isVariableLength = true
-      next.unit = stockUnit
-      next.stockUnit = stockUnit
-      next.purchaseUnit = mat?.purchaseUnit || next.purchaseUnit || '件'
-      next.barcodeType = mat?.barcodeType || next.barcodeType || '一批一码'
-      next.uomRelation = mat?.uomRelation || next.uomRelation
-      next.inboundMeasureMode = autoInboundMeasureMode(stockUnit, true)
-      next.inboundEntryMode = coerceInboundEntryMode(
-        next.inboundEntryMode || defaultInboundEntryMode(next.barcodeType),
-        next.barcodeType,
-      )
-      next.purchaseQty = next.purchaseQty || 1
-      next.dimUnit = next.dimUnit || DEFAULT_PLATE_DIM_UNIT
-      next.uniformValue = resolveLegacyUniformValue(next)
-      next.uniformLength = next.uniformLength ?? next.uniformDimLength ?? null
-      next.uniformWidth = next.uniformWidth ?? next.uniformDimWidth ?? null
-      next.totalValue = resolveLegacyTotalValue(next)
-      next.pieceValues = resolveLegacyPieceValues(next)
-      next.pieceDims = Array.isArray(next.pieceDims) ? [...next.pieceDims] : []
+      const rate = resolvePurchaseConvertRate(mat || {})
+      next.purchaseConvertRate = rate
+      if (!(Number(next.qty) > 0) && Number(next.purchaseQty) > 0 && rate) {
+        next.qty = purchaseQtyToStockQty(next.purchaseQty, rate)
+      }
+    } else {
+      next.isVariableLength = false
     }
     draft.value = reactive(next)
-    ensureMeasureModeOnDraft()
-    syncPieceDraftFromLine()
+    locationType.value = resolveInboundLocationType(next.warehouse)
     refreshPreviewStock()
   },
 )
 
-function syncPieceDraftFromLine() {
-  const line = draft.value
-  if (!line) {
-    pieceDraftList.value = []
-    pieceDimDraftList.value = []
-    piecePasteText.value = ''
-    piecePage.value = 1
-    return
-  }
-  const mode = coerceInboundEntryMode(
-    line.inboundEntryMode || defaultInboundEntryMode(line.barcodeType),
-    line.barcodeType,
-  )
-  const n = Number(line.purchaseQty) || 0
-  const areaBased = showAreaShortcut.value
-  if (mode === INBOUND_ENTRY_MODE.PIECE) {
-    if (areaBased) {
-      const src = Array.isArray(line.pieceDims) ? line.pieceDims : []
-      pieceDimDraftList.value = Array.from({ length: n }, (_, i) => ({
-        length: src[i]?.length ?? null,
-        width: src[i]?.width ?? null,
-      }))
-      pieceDraftList.value = []
-      piecePasteText.value = ''
-    } else {
-      const src = resolveLegacyPieceValues(line)
-      pieceDraftList.value = Array.from({ length: n }, (_, i) =>
-        src[i] != null ? Number(src[i]) : null,
-      )
-      pieceDimDraftList.value = []
-      pieceEditMode.value = preferredPieceEditMode(n)
-      syncPasteTextFromList()
-    }
-    piecePage.value = 1
-  } else {
-    pieceDraftList.value = []
-    pieceDimDraftList.value = []
-    piecePasteText.value = ''
-    piecePage.value = 1
-  }
-}
-
+/** 点收变更：有固定换算率则预填入库数量 */
 function onPurchaseQtyChange() {
-  syncPieceDraftFromLine()
-}
-
-function onEntryModeChange() {
-  syncPieceDraftFromLine()
-}
-
-function ensureMeasureModeOnDraft() {
-  const line = draft.value
-  if (!line || !isVariableLengthLine.value) return
-  line.inboundMeasureMode = autoInboundMeasureMode(stockUnitLabel.value, true)
-  if (showAreaShortcut.value && !line.dimUnit) {
-    line.dimUnit = DEFAULT_PLATE_DIM_UNIT
+  if (!draft.value) return
+  const rate = convertRate.value
+  if (rate != null && Number(draft.value.purchaseQty) > 0) {
+    draft.value.qty = purchaseQtyToStockQty(draft.value.purchaseQty, rate)
   }
-}
-
-function onPieceEditModeChange() {
-  if (pieceEditMode.value === 'paste') {
-    syncPasteTextFromList()
-  }
-}
-
-function applyPiecePaste() {
-  const n = pieceExpectedCount.value
-  if (!(n > 0)) {
-    message.warning(`请先填写点收数量（${purchaseUnitLabel.value}）`)
-    return
-  }
-  const parsed = parsePiecePasteText(piecePasteText.value)
-  if (!parsed.length) {
-    message.warning('未识别到有效数值，请检查粘贴内容')
-    return
-  }
-  if (parsed.length < n) {
-    message.warning(`共需 ${n} 个数值，当前仅识别到 ${parsed.length} 个`)
-    return
-  }
-  if (parsed.length > n) {
-    message.info(`识别到 ${parsed.length} 个，已取前 ${n} 个`)
-  }
-  pieceDraftList.value = parsed.slice(0, n)
-  syncPasteTextFromList()
-  message.success(`已应用 ${n} 条逐件数量`)
-}
-
-function fillEmptyPieces() {
-  const val = Number(pieceQuickFill.value)
-  if (!(val > 0)) {
-    message.warning('请先输入快捷填充值')
-    return
-  }
-  pieceDraftList.value = pieceDraftList.value.map((v) =>
-    Number.isFinite(Number(v)) && Number(v) > 0 ? v : val,
-  )
-}
-
-function fillAllPieces() {
-  const val = Number(pieceQuickFill.value)
-  if (!(val > 0)) {
-    message.warning('请先输入快捷填充值')
-    return
-  }
-  const n = pieceExpectedCount.value
-  pieceDraftList.value = Array.from({ length: n }, () => val)
-}
-
-function fillEmptyPieceDims() {
-  const length = Number(pieceQuickLength.value)
-  const width = Number(pieceQuickWidth.value)
-  if (!(length > 0) || !(width > 0)) {
-    message.warning('请先输入快捷长、宽')
-    return
-  }
-  pieceDimDraftList.value = pieceDimDraftList.value.map((d) =>
-    Number(d?.length) > 0 && Number(d?.width) > 0 ? d : { length, width },
-  )
-}
-
-function fillAllPieceDims() {
-  const length = Number(pieceQuickLength.value)
-  const width = Number(pieceQuickWidth.value)
-  if (!(length > 0) || !(width > 0)) {
-    message.warning('请先输入快捷长、宽')
-    return
-  }
-  const n = pieceExpectedCount.value
-  pieceDimDraftList.value = Array.from({ length: n }, () => ({ length, width }))
+  syncInboundLineTotalFromUnit(draft.value)
 }
 
 function refreshPreviewStock() {
@@ -958,77 +545,25 @@ function handleOk() {
     return
   }
   if (!draft.value.warehouse) {
-    message.warning('请选择入库仓库')
+    message.warning('请选择入库位置')
     return
   }
-  if (isVariableLengthLine.value) {
-    const mat = resolvedMaterial.value
-    const stockUnit = mat?.stockUnit || mat?.inventoryUnit || draft.value.unit || '米'
-    draft.value.isVariableLength = true
-    draft.value.unit = stockUnit
-    draft.value.purchaseUnit = mat?.purchaseUnit || draft.value.purchaseUnit || '件'
-    draft.value.barcodeType = mat?.barcodeType || draft.value.barcodeType || '一批一码'
-    draft.value.inboundEntryMode = coerceInboundEntryMode(
-      draft.value.inboundEntryMode || defaultInboundEntryMode(draft.value.barcodeType),
-      draft.value.barcodeType,
-    )
-    draft.value.uomRelation = mat?.uomRelation || draft.value.uomRelation
-    draft.value.stockUnit = stockUnit
-    draft.value.inboundMeasureMode = autoInboundMeasureMode(stockUnit, true)
-    draft.value.dimUnit = draft.value.dimUnit || DEFAULT_PLATE_DIM_UNIT
-
-    if (showAreaShortcut.value && draft.value.inboundEntryMode === INBOUND_ENTRY_MODE.UNIFORM) {
-      syncUniformAreaFromDims()
-    }
-
-    if (draft.value.inboundEntryMode === INBOUND_ENTRY_MODE.PIECE) {
-      if (showAreaShortcut.value) {
-        draft.value.pieceDims = pieceDimDraftList.value.map((d) => ({
-          length: Number(d?.length) || null,
-          width: Number(d?.width) || null,
-          unit: draft.value.dimUnit,
-        }))
-        draft.value.pieceValues = draft.value.pieceDims.map((d) =>
-          calcAreaSquareMeters(d.length, d.width, d.unit),
-        )
-      } else {
-        if (pieceEditMode.value === 'paste') {
-          const parsed = parsePiecePasteText(piecePasteText.value)
-          const n = Number(draft.value.purchaseQty) || 0
-          if (parsed.length !== n) {
-            message.warning(
-              `逐件数量须为 ${n} 条，当前粘贴识别到 ${parsed.length} 个，请先点击「应用粘贴内容」或改用逐条编辑`,
-            )
-            return
-          }
-          pieceDraftList.value = parsed
-        }
-        draft.value.pieceValues = pieceDraftList.value.map((v) => Number(v))
-        draft.value.pieceDims = undefined
-      }
-    }
-
-    const expanded = expandDualUnitInboundPieces(draft.value, stockUnit)
-    if (!expanded.ok) {
-      message.warning(expanded.message)
+  if (hasPurchaseAux.value) {
+    if (!(Number(draft.value.purchaseQty) > 0)) {
+      message.warning(`请填写点收数量（${purchaseUnitLabel.value}）`)
       return
     }
-    draft.value.inboundEntryMode = expanded.mode
-    draft.value.pieceValues = expanded.pieceValues
-    draft.value.pieceLengths = expanded.pieceValues
-    draft.value.pieceWeights = undefined
-    draft.value.qty = expanded.qty
-    draft.value.stockQty = expanded.qty
-    if (draft.value.inboundEntryMode === INBOUND_ENTRY_MODE.TOTAL) {
-      draft.value.totalValue = expanded.qty
-    }
-    if (draft.value.inboundEntryMode === INBOUND_ENTRY_MODE.UNIFORM && showAreaShortcut.value) {
-      draft.value.uniformValue = expanded.pieceValues[0]
-    }
-  } else if (draft.value.qty == null || Number(draft.value.qty) <= 0) {
-    message.warning('请输入入库数量')
+  }
+  if (!(Number(draft.value.qty) > 0)) {
+    message.warning(`请填写入库数量（${stockUnitLabel.value}）`)
     return
   }
+  // 固定换算行：清掉旧按件字段，避免落库脏数据
+  draft.value.inboundEntryMode = undefined
+  draft.value.pieceValues = undefined
+  draft.value.uniformValue = undefined
+  draft.value.totalValue = undefined
+
   if (hasSettleUnit(draft.value)) {
     const settleCheck = validateSettleEntry(draft.value)
     if (!settleCheck.ok) {
@@ -1045,112 +580,55 @@ function handleOk() {
 <style lang="less" scoped>
 @import './inventoryLineEditModal.less';
 
-.entry-mode-item {
-  margin-bottom: 12px;
-}
-
 .vl-tip {
-  margin-top: 6px;
+  margin-top: 4px;
   font-size: 12px;
+  line-height: 1.6;
   color: rgba(0, 0, 0, 0.45);
 }
 
-.preview-sum {
-  margin: 4px 0 12px;
+.qty-convert-tip {
+  margin: -4px 0 16px;
 }
 
-.piece-list {
+.manual-pick-inline {
+  margin-left: 8px;
+  color: #1677ff;
+  cursor: pointer;
+}
+
+.mode-switch {
   margin-bottom: 12px;
+}
+.mode-switch-label {
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.65);
+}
+.mode-switch-hint,
+.convert-tip {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 20px;
+  color: rgba(0, 0, 0, 0.45);
+}
+.convert-result-card {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 12px;
   padding: 10px 12px;
-  background: #fafafa;
+  background: #e7f2f0;
+  border: 1px solid #a9c6c2;
   border-radius: 6px;
 }
-
-.piece-list-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
+.convert-result-label {
+  color: rgba(0, 0, 0, 0.45);
   font-size: 13px;
+}
+.convert-result-value {
   color: rgba(0, 0, 0, 0.88);
-}
-
-.piece-progress {
-  font-size: 12px;
-  color: rgba(0, 0, 0, 0.45);
-}
-
-.piece-edit-mode {
-  margin-bottom: 10px;
-}
-
-.piece-paste-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 8px;
-}
-
-.piece-quick-fill {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.piece-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px 10px;
-  max-height: 280px;
-  overflow: auto;
-  padding-right: 4px;
-}
-
-.piece-cell {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-}
-
-.piece-idx {
-  width: 22px;
-  flex-shrink: 0;
-  font-size: 12px;
-  text-align: right;
-  color: rgba(0, 0, 0, 0.45);
-}
-
-.piece-dim-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 280px;
-  overflow: auto;
-  padding-right: 4px;
-}
-
-.piece-dim-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.dim-x {
-  color: rgba(0, 0, 0, 0.45);
-}
-
-.dim-area {
-  font-size: 12px;
-  color: rgba(0, 0, 0, 0.65);
-  white-space: nowrap;
-}
-
-.piece-pagination {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 10px;
+  font-size: 16px;
+  font-weight: 600;
 }
 </style>

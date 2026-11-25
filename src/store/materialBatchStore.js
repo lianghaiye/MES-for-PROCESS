@@ -6,7 +6,8 @@ import { buildProcessInventoryLots, PROCESS_TANKS } from '@/mock/processInventor
 const STORAGE_KEY = 'i-doms-material-batch-v1'
 const SEED_VERSION_KEY = 'i-doms-material-batch-seed-v'
 /** v4：演示批带检验结论，便于投料展示 */
-const CURRENT_SEED_VERSION = '5'
+/** v7：流程物料补 allowWorkshopStaging / allowRecycle；批次状态含车间暂存 */
+const CURRENT_SEED_VERSION = '7'
 
 export const PROCESS_ITEMS = [
   {
@@ -18,6 +19,8 @@ export const PROCESS_ITEMS = [
     kind: 'raw',
     isKeyMaterial: true,
     isAuxiliary: false,
+    allowWorkshopStaging: false,
+    allowRecycle: false,
   },
   {
     id: 'pi-solvent',
@@ -28,6 +31,8 @@ export const PROCESS_ITEMS = [
     kind: 'raw',
     isKeyMaterial: false,
     isAuxiliary: false,
+    allowWorkshopStaging: false,
+    allowRecycle: false,
   },
   {
     id: 'pi-alkyd-base',
@@ -38,6 +43,8 @@ export const PROCESS_ITEMS = [
     kind: 'fg',
     isKeyMaterial: true,
     isAuxiliary: false,
+    allowWorkshopStaging: true,
+    allowRecycle: false,
   },
   {
     id: 'pi-pigment',
@@ -48,6 +55,8 @@ export const PROCESS_ITEMS = [
     kind: 'raw',
     isKeyMaterial: true,
     isAuxiliary: false,
+    allowWorkshopStaging: false,
+    allowRecycle: false,
   },
   {
     id: 'pi-drier',
@@ -58,8 +67,19 @@ export const PROCESS_ITEMS = [
     kind: 'raw',
     isKeyMaterial: false,
     isAuxiliary: true,
+    allowWorkshopStaging: false,
+    allowRecycle: false,
   },
-  { id: 'pi-paint', code: 'FG-PAINT', name: '醇酸面漆', unit: 'kg', content: 0.55, kind: 'fg' },
+  {
+    id: 'pi-paint',
+    code: 'FG-PAINT',
+    name: '醇酸面漆',
+    unit: 'kg',
+    content: 0.55,
+    kind: 'fg',
+    allowWorkshopStaging: true,
+    allowRecycle: false,
+  },
   {
     id: 'pi-custom-paint',
     code: 'FG-PAINT-CUS',
@@ -67,9 +87,29 @@ export const PROCESS_ITEMS = [
     unit: 'kg',
     content: 0.5,
     kind: 'fg',
+    allowWorkshopStaging: true,
+    allowRecycle: false,
   },
-  { id: 'pi-residue', code: 'WS-RESIDUE', name: '蒸馏残渣', unit: 'kg', content: 1, kind: 'by' },
-  { id: 'pi-thinner', code: 'BP-THINNER', name: '回收稀料', unit: 'kg', content: 0.7, kind: 'by' },
+  {
+    id: 'pi-residue',
+    code: 'WS-RESIDUE',
+    name: '蒸馏残渣',
+    unit: 'kg',
+    content: 1,
+    kind: 'by',
+    allowWorkshopStaging: true,
+    allowRecycle: false,
+  },
+  {
+    id: 'pi-thinner',
+    code: 'BP-THINNER',
+    name: '回收稀料',
+    unit: 'kg',
+    content: 0.7,
+    kind: 'by',
+    allowWorkshopStaging: true,
+    allowRecycle: true,
+  },
   {
     id: 'pi-black-powder',
     code: 'RM-LI-BLACK',
@@ -180,15 +220,38 @@ export const PROCESS_ITEMS = [
   },
 ]
 
-/** 批次放行/库存状态。与化验单「检验结论」分开，避免都叫合格。 */
+/**
+ * 物料批次库存状态（内部）。
+ * 产出追溯界面主展示改为「处理状态 / 检单状态」；released 表示仓管已确认入库后的可用库存，不再叫「成品放行」。
+ */
 export const BATCH_STATUS_LABEL = {
   pending: '待检',
+  await_inbound: '待入库',
   await_decide: '待判定',
+  await_staging: '车间暂存',
   await_reuse: '待回用',
   await_reextract: '待再提',
-  released: '已放行',
-  rejected: '已拒收',
+  released: '已入库',
+  rejected: '已废弃',
   expired: '过期',
+}
+
+/** 流程物料默认：成品/副产默认可暂存；回收稀料类默认可回流 */
+function defaultItemFlags(item) {
+  const kind = String(item?.kind || '')
+  const seededStaging = item?.allowWorkshopStaging
+  const seededRecycle = item?.allowRecycle
+  return {
+    allowWorkshopStaging:
+      typeof seededStaging === 'boolean' ? seededStaging : kind === 'fg' || kind === 'by',
+    allowRecycle: typeof seededRecycle === 'boolean' ? seededRecycle : false,
+  }
+}
+
+export function getMaterialBatchByNo(batchNo) {
+  const no = String(batchNo || '').trim()
+  if (!no) return null
+  return materialBatchState.batches.find((row) => row.batchNo === no) || null
 }
 
 function today() {
@@ -205,6 +268,8 @@ export function normalizeStockLocation(row = {}) {
     capacity: Number(row.capacity) > 0 ? Number(row.capacity) : 0,
     equipmentId: String(row.equipmentId || '').trim(),
     code: String(row.code || '').trim(),
+    /** 仓管员/管理员，与仓库 managerName 同语义；入库单取仓管员时会读这里 */
+    managerName: String(row.managerName || '').trim(),
     /** mixed=混罐看液位；batch=保住批次身份 */
     stockMode:
       row.stockMode === 'mixed' || row.stockMode === 'batch'
@@ -213,6 +278,23 @@ export function normalizeStockLocation(row = {}) {
           ? 'batch'
           : 'mixed',
   }
+}
+
+/** 按名称或编码找库存位置（入库选储罐时 warehouse 字段存的是位置名）。 */
+export function findStockLocationByNameOrCode(nameOrCode) {
+  const key = String(nameOrCode || '').trim()
+  if (!key) return null
+  const upper = key.toUpperCase()
+  return (
+    materialBatchState.tanks.find((row) => String(row.name || '').trim() === key) ||
+    materialBatchState.tanks.find(
+      (row) =>
+        String(row.code || '')
+          .trim()
+          .toUpperCase() === upper,
+    ) ||
+    null
+  )
 }
 
 function seed() {
@@ -238,6 +320,8 @@ function seed() {
       }),
     ),
     movements: [],
+    /** 流程物料开关覆盖：{ [itemId]: { allowWorkshopStaging, allowRecycle } } */
+    itemFlags: {},
   }
 }
 
@@ -278,6 +362,7 @@ export const materialBatchState = reactive(
     ? {
         ...loaded,
         tanks: (loaded.tanks || []).map(normalizeStockLocation),
+        itemFlags: loaded.itemFlags && typeof loaded.itemFlags === 'object' ? loaded.itemFlags : {},
       }
     : seed(),
 )
@@ -298,12 +383,84 @@ function refreshExpiry() {
   })
 }
 
+/** 合并种子与本地覆盖后的流程物料开关 */
+export function getProcessItemFlags(itemId) {
+  const item = PROCESS_ITEMS.find((i) => i.id === itemId)
+  const base = defaultItemFlags(item || {})
+  const override = materialBatchState.itemFlags?.[itemId] || {}
+  return {
+    allowWorkshopStaging:
+      typeof override.allowWorkshopStaging === 'boolean'
+        ? override.allowWorkshopStaging
+        : base.allowWorkshopStaging,
+    allowRecycle:
+      typeof override.allowRecycle === 'boolean' ? override.allowRecycle : base.allowRecycle,
+  }
+}
+
+/** 优先读产品/物料主数据同编码字段，没有再回落流程物料开关 */
+function resolveMasterProcessFlags(itemId) {
+  const item = PROCESS_ITEMS.find((i) => i.id === itemId)
+  const code = String(item?.code || '').trim()
+  if (code) {
+    try {
+      const { findMasterItemByCode } = require('@/utils/stockAlertDisplay')
+      const hit = findMasterItemByCode(code)?.item
+      if (hit && typeof hit.allowWorkshopStaging === 'boolean') {
+        return {
+          allowWorkshopStaging: hit.allowWorkshopStaging,
+          allowRecycle:
+            typeof hit.allowRecycle === 'boolean'
+              ? hit.allowRecycle
+              : getProcessItemFlags(itemId).allowRecycle,
+        }
+      }
+      if (hit && typeof hit.allowRecycle === 'boolean') {
+        const flags = getProcessItemFlags(itemId)
+        return {
+          allowWorkshopStaging: flags.allowWorkshopStaging,
+          allowRecycle: hit.allowRecycle,
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return getProcessItemFlags(itemId)
+}
+
+export function isProcessItemAllowWorkshopStaging(itemId) {
+  return resolveMasterProcessFlags(itemId).allowWorkshopStaging
+}
+
+export function isProcessItemAllowRecycle(itemId) {
+  return resolveMasterProcessFlags(itemId).allowRecycle
+}
+
+/** 更新流程物料「允许车间暂存 / 允许回流」 */
+export function setProcessItemFlags(itemId, patch = {}) {
+  if (!itemId || !PROCESS_ITEMS.some((i) => i.id === itemId)) {
+    return { ok: false, message: '物料不存在' }
+  }
+  const prev = getProcessItemFlags(itemId)
+  materialBatchState.itemFlags[itemId] = {
+    allowWorkshopStaging:
+      typeof patch.allowWorkshopStaging === 'boolean'
+        ? patch.allowWorkshopStaging
+        : prev.allowWorkshopStaging,
+    allowRecycle: typeof patch.allowRecycle === 'boolean' ? patch.allowRecycle : prev.allowRecycle,
+  }
+  return { ok: true }
+}
+
 export function listProcessItems() {
-  return PROCESS_ITEMS
+  return PROCESS_ITEMS.map((item) => ({ ...item, ...getProcessItemFlags(item.id) }))
 }
 
 export function findProcessItem(id) {
-  return PROCESS_ITEMS.find((i) => i.id === id) || null
+  const item = PROCESS_ITEMS.find((i) => i.id === id)
+  if (!item) return null
+  return { ...item, ...getProcessItemFlags(item.id) }
 }
 
 export function listTanks() {
@@ -321,15 +478,18 @@ export function getStockLocationByEquipmentId(equipmentId) {
 }
 
 /**
- * 设备台账「储罐」同步库存位置：同码/已关联则更新，否则新建。
+ * 设备台账勾选「作为库存存放点」后同步库存位置：同码/已关联则更新，否则新建。
  * 罐容取公称容积；液位仍由罐内批次汇总，本函数不改结存。
  */
 export function upsertTankLocationFromEquipment(device) {
-  if (!device || String(device.category || '') !== '储罐') return null
+  // 与设备类型解耦：仅 asStockLocation(作为库存存放点) 为真时才同步
+  if (!device || !device.asStockLocation) return null
   const deviceId = String(device.id || '').trim()
   if (!deviceId) return null
   const code = String(device.code || '').trim()
   const capacity = Number(device.nominalCapacity) > 0 ? Number(device.nominalCapacity) : 0
+  // 库存责任人优先；未填时回落设备责任人，保证入罐单也能带出仓管员
+  const managerName = String(device.stockKeeperName || device.responsible || '').trim()
   let tank =
     materialBatchState.tanks.find((row) => row.equipmentId === deviceId) ||
     (device.inventoryLocationId
@@ -350,6 +510,7 @@ export function upsertTankLocationFromEquipment(device) {
       capacity: capacity || 1,
       equipmentId: deviceId,
       code,
+      managerName,
       stockMode: 'batch',
     })
     materialBatchState.tanks.push(tank)
@@ -363,6 +524,7 @@ export function upsertTankLocationFromEquipment(device) {
         capacity: capacity > 0 ? capacity : tank.capacity,
         equipmentId: deviceId,
         code: code || tank.code,
+        managerName,
         stockMode: tank.stockMode || 'batch',
       }),
     )
@@ -370,7 +532,7 @@ export function upsertTankLocationFromEquipment(device) {
   return tank
 }
 
-/** 设备不再是储罐时，只解除挂接，不删位置（罐内可能仍有批次）。 */
+/** 取消「作为库存存放点」时，只解除挂接，不删位置（罐内可能仍有批次）。 */
 export function detachTankLocationFromEquipment(equipmentId) {
   const tank = getStockLocationByEquipmentId(equipmentId)
   if (!tank) return null
@@ -413,6 +575,130 @@ export function getMaterialBatch(id) {
   return materialBatchState.batches.find((b) => b.id === id) || null
 }
 
+/**
+ * 待处置产出演示批次：按固定 id 幂等写入，覆盖待判定/车间暂存/待回用/待再提。
+ * @returns {Array<object>} 本次保证存在的批次行
+ */
+export function ensureDemoPendingDispositionBatches() {
+  const day = today()
+  const defs = [
+    {
+      id: 'mb-demo-decide-1',
+      batchNo: 'BO-DISPOSE-DECIDE-1',
+      itemId: 'pi-paint',
+      status: 'await_decide',
+      disposition: 'pending_decide',
+      qty: 120,
+      content: 0.55,
+      locationId: 'tank-paint',
+      sourceType: 'pending_decide',
+    },
+    {
+      // 硬门禁待判定：列表上「确认去向」应禁用，直到化验合格
+      id: 'mb-demo-decide-gate',
+      batchNo: 'BO-DISPOSE-DECIDE-GATE',
+      itemId: 'pi-alkyd-base',
+      status: 'await_decide',
+      disposition: 'pending_decide',
+      qty: 80,
+      content: 0.5,
+      locationId: 'tank-alkyd',
+      sourceType: 'pending_decide',
+    },
+    {
+      id: 'mb-demo-staging-a',
+      batchNo: 'BO-DISPOSE-STG-A',
+      itemId: 'pi-paint',
+      status: 'await_staging',
+      disposition: 'staging',
+      qty: 60,
+      content: 0.55,
+      locationId: 'tank-paint',
+      sourceType: 'staging',
+    },
+    {
+      // 同物料同含量、不同暂存位置 → 可与 A 勾选合并
+      id: 'mb-demo-staging-b',
+      batchNo: 'BO-DISPOSE-STG-B',
+      itemId: 'pi-paint',
+      status: 'await_staging',
+      disposition: 'staging',
+      qty: 40,
+      content: 0.55,
+      locationId: 'wh-licarbon',
+      sourceType: 'staging',
+    },
+    {
+      // 同物料不同含量 → 不能与 A/B 合并
+      id: 'mb-demo-staging-c',
+      batchNo: 'BO-DISPOSE-STG-C',
+      itemId: 'pi-paint',
+      status: 'await_staging',
+      disposition: 'staging',
+      qty: 30,
+      content: 0.5,
+      locationId: 'tank-paint',
+      sourceType: 'staging',
+    },
+    {
+      id: 'mb-demo-reuse-1',
+      batchNo: 'BO-DISPOSE-REUSE-1',
+      itemId: 'pi-thinner',
+      status: 'await_reuse',
+      disposition: 'reuse',
+      qty: 25,
+      content: 0.7,
+      locationId: 'tank-recycle',
+      sourceType: 'reuse',
+    },
+    {
+      id: 'mb-demo-reextract-1',
+      batchNo: 'BO-DISPOSE-REX-1',
+      itemId: 'pi-residue',
+      status: 'await_reextract',
+      disposition: 'reextract',
+      qty: 15,
+      content: 1,
+      locationId: 'yard-waste',
+      sourceType: 'reextract',
+    },
+  ]
+
+  const ensured = []
+  defs.forEach((def) => {
+    let row = materialBatchState.batches.find((b) => b.id === def.id)
+    if (!row) {
+      row = batchRow({
+        ...def,
+        unit: findProcessItem(def.itemId)?.unit || 'kg',
+        productionDate: day,
+        expiryDate: dayjs().add(180, 'day').format('YYYY-MM-DD'),
+        sourceId: 'bo-demo-dispose',
+        supplierBatchNo: '',
+        qcNo: '',
+        qcResult: '',
+        receivedAt: dayjs().format('YYYY-MM-DD HH:mm'),
+      })
+      materialBatchState.batches.unshift(row)
+    } else {
+      // 已存在则把演示状态/数量拉回，避免被本地操作改没后列表缺场景
+      Object.assign(row, {
+        status: def.status,
+        disposition: def.disposition,
+        qty: def.qty,
+        content: def.content,
+        locationId: def.locationId,
+        sourceType: def.sourceType,
+        sourceId: 'bo-demo-dispose',
+        itemId: def.itemId,
+        batchNo: def.batchNo,
+      })
+    }
+    ensured.push(row)
+  })
+  return ensured
+}
+
 export function listIssueableBatches(itemId) {
   const day = today()
   return listMaterialBatches()
@@ -436,7 +722,7 @@ function recycleBatchPassesAssayGate(batch) {
     const origin = getBatchOrder(batch.sourceId)
     const output = (origin?.outputs || []).find((row) => row.batchId === batch.id)
     if (!origin || !output) return true
-    assertSideOutputAssayAllowsUse(origin, output)
+    assertSideOutputAssayAllowsUse(origin, output, { action: '回流投料' })
     return true
   } catch {
     return false
@@ -467,12 +753,19 @@ export function listFeedableBatches(itemId, order, options = {}) {
         return b.id === reextractId && b.status === 'await_reextract'
       }
       if (source === 'recycle') {
-        return b.status === 'await_reuse' && recycleBatchPassesAssayGate(b)
+        // 待回用；或「允许回流」物料的车间暂存批
+        if (b.status === 'await_reuse') return recycleBatchPassesAssayGate(b)
+        if (b.status === 'await_staging' && isProcessItemAllowRecycle(b.itemId)) {
+          return recycleBatchPassesAssayGate(b)
+        }
+        return false
       }
       if (
         b.status === 'await_reuse' ||
         b.status === 'await_reextract' ||
-        b.status === 'await_decide'
+        b.status === 'await_decide' ||
+        b.status === 'await_staging' ||
+        b.status === 'await_inbound'
       ) {
         return false
       }
@@ -608,11 +901,22 @@ export function canConsumeBatchForFeed(batch, order, source) {
   if (
     batch.status === 'await_reuse' ||
     batch.status === 'await_reextract' ||
-    batch.status === 'await_decide'
+    batch.status === 'await_decide' ||
+    batch.status === 'await_inbound'
   ) {
     return false
   }
-  return isIssueAllowedBatch(batch, day)
+  if (!isIssueAllowedBatch(batch, day)) return false
+  // 流程产出：入库确认后还须过硬门禁检单（如有）
+  if (batch.sourceType && batch.sourceType !== 'purchase') {
+    try {
+      const { isProcessOutputBatchUsable } = require('@/store/batchInstructionStore')
+      return isProcessOutputBatchUsable(batch)
+    } catch {
+      return true
+    }
+  }
+  return true
 }
 
 export function consumeBatchQty(id, qty, movement, order, source) {

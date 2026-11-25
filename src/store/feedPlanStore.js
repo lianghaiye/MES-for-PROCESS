@@ -85,7 +85,7 @@ function ensurePlanNumbers(plans) {
 }
 
 const SEED_VERSION_KEY = 'i_doms_feed_plan_seed_v'
-const CURRENT_SEED_VERSION = '2'
+const CURRENT_SEED_VERSION = '3'
 
 function planSeedRow({
   id,
@@ -93,7 +93,7 @@ function planSeedRow({
   formula,
   periodType,
   period,
-  productionLineId,
+  workCenterId,
   targetQty,
   parentId,
   rootPlanNo,
@@ -110,7 +110,7 @@ function planSeedRow({
     ...period,
     formulaId: formula.id,
     itemId: formula.itemId,
-    productionLineId,
+    workCenterId: workCenterId || '',
     targetQty,
     parentId: parentId || '',
     source,
@@ -129,7 +129,7 @@ function planSeedRow({
   }
 }
 
-/** 示例计划：挂已有生效配方和产线。只补一次，不覆盖已有同编号或同配方同产线同期间的计划。 */
+/** 示例计划：挂已有生效配方和工作中心。只补一次，不覆盖已有同编号或同配方同工作中心同期间的计划。 */
 function seedPlans() {
   const paint = getFormula('formula-paint')
   const alkyd = getFormula('formula-alkyd')
@@ -149,12 +149,12 @@ function seedPlans() {
         formula: paint,
         periodType: FEED_PLAN_PERIOD.MONTH,
         period: month,
-        productionLineId: 'pl-fill-1',
+        workCenterId: 'wc-paint',
         targetQty: 1200,
         source: FEED_PLAN_SOURCE.MPS,
         sourceRef: 'MPS-2026-11',
         splitTo: FEED_PLAN_SPLIT.NONE,
-        remark: '灌装线本月面漆，尚未拆下级。',
+        remark: '配漆车间本月面漆，尚未拆下级。',
         createdAt: '2026-11-18 09:00',
       }),
     )
@@ -168,12 +168,12 @@ function seedPlans() {
         formula: alkyd,
         periodType: FEED_PLAN_PERIOD.MONTH,
         period: month,
-        productionLineId: 'pl-acid-1',
+        workCenterId: 'wc-acid-1',
         targetQty: 2000,
         source: FEED_PLAN_SOURCE.REPLENISH,
         sourceRef: 'RP-ALKYD-11',
         splitTo: FEED_PLAN_SPLIT.WEEK,
-        remark: '酸浸 1# 线树脂液，已拆到周。',
+        remark: '酸浸一线树脂液，已拆到周。',
         createdAt: '2026-11-18 09:10',
       }),
     )
@@ -187,7 +187,7 @@ function seedPlans() {
           formula: alkyd,
           periodType: FEED_PLAN_PERIOD.WEEK,
           period,
-          productionLineId: 'pl-acid-1',
+          workCenterId: 'wc-acid-1',
           targetQty: qtys[index],
           parentId: 'fp-seed-alkyd-month',
           rootPlanNo: parentNo,
@@ -207,7 +207,7 @@ function seedPlans() {
         formula: custom,
         periodType: FEED_PLAN_PERIOD.CUSTOM,
         period: customPeriod,
-        productionLineId: 'pl-fill-1',
+        workCenterId: 'wc-paint',
         targetQty: 60,
         source: FEED_PLAN_SOURCE.TRIAL,
         sourceRef: 'SY-2026-014',
@@ -225,7 +225,7 @@ function seedPlans() {
         formula: paint,
         periodType: FEED_PLAN_PERIOD.DAY,
         period: day,
-        productionLineId: 'pl-acid-2',
+        workCenterId: 'wc-acid-2',
         targetQty: 90,
         source: FEED_PLAN_SOURCE.SALES_ORDER,
         sourceRef: 'SO-202611-018',
@@ -238,15 +238,23 @@ function seedPlans() {
   return rows
 }
 
+function normalizePlanRow(row) {
+  if (!row || typeof row !== 'object') return row
+  const workCenterId = String(row.workCenterId || '').trim()
+  const next = { ...row, workCenterId }
+  delete next.productionLineId
+  return next
+}
+
 function mergeSeedPlans(list) {
-  const next = Array.isArray(list) ? [...list] : []
+  const next = (Array.isArray(list) ? list : []).map(normalizePlanRow)
   seedPlans().forEach((demo) => {
     const sameIdentity = next.some((row) => row.id === demo.id || row.planNo === demo.planNo)
     const sameSlot = next.some(
       (row) =>
         row.formulaId === demo.formulaId &&
         row.periodKey === demo.periodKey &&
-        String(row.productionLineId || '') === String(demo.productionLineId || ''),
+        String(row.workCenterId || '') === String(demo.workCenterId || ''),
     )
     if (sameIdentity || sameSlot) return
     if (demo.parentId && !next.some((row) => row.id === demo.parentId)) return
@@ -261,7 +269,7 @@ function load() {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
       const parsed = JSON.parse(raw)
-      list = ensurePlanNumbers(Array.isArray(parsed) ? parsed : [])
+      list = ensurePlanNumbers(Array.isArray(parsed) ? parsed : []).map(normalizePlanRow)
     }
   } catch {
     list = []
@@ -675,8 +683,8 @@ function assertParent(plan, parentId) {
   const parent = getFeedPlan(parentId)
   if (!parent) throw new Error('上级计划不存在')
   if (parent.formulaId !== plan.formulaId) throw new Error('上级计划须是同一张配方')
-  if (String(parent.productionLineId || '') !== String(plan.productionLineId || '')) {
-    throw new Error('上级计划须是同一条产线')
+  if (String(parent.workCenterId || '') !== String(plan.workCenterId || '')) {
+    throw new Error('上级计划须是同一工作中心')
   }
   if (parent.periodType !== parentPeriodType(plan.periodType)) {
     throw new Error(
@@ -701,19 +709,19 @@ export function saveFeedPlan(payload, id) {
   if (!formula || formula.status !== 'active') throw new Error('请选择生效配方')
   const targetQty = Number(payload.targetQty)
   if (!(targetQty > 0)) throw new Error('目标投料量须大于 0')
-  const productionLineId = String(payload.productionLineId || '').trim()
+  const workCenterId = String(payload.workCenterId || '').trim()
   const duplicated = feedPlanState.plans.find(
     (row) =>
       row.id !== id &&
       row.formulaId === formula.id &&
       row.periodKey === period.periodKey &&
-      String(row.productionLineId || '') === productionLineId,
+      String(row.workCenterId || '') === workCenterId,
   )
   if (duplicated) {
     throw new Error(
-      productionLineId
-        ? '这张配方在该产线、该期间已经有计划'
-        : '这张配方在该期间已经有未指定产线的计划',
+      workCenterId
+        ? '这张配方在该工作中心、该期间已经有计划'
+        : '这张配方在该期间已经有未指定工作中心的计划',
     )
   }
   const source = payload.source || FEED_PLAN_SOURCE.MPS
@@ -725,7 +733,7 @@ export function saveFeedPlan(payload, id) {
     ...period,
     formulaId: formula.id,
     itemId: formula.itemId,
-    productionLineId,
+    workCenterId,
     targetQty: roundNumber(targetQty, 3),
     parentId: payload.parentId || '',
     source,
@@ -840,7 +848,7 @@ export function splitFeedPlan(planId, splitTo, { replace = false } = {}) {
       (row) =>
         row.formulaId === parent.formulaId &&
         row.periodKey === period.periodKey &&
-        String(row.productionLineId || '') === String(parent.productionLineId || ''),
+        String(row.workCenterId || '') === String(parent.workCenterId || ''),
     )
     if (dup) return
     const row = {
@@ -849,7 +857,7 @@ export function splitFeedPlan(planId, splitTo, { replace = false } = {}) {
       ...period,
       formulaId: parent.formulaId,
       itemId: parent.itemId,
-      productionLineId: parent.productionLineId || '',
+      workCenterId: parent.workCenterId || '',
       targetQty: qtys[index],
       parentId: parent.id,
       source: parent.source || FEED_PLAN_SOURCE.MPS,
@@ -941,7 +949,7 @@ export function planFeedCoverage(planId) {
 /** 在本档计划上按计划投料量生成批次指令。未传数量时按剩余目标和基准批量拆分。 */
 export function executeFeedPlan(
   planId,
-  { qtys, ceil = false, actor, productionLineId, batchNos, remark } = {},
+  { qtys, ceil = false, actor, workCenterId, batchNos, remark } = {},
 ) {
   const plan = getFeedPlan(planId)
   if (!plan) throw new Error('计划不存在')
@@ -962,14 +970,18 @@ export function executeFeedPlan(
     : splitPlanFeedQty(coverage.remaining, formula.baseBatchQty, { ceil }).map((row) => row.qty)
   if (!rows.length) throw new Error('剩余目标投料量已用完')
   const who = actor || currentOperator()
-  const lineId =
-    productionLineId === undefined ? plan.productionLineId || '' : productionLineId || ''
+  const lockedWorkCenterId = String(plan.workCenterId || '').trim()
+  const centerId = lockedWorkCenterId
+    ? lockedWorkCenterId
+    : workCenterId === undefined
+      ? ''
+      : String(workCenterId || '').trim()
   const remarkText = String(remark || '').trim()
   const created = rows.map((qty, index) =>
     createTankChargeFromPlan({
       formulaId: plan.formulaId,
       feedPlanId: plan.id,
-      productionLineId: lineId,
+      workCenterId: centerId,
       sourceLabel: planSourceLabel(plan),
       planStart: plan.start,
       planEnd: plan.end,

@@ -146,6 +146,9 @@
                   </span>
                   <span v-else>—</span>
                 </template>
+                <template v-else-if="column.key === 'content'">
+                  {{ formatOutboundLineContentText(line) }}
+                </template>
                 <template v-else-if="column.key === 'barcodeType'">
                   {{ line.barcodeType || '—' }}
                 </template>
@@ -710,6 +713,7 @@ import { outboundDetailLineColumns, filterOutboundLineColumns } from '@/utils/ou
 import {
   enrichOutboundLine,
   formatOutboundIssuedBatchText,
+  formatOutboundLineContentText,
   normalizePieceSerialNos,
   resolveOutboundStockUnit,
 } from '@/utils/outboundLineHelpers'

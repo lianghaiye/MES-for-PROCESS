@@ -521,7 +521,7 @@ const routes = [
         path: 'planning/shift-energy-report',
         name: 'planning-shift-energy-report',
         component: () => import('@/views/planning/ShiftEnergyReportView.vue'),
-        meta: { title: '交班能耗填报' },
+        meta: { title: '班组交班' },
       },
       {
         path: 'planning/kit-supply',
@@ -1436,6 +1436,12 @@ const routes = [
         name: 'basic-config-company-profile',
         component: () => import('@/views/basic-config/CompanyProfileView.vue'),
         meta: { title: '企业信息' },
+      },
+      {
+        path: 'basic-config/work-centers',
+        name: 'basic-config-work-centers',
+        component: () => import('@/views/basic-config/WorkCenterView.vue'),
+        meta: { title: '工作中心' },
       },
       {
         path: 'basic-config/employee-groups',

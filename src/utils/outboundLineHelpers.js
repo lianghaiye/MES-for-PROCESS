@@ -2,7 +2,9 @@ import { createOutboundLine } from '@/mock/outboundOrders'
 import { getOwnActiveBomForItem } from '@/store/productBomStore'
 import { materialInfoState } from '@/store/materialInfoStore'
 import { getStockQty, stockState } from '@/store/stockStore'
-import { listBatches, sumDedicatedQty } from '@/store/stockBatchStore'
+import { getBatchById, listBatches, sumDedicatedQty } from '@/store/stockBatchStore'
+import { formatContentPctText } from '@/utils/batchContent'
+import { getLineBatchAllocations } from '@/utils/outboundBatchAllocate'
 import {
   getSoftAllocatedQtyByItemCode,
   salesStockAllocationState,
@@ -102,6 +104,33 @@ export function formatOutboundIssuedBatchText(line = {}) {
       .join('；')
   }
   return line.issuedBatchNo || line.pickedBatchNo || line.barcodeBatchNo || ''
+}
+
+/**
+ * 出库明细有效含量（只读带出）。
+ * @param {object} line
+ * @param {Array<{batchId?: string}>} [allocations] 预览用分配（自动扣批预览时可传入）
+ */
+export function formatOutboundLineContentText(line = {}, allocations) {
+  const list =
+    Array.isArray(allocations) && allocations.length ? allocations : getLineBatchAllocations(line)
+  const texts = []
+  const seen = new Set()
+  list.forEach((a) => {
+    const batch = a?.batchId ? getBatchById(a.batchId) : null
+    const raw = batch?.attrs?.content ?? batch?.content
+    const text = formatContentPctText(raw)
+    if (text !== '—' && !seen.has(text)) {
+      seen.add(text)
+      texts.push(text)
+    }
+  })
+  if (texts.length) return texts.join('、')
+  if (line.batchAttrs?.content != null && line.batchAttrs?.content !== '') {
+    return formatContentPctText(line.batchAttrs.content)
+  }
+  if (line.content != null && line.content !== '') return formatContentPctText(line.content)
+  return '—'
 }
 
 export function calcLineTotalPrice(line = {}) {

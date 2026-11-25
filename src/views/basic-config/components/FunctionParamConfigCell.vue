@@ -32,6 +32,35 @@
     </a-radio-group>
 
     <a-radio-group
+      v-else-if="record.key === 'outboundIssueRule'"
+      :value="outboundIssueRule"
+      @change="(e) => onOutboundIssueRuleChange(e.target.value)"
+    >
+      <a-radio
+        v-for="option in OUTBOUND_ISSUE_RULE_OPTIONS"
+        :key="option.value"
+        :value="option.value"
+      >
+        {{ option.label }}
+      </a-radio>
+    </a-radio-group>
+
+    <a-radio-group
+      v-else-if="record.key === 'workshopStagingMergeContentMode'"
+      :value="workshopStagingMergeContentMode"
+      @change="(e) => onWorkshopStagingMergeContentModeChange(e.target.value)"
+    >
+      <a-radio
+        v-for="option in WORKSHOP_STAGING_MERGE_CONTENT_OPTIONS"
+        :key="option.value"
+        :value="option.value"
+        :disabled="option.disabled"
+      >
+        {{ option.label }}
+      </a-radio>
+    </a-radio-group>
+
+    <a-radio-group
       v-else-if="record.key === 'processRouteMode'"
       :value="processRouteMode"
       @change="(e) => onProcessRouteModeChange(e.target.value)"
@@ -79,6 +108,14 @@
       checked-children="开"
       un-checked-children="关"
       @change="onEnableSalesOrderDiscountChange"
+    />
+
+    <a-switch
+      v-else-if="record.key === 'enableSequentialBatchStep'"
+      :checked="enableSequentialBatchStep"
+      checked-children="开"
+      un-checked-children="关"
+      @change="onEnableSequentialBatchStepChange"
     />
 
     <a-radio-group
@@ -173,6 +210,12 @@ import {
   setAutoApproveDocs,
   setInventoryDeductMode,
   getInventoryDeductMode,
+  OUTBOUND_ISSUE_RULE_OPTIONS,
+  getOutboundIssueRule,
+  setOutboundIssueRule,
+  WORKSHOP_STAGING_MERGE_CONTENT_OPTIONS,
+  getWorkshopStagingMergeContentMode,
+  setWorkshopStagingMergeContentMode,
   PROCESS_ROUTE_MODE_OPTIONS,
   PROCESS_FEED_DEDUCT_OPTIONS,
   getProcessRouteMode,
@@ -183,6 +226,8 @@ import {
   setProcessFeedDeductModeRecycle,
   isSalesOrderDiscountEnabled,
   setEnableSalesOrderDiscount,
+  isSequentialBatchStepEnabled,
+  setEnableSequentialBatchStep,
   SALES_ORDER_STOCK_FULFILLMENT_DEFAULT_OPTIONS,
   getSalesOrderStockFulfillmentDefault,
   setSalesOrderStockFulfillmentDefault,
@@ -202,6 +247,14 @@ defineProps({
 
 const salaryPushMode = computed(() => functionParamState.params.salaryPushMode)
 const inventoryDeductMode = computed(() => getInventoryDeductMode())
+const outboundIssueRule = computed(() => {
+  void functionParamState.params.outboundIssueRule
+  return getOutboundIssueRule()
+})
+const workshopStagingMergeContentMode = computed(() => {
+  void functionParamState.params.workshopStagingMergeContentMode
+  return getWorkshopStagingMergeContentMode()
+})
 const processRouteMode = computed(() => {
   void functionParamState.params.processRouteMode
   return getProcessRouteMode()
@@ -215,6 +268,10 @@ const processFeedDeductModeRecycle = computed(() => {
   return getProcessFeedDeductModeRecycle()
 })
 const enableSalesOrderDiscount = computed(() => isSalesOrderDiscountEnabled())
+const enableSequentialBatchStep = computed(() => {
+  void functionParamState.params.enableSequentialBatchStep
+  return isSequentialBatchStepEnabled()
+})
 const salesOrderStockFulfillmentDefault = computed(() => getSalesOrderStockFulfillmentDefault())
 const paymentLinkMode = computed(() => getPaymentLinkMode())
 const transferRequireInboundConfirm = computed(() => isTransferRequireInboundConfirm())
@@ -248,6 +305,12 @@ function onAutoApproveDocsChange(keys) {
 function onInventoryDeductChange(mode) {
   toastSave(setInventoryDeductMode(mode))
 }
+function onOutboundIssueRuleChange(mode) {
+  toastSave(setOutboundIssueRule(mode), '已更新出库规则')
+}
+function onWorkshopStagingMergeContentModeChange(mode) {
+  toastSave(setWorkshopStagingMergeContentMode(mode), '已更新车间暂存合并含量规则')
+}
 function onProcessRouteModeChange(value) {
   toastSave(setProcessRouteMode(value), '已更新工艺路线模式')
 }
@@ -261,6 +324,12 @@ function onEnableSalesOrderDiscountChange(checked) {
   toastSave(
     setEnableSalesOrderDiscount(checked),
     checked ? '已开启销售订单价格折扣' : '已关闭销售订单价格折扣',
+  )
+}
+function onEnableSequentialBatchStepChange(checked) {
+  toastSave(
+    setEnableSequentialBatchStep(checked),
+    checked ? '已开启批次阶段时序确认' : '已关闭批次阶段时序确认',
   )
 }
 function onSalesOrderStockFulfillmentDefaultChange(mode) {

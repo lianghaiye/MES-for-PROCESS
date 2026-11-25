@@ -504,6 +504,30 @@
                   />
                 </a-form-item>
               </a-col>
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <span>允许车间暂存</span>
+                    <a-tooltip
+                      title="开=产出登记可选「进暂存池」，攒料后再合并入库；关则不能进暂存。"
+                    >
+                      <InfoCircleOutlined class="info-icon" />
+                    </a-tooltip>
+                  </template>
+                  <a-switch v-model:checked="form.allowWorkshopStaging" :disabled="viewOnly" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <span>允许回流</span>
+                    <a-tooltip title="开=车间暂存批可作为回流料投料；关则暂存批不能回流。">
+                      <InfoCircleOutlined class="info-icon" />
+                    </a-tooltip>
+                  </template>
+                  <a-switch v-model:checked="form.allowRecycle" :disabled="viewOnly" />
+                </a-form-item>
+              </a-col>
             </a-row>
           </a-form>
         </div>
@@ -1098,6 +1122,8 @@ const form = reactive({
   matchingRequirements: '',
   outputTaxRate: undefined,
   inputTaxRate: undefined,
+  allowWorkshopStaging: false,
+  allowRecycle: false,
   laborEnabled: false,
   laborRows: [],
   production: createDefaultProductProduction(),
@@ -1145,6 +1171,8 @@ function resetForm() {
   form.matchingRequirements = ''
   form.outputTaxRate = undefined
   form.inputTaxRate = undefined
+  form.allowWorkshopStaging = false
+  form.allowRecycle = false
   form.laborEnabled = false
   form.laborRows = []
   form.production = createDefaultProductProduction()
@@ -1499,6 +1527,8 @@ function buildPayload() {
     remark: form.matchingRequirements?.trim() || '',
     outputTaxRate: form.outputTaxRate,
     inputTaxRate: form.inputTaxRate,
+    allowWorkshopStaging: Boolean(form.allowWorkshopStaging),
+    allowRecycle: Boolean(form.allowRecycle),
     expiryAlertEnabled: form.alert.expiryAlertEnabled,
     laborEnabled: form.laborEnabled,
     laborRows: form.laborEnabled ? JSON.parse(JSON.stringify(form.laborRows)) : [],

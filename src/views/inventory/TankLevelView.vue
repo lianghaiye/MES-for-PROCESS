@@ -3,12 +3,15 @@
     <div class="table-card">
       <div class="toolbar">
         <span
-          >只看运行液位与罐间转移，不当主数据入口。储罐主数据在设备台账（类别「储罐」）维护并自动挂接位置；料仓/堆场/库房不在这里。</span
+          >只看运行液位与罐间转移，不当主数据入口。库存存放点在设备台账勾选「作为库存存放点」后自动挂接；料仓/堆场/库房不在这里。</span
         >
       </div>
       <a-table :columns="columns" :data-source="rows" row-key="id" size="small" :pagination="false">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'equipment'">{{ record.equipmentLabel }}</template>
+          <template v-else-if="column.key === 'managerName'">{{
+            record.managerName || '—'
+          }}</template>
           <template v-else-if="column.key === 'level'"
             >{{ record.level }} / {{ record.capacity }}</template
           >
@@ -63,6 +66,7 @@ const columns = [
   { title: '储罐', dataIndex: 'name', width: 160 },
   { title: '编码', dataIndex: 'code', width: 120 },
   { title: '关联设备', key: 'equipment', width: 180, ellipsis: true },
+  { title: '仓管员', key: 'managerName', width: 100 },
   { title: '液位 / 罐容', key: 'level', align: 'right', width: 160 },
   { title: '操作', key: 'action', width: 120 },
 ]

@@ -51,7 +51,7 @@ export function calcTheoreticalFeed(line, baseBatchQty) {
     : Number(baseBatchQty) * Number(ratio) * (1 + loss)
   if (line.convertByContent) {
     const content = Number(line.content)
-    if (!(content > 0)) return { ok: false, message: '按含量折算时含量必须大于 0' }
+    if (!(content > 0)) return { ok: false, message: '按有效含量折算时有效含量必须大于 0' }
     qty /= content
   }
   if (!(qty > 0)) return { ok: false, message: '理论投料必须大于 0' }
@@ -142,4 +142,84 @@ export function compareExpiry(a, b) {
   if (a?.expiryDate) return -1
   if (b?.expiryDate) return 1
   return 0
+}
+
+/** 含量统一成 0~1 小数；无效返回 null（界面百分比 >1 时除以 100）。 */
+export function contentAsFraction(value) {
+  if (value == null || value === '') return null
+  const n = Number(value)
+  if (!Number.isFinite(n) || !(n > 0)) return null
+  return Math.abs(n) <= 1 ? n : n / 100
+}
+
+/**
+ * 按批次含量反算建议实投量。
+ * 按含量折算：建议实投 = (剩余理论量 × 配方假定含量) ÷ 批次含量，且不超过库存；
+ * 不折算：建议实投 = min(剩余理论量, 库存)。理论量本身不改。
+ */
+export function suggestActualFeedQty({
+  planRemainQty,
+  convertByContent,
+  assumedContent,
+  batchContent,
+  availableQty,
+}) {
+  const remain = round3(Math.max(0, Number(planRemainQty) || 0))
+  if (!(remain > 0)) return null
+  const available = Number(availableQty)
+  const hasStock = Number.isFinite(available) && available >= 0
+  const assumed = contentAsFraction(assumedContent)
+  const batchC = contentAsFraction(batchContent)
+  if (convertByContent && assumed > 0 && batchC > 0) {
+    const suggested = round3((remain * assumed) / batchC)
+    if (hasStock) return round3(Math.min(suggested, available))
+    return suggested
+  }
+  if (hasStock) return round3(Math.min(remain, available))
+  return remain
+}
+
+/**
+ * 多批分摊建议实投：折算物料按「有效量」FIFO；否则按毛重库存 FIFO。
+ * @returns {{ batch: object, qty: number|null }[]}
+ */
+export function allocateSuggestedFeedQtys({
+  planRemainQty,
+  convertByContent,
+  assumedContent,
+  batches,
+}) {
+  const remain = round3(Math.max(0, Number(planRemainQty) || 0))
+  const list = Array.isArray(batches) ? batches : []
+  if (!list.length) return []
+  if (!(remain > 0)) return list.map((batch) => ({ batch, qty: null }))
+
+  const assumed = contentAsFraction(assumedContent)
+  // 按含量：先算本物料还要多少「有效量」，再按各批含量反算毛重
+  if (convertByContent && assumed > 0) {
+    let leftEff = round3(remain * assumed)
+    return list.map((batch) => {
+      const content = contentAsFraction(batch?.content)
+      const available = Number(batch?.qty) || 0
+      if (!(leftEff > 1e-9) || !(content > 0) || !(available > 0)) {
+        return { batch, qty: null }
+      }
+      const maxEff = round3(available * content)
+      const takeEff = round3(Math.min(leftEff, maxEff))
+      const qty = round3(takeEff / content)
+      leftEff = round3(leftEff - takeEff)
+      return { batch, qty: qty > 0 ? qty : null }
+    })
+  }
+
+  // 不折算：按剩余理论毛重与库存顺序分摊
+  let left = remain
+  return list.map((batch) => {
+    if (!(left > 1e-9)) return { batch, qty: null }
+    const available = Number(batch?.qty) || 0
+    const take = round3(Math.min(left, available))
+    if (!(take > 0)) return { batch, qty: null }
+    left = round3(left - take)
+    return { batch, qty: take }
+  })
 }

@@ -50,7 +50,7 @@
               :options="locationOptions"
             />
           </a-form-item>
-          <a-form-item label="含量">
+          <a-form-item label="有效含量">
             <a-input
               v-model:value="filters.content"
               allow-clear
@@ -295,7 +295,7 @@ const columns = computed(() => {
     { title: '批次号', dataIndex: 'batchNo', width: 150, ellipsis: true },
     { title: '所在位置', key: 'location', width: 140, ellipsis: true },
     { title: '剩余', key: 'qty', width: 120, align: 'right' },
-    { title: '含量', key: 'content', width: 90, align: 'right' },
+    { title: '有效含量', key: 'content', width: 90, align: 'right' },
     { title: '检验结论', key: 'qcResult', width: 100 },
     { title: '效期', key: 'expiryDate', width: 120 },
     { title: '供应商', key: 'supplier', width: 140, ellipsis: true },

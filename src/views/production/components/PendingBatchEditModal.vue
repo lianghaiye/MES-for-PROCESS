@@ -32,15 +32,16 @@
           </a-form-item>
         </a-col>
         <a-col :span="24">
-          <a-form-item label="产线">
+          <a-form-item label="工作中心">
             <a-select
-              v-model:value="productionLineId"
+              v-model:value="workCenterId"
               size="small"
               allow-clear
               show-search
               option-filter-prop="label"
-              placeholder="可空，下发前再指定"
-              :options="lineOptions"
+              placeholder="可不选"
+              :options="workCenterOptions"
+              :disabled="workCenterLocked"
               style="width: 100%"
             />
           </a-form-item>
@@ -52,7 +53,9 @@
         </a-col>
       </a-row>
     </a-form>
-    <p class="field-hint">配方和数量沿用生成时的快照。要改这两项，请删除后重新生成。</p>
+    <p class="field-hint">
+      配方沿用生成时的快照。计划已指定工作中心时不可改；下达数量请在「指定下发」时调整，要改配方请删除后重新生成。
+    </p>
     <template #footer>
       <a-button @click="close">取消</a-button>
       <a-button type="primary" @click="submit">保存</a-button>
@@ -65,7 +68,12 @@ import { computed, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { itemLabel } from '@/store/processFormulaStore'
 import { getBatchOrder, isTankChargeOrder, updatePendingOrder } from '@/store/batchInstructionStore'
-import { listEnabledProductionLineOptions, productionLineState } from '@/store/productionLineStore'
+import { getFeedPlan } from '@/store/feedPlanStore'
+import {
+  formatWorkCenterLabel,
+  listEnabledWorkCenters,
+  workCenterState,
+} from '@/store/workCenterStore'
 import { formatQty } from '@/utils/numberFormat'
 
 const props = defineProps({
@@ -75,13 +83,30 @@ const props = defineProps({
 const emit = defineEmits(['update:open', 'saved'])
 
 const batchNo = ref('')
-const productionLineId = ref(undefined)
+const workCenterId = ref(undefined)
 const remark = ref('')
 
 const order = computed(() => (props.orderId ? getBatchOrder(props.orderId) : null))
-const lineOptions = computed(() => {
-  void productionLineState.lines
-  return listEnabledProductionLineOptions()
+const planWorkCenterId = computed(() => {
+  const planId = order.value?.feedPlanId
+  if (!planId) return ''
+  return String(getFeedPlan(planId)?.workCenterId || '').trim()
+})
+const workCenterLocked = computed(() => Boolean(planWorkCenterId.value))
+const workCenterOptions = computed(() => {
+  void workCenterState.centers
+  const rows = listEnabledWorkCenters().map((row) => ({
+    value: row.id,
+    label: `${row.code || ''} ${row.name || ''}`.trim(),
+  }))
+  const lockedId = String(workCenterId.value || planWorkCenterId.value || '').trim()
+  if (lockedId && !rows.some((row) => row.value === lockedId)) {
+    rows.unshift({
+      value: lockedId,
+      label: formatWorkCenterLabel(lockedId),
+    })
+  }
+  return rows
 })
 const productText = computed(() => itemLabel(order.value?.itemId) || '—')
 const formulaText = computed(() => {
@@ -99,7 +124,7 @@ watch(
   ([open]) => {
     if (!open) return
     batchNo.value = order.value?.batchNo || ''
-    productionLineId.value = order.value?.productionLineId || undefined
+    workCenterId.value = order.value?.workCenterId || undefined
     remark.value = order.value?.remark || ''
   },
 )
@@ -112,7 +137,7 @@ function submit() {
   try {
     updatePendingOrder(props.orderId, {
       batchNo: batchNo.value,
-      productionLineId: productionLineId.value,
+      workCenterId: workCenterLocked.value ? planWorkCenterId.value : workCenterId.value,
       remark: remark.value,
     })
     message.success('已保存')
@@ -137,10 +162,16 @@ function submit() {
   }
 }
 
+.section-title {
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2329;
+}
+
 .field-hint {
   margin: 8px 0 0;
-  color: #4e5969;
-  font-size: 13px;
-  line-height: 20px;
+  color: #86909c;
+  font-size: 12px;
 }
 </style>

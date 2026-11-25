@@ -50,6 +50,20 @@
               <a-input :value="baseText" size="small" disabled />
             </a-form-item>
           </a-col>
+          <a-col :span="8">
+            <a-form-item label="工作中心">
+              <a-select
+                v-model:value="workCenterId"
+                size="small"
+                allow-clear
+                show-search
+                option-filter-prop="label"
+                placeholder="可不选"
+                :options="workCenterOptions"
+                :disabled="workCenterLocked"
+              />
+            </a-form-item>
+          </a-col>
           <a-col v-if="feedPlanId" :span="8">
             <a-form-item label="计划剩余">
               <a-input :value="planRemainingText" size="small" disabled />
@@ -201,6 +215,11 @@ import {
   mainRawMaterialIds,
   planFeedCoverage,
 } from '@/store/feedPlanStore'
+import {
+  formatWorkCenterLabel,
+  listEnabledWorkCenters,
+  workCenterState,
+} from '@/store/workCenterStore'
 import { FEED_PLAN_PERIOD_LABEL } from '@/utils/feedPlanPeriod'
 import MasterItemSelect from '@/views/product-process/components/MasterItemSelect.vue'
 import FeedPlanSearchSelect from '@/views/planning/components/FeedPlanSearchSelect.vue'
@@ -222,6 +241,7 @@ const splitMode = ref('by_count')
 const ceil = ref(false)
 const sourceLabel = ref('')
 const remark = ref('')
+const workCenterId = ref(undefined)
 const saving = ref(false)
 const preview = ref([])
 let previewKey = 0
@@ -244,6 +264,24 @@ const formulaOptions = computed(() => {
 })
 const selectedFormula = computed(() => (formulaId.value ? getFormula(formulaId.value) : null))
 const selectedPlan = computed(() => (feedPlanId.value ? getFeedPlan(feedPlanId.value) : null))
+const workCenterLocked = computed(() =>
+  Boolean(String(selectedPlan.value?.workCenterId || '').trim()),
+)
+const workCenterOptions = computed(() => {
+  void workCenterState.centers
+  const rows = listEnabledWorkCenters().map((row) => ({
+    value: row.id,
+    label: `${row.code || ''} ${row.name || ''}`.trim(),
+  }))
+  const lockedId = String(selectedPlan.value?.workCenterId || '').trim()
+  if (lockedId && !rows.some((row) => row.value === lockedId)) {
+    rows.unshift({
+      value: lockedId,
+      label: formatWorkCenterLabel(lockedId),
+    })
+  }
+  return rows
+})
 const planCoverage = computed(() =>
   feedPlanId.value ? planFeedCoverage(feedPlanId.value) : { remaining: 0 },
 )
@@ -318,6 +356,7 @@ function resetForm() {
   ceil.value = false
   sourceLabel.value = props.presetSource || ''
   remark.value = ''
+  workCenterId.value = undefined
   preview.value = []
 }
 
@@ -338,12 +377,14 @@ function noteOf(qty) {
 function onPlanChange() {
   const plan = selectedPlan.value
   if (!plan) {
+    workCenterId.value = undefined
     refreshPreview()
     return
   }
   const formula = getFormula(plan.formulaId)
   itemId.value = plan.itemId || formula?.itemId
   formulaId.value = plan.formulaId
+  workCenterId.value = plan.workCenterId || undefined
   const remaining = planFeedCoverage(plan.id).remaining
   if (remaining > 0) demandQty.value = remaining
   const typeLabel = FEED_PLAN_PERIOD_LABEL[plan.periodType] || '计划'
@@ -466,7 +507,7 @@ function submit() {
       created = executeFeedPlan(feedPlanId.value, {
         qtys,
         batchNos,
-        productionLineId: '',
+        workCenterId: workCenterId.value || '',
         ceil: splitMode.value === 'by_qty' ? ceil.value : false,
         remark: remarkText,
       })
@@ -474,7 +515,7 @@ function submit() {
       created = preview.value.map((row, index) =>
         createTankChargeFromPlan({
           formulaId: formulaId.value,
-          productionLineId: '',
+          workCenterId: workCenterId.value || '',
           sourceLabel: sourceLabel.value || '手工需求',
           plannedQty: row.qty,
           seq: index + 1,

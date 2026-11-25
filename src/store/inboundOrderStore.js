@@ -1,6 +1,7 @@
 import { reactive, watch } from 'vue'
 import dayjs from 'dayjs'
 import { createInboundLine, createInboundOrder } from '@/mock/inboundOrders'
+import { buildProcessDemoInboundOrders } from '@/mock/processIoDemoSeed'
 import {
   purchaseOrderState,
   syncPurchaseOrderInboundStatus,
@@ -19,11 +20,7 @@ import {
 import { applyInboundBatchesFromRoots } from '@/store/stockBatchStore'
 import { buildLineUomConvert } from '@/utils/batchUomConvert'
 import { generateCodeByBusiness } from '@/store/codingRuleStore'
-import {
-  isOneItemOneCodeBarcode,
-  validateVariableLengthInboundLine,
-  sumPieceValues,
-} from '@/utils/variableLengthMaterial'
+import { isOneItemOneCodeBarcode } from '@/utils/variableLengthMaterial'
 import { materialInfoState } from '@/store/materialInfoStore'
 import {
   findSalesOrderByNoOrId,
@@ -142,6 +139,27 @@ export const inboundOrderState = reactive({
   orders: initOrders(),
 })
 
+/**
+ * 流程演示入库单：按固定 id 幂等写入/刷新字段，覆盖待入/部分/已入/已拒等场景。
+ * @returns {number} 本次写入条数
+ */
+export function ensureDemoProcessInboundOrders() {
+  const seeds = buildProcessDemoInboundOrders().map(normalizeLegacyOrder)
+  let count = 0
+  seeds.forEach((seed) => {
+    const idx = inboundOrderState.orders.findIndex((o) => o.id === seed.id)
+    if (idx >= 0) {
+      inboundOrderState.orders[idx] = { ...inboundOrderState.orders[idx], ...seed }
+    } else {
+      inboundOrderState.orders.unshift(seed)
+    }
+    count += 1
+  })
+  return count
+}
+
+ensureDemoProcessInboundOrders()
+
 persist()
 
 watch(
@@ -252,9 +270,20 @@ export function getInboundOrdersBySalesOrder(salesOrder, extra = {}) {
   return result
 }
 
+/**
+ * 按「仓库名或库存位置名」解析仓管员。
+ * 先查仓库主数据 managerName，再查库存位置（储罐/料仓）managerName。
+ */
 export function resolveWarehouseKeeper(warehouseName) {
-  const wh = warehouseState.warehouses.find((w) => w.name === warehouseName)
-  return wh?.managerName || ''
+  const name = String(warehouseName || '').trim()
+  if (!name) return ''
+  const wh = warehouseState.warehouses.find((w) => w.name === name)
+  if (wh?.managerName) return String(wh.managerName).trim()
+  // 入储罐：warehouse 字段存的是位置名称，从库存位置取仓管员
+  // eslint-disable-next-line global-require
+  const { findStockLocationByNameOrCode } = require('@/store/materialBatchStore')
+  const loc = findStockLocationByNameOrCode(name)
+  return String(loc?.managerName || '').trim()
 }
 
 function canDeleteInbound(order) {
@@ -422,64 +451,30 @@ export function deleteInboundOrder(id) {
 
 function prepareAndApplyInboundLine(order, line) {
   const mat = materialInfoState.materials.find((m) => m.code === line.itemCode)
-  if (mat?.isVariableLength) {
-    line.isVariableLength = true
-    line.unit = mat.stockUnit || mat.inventoryUnit || line.unit || '米'
+  // 流程型：采购辅助单位≠库存时按库存数量入账，关闭旧双单位按件展开
+  if (mat?.purchaseUnit && mat?.inventoryUnit && mat.purchaseUnit !== mat.inventoryUnit) {
+    line.purchaseUnit = mat.purchaseUnit
+    line.stockUnit = mat.stockUnit || mat.inventoryUnit
+    line.unit = line.stockUnit
   }
-  if (line.isVariableLength) {
-    // 兼容旧数据：仅有统一单件数量时展开
-    if (
-      (!line.pieceValues || !line.pieceValues.length) &&
-      (!line.pieceLengths || !line.pieceLengths.length) &&
-      (!line.pieceWeights || !line.pieceWeights.length) &&
-      Number(line.purchaseQty) > 0 &&
-      (Number(line.uniformValue) > 0 ||
-        Number(line.uniformLength) > 0 ||
-        Number(line.uniformWeight) > 0) &&
-      !line.inboundEntryMode
-    ) {
-      const n = Number(line.purchaseQty)
-      const per = Number(line.uniformValue ?? line.uniformLength ?? line.uniformWeight)
-      line.pieceValues = Array.from({ length: n }, () => per)
-      line.pieceLengths = line.pieceValues
-      line.inboundEntryMode = 'uniform'
-    }
-
-    if (mat?.purchaseUnit) line.purchaseUnit = mat.purchaseUnit
-
-    const check = validateVariableLengthInboundLine(line, line.unit)
-    if (!check.ok) {
-      return { ok: false, message: `${line.itemName || line.itemCode}：${check.message}` }
-    }
-    const pieceValues = line.pieceValues?.length
-      ? line.pieceValues
-      : line.pieceWeights?.length
-        ? line.pieceWeights
-        : line.pieceLengths
-    line.stockQty = sumPieceValues(pieceValues)
-    line.qty = line.stockQty
-  }
+  line.isVariableLength = false
+  line.inboundEntryMode = undefined
 
   const warehouse = line.warehouse || order.warehouse
   const barcodeType = line.barcodeType || mat?.barcodeType || '一批一码'
   line.barcodeType = barcodeType
 
+  const qty = Number(line.qty ?? line.shipQty) || 0
+  if (!(qty > 0)) return { ok: true, skipped: true }
+  line.stockQty = qty
+  line.qty = qty
+
   let pieceValues
-  if (line.isVariableLength) {
-    pieceValues = line.pieceValues?.length
-      ? line.pieceValues
-      : line.pieceWeights?.length
-        ? line.pieceWeights
-        : line.pieceLengths
+  if (isOneItemOneCodeBarcode(barcodeType)) {
+    const n = Math.max(1, Math.round(qty))
+    pieceValues = Array.from({ length: n }, () => 1)
   } else {
-    const qty = Number(line.qty ?? line.shipQty) || 0
-    if (!(qty > 0)) return { ok: true, skipped: true }
-    if (isOneItemOneCodeBarcode(barcodeType)) {
-      const n = Math.max(1, Math.round(qty))
-      pieceValues = Array.from({ length: n }, () => 1)
-    } else {
-      pieceValues = [qty]
-    }
+    pieceValues = [qty]
   }
   if (!pieceValues?.length) return { ok: true, skipped: true }
 
@@ -505,6 +500,13 @@ function prepareAndApplyInboundLine(order, line) {
       inboundEntryMode: line.inboundEntryMode,
       barcodeType: barcodeType || undefined,
       specModel: line.specModel || undefined,
+      content:
+        line.content != null && line.content !== '' && Number(line.content) > 0
+          ? Math.abs(Number(line.content)) <= 1
+            ? Number(line.content)
+            : Number(line.content) / 100
+          : undefined,
+      expiryDate: line.expiryDate || undefined,
     },
   }
   const lineUomConvert = buildLineUomConvert(line)
@@ -653,23 +655,51 @@ export function confirmInboundOrders(ids, operator = 'admin1') {
       return
     }
 
-    for (const line of pendingLines) {
-      const prep = prepareAndApplyInboundLine(order, line)
-      if (!prep.ok) {
-        blocked.push({ docNo: order.docNo, message: prep.message })
-        return
+    const isProcessBatchInbound =
+      order.sourceType === '批次指令' || order.inboundType === '生产入库'
+
+    if (isProcessBatchInbound) {
+      // 流程产出：批次已在批令过账时写入 materialBatchStore，确认后放行为可用
+      try {
+        const {
+          markProcessOutputBatchesAvailableByInbound,
+        } = require('@/store/batchInstructionStore')
+        markProcessOutputBatchesAvailableByInbound(order, pendingLines)
+      } catch {
+        /* ignore */
       }
     }
 
-    const stockRes = applyInboundToStock(order, { lineIds: pendingLines.map((l) => l.id) })
-    if (!stockRes.ok) {
-      blocked.push({ docNo: order.docNo, message: stockRes.message })
-      return
+    // 无流程批次可挂靠的明细（手工新增生产入库等）仍走库存建批，避免批次详情空白
+    let stockLines = pendingLines
+    if (isProcessBatchInbound) {
+      try {
+        const { getMaterialBatchByNo } = require('@/store/materialBatchStore')
+        stockLines = pendingLines.filter((line) => !getMaterialBatchByNo(line.barcodeBatchNo))
+      } catch {
+        stockLines = pendingLines
+      }
     }
+
+    if (stockLines.length) {
+      for (const line of stockLines) {
+        const prep = prepareAndApplyInboundLine(order, line)
+        if (!prep.ok) {
+          blocked.push({ docNo: order.docNo, message: prep.message })
+          return
+        }
+      }
+      const stockRes = applyInboundToStock(order, { lineIds: stockLines.map((l) => l.id) })
+      if (!stockRes.ok) {
+        blocked.push({ docNo: order.docNo, message: stockRes.message })
+        return
+      }
+      syncSalesAllocationAfterInbound(order, stockLines)
+    }
+
     pendingLines.forEach((line) => {
       line.lineStatus = '已入库'
     })
-    syncSalesAllocationAfterInbound(order, pendingLines)
     recomputeInboundOrderStatus(order, operator)
     try {
       const { syncPurchaseReceiptAfterInboundConfirm } = require('@/utils/purchaseReceiptSettle')
@@ -746,14 +776,37 @@ export function confirmInboundLine(orderId, lineId, operator = 'admin1') {
     return { ok: true, order, line }
   }
 
-  const prep = prepareAndApplyInboundLine(order, line)
-  if (!prep.ok) return prep
+  const isProcessBatchInbound = order.sourceType === '批次指令' || order.inboundType === '生产入库'
+  if (isProcessBatchInbound) {
+    try {
+      const {
+        markProcessOutputBatchesAvailableByInbound,
+      } = require('@/store/batchInstructionStore')
+      markProcessOutputBatchesAvailableByInbound(order, [line])
+    } catch {
+      /* ignore */
+    }
+  }
 
-  const stockRes = applyInboundToStock(order, { lineIds: [lineId] })
-  if (!stockRes.ok) return stockRes
+  let needStockBatch = true
+  if (isProcessBatchInbound) {
+    try {
+      const { getMaterialBatchByNo } = require('@/store/materialBatchStore')
+      needStockBatch = !getMaterialBatchByNo(line.barcodeBatchNo)
+    } catch {
+      needStockBatch = true
+    }
+  }
+
+  if (needStockBatch) {
+    const prep = prepareAndApplyInboundLine(order, line)
+    if (!prep.ok) return prep
+    const stockRes = applyInboundToStock(order, { lineIds: [lineId] })
+    if (!stockRes.ok) return stockRes
+    syncSalesAllocationAfterInbound(order, [line])
+  }
 
   line.lineStatus = '已入库'
-  syncSalesAllocationAfterInbound(order, [line])
   recomputeInboundOrderStatus(order, operator)
   try {
     const { syncPurchaseReceiptAfterInboundConfirm } = require('@/utils/purchaseReceiptSettle')

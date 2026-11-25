@@ -1,6 +1,7 @@
 import { reactive, watch } from 'vue'
 import dayjs from 'dayjs'
 import { createOutboundLine, createOutboundOrder } from '@/mock/outboundOrders'
+import { buildProcessDemoOutboundOrders } from '@/mock/processIoDemoSeed'
 import {
   needsOutboundApproval,
   normalizeOutboundStatus,
@@ -119,6 +120,32 @@ export function generateOutboundNo() {
 export const outboundState = reactive({
   orders: initOutboundOrders(),
 })
+
+/**
+ * 流程演示出库单：按固定 id 幂等写入/刷新字段，覆盖待出/部分/已出/已拒等场景。
+ * @returns {number} 本次写入条数
+ */
+export function ensureDemoProcessOutboundOrders() {
+  const seeds = buildProcessDemoOutboundOrders().map((order) => ({
+    ...order,
+    status: normalizeOutboundStatus(order.status),
+    sourceChannel: resolveOutboundSourceChannel(order),
+    refuseReason: order.refuseReason || '',
+  }))
+  let count = 0
+  seeds.forEach((seed) => {
+    const idx = outboundState.orders.findIndex((o) => o.id === seed.id)
+    if (idx >= 0) {
+      outboundState.orders[idx] = { ...outboundState.orders[idx], ...seed }
+    } else {
+      outboundState.orders.unshift(seed)
+    }
+    count += 1
+  })
+  return count
+}
+
+ensureDemoProcessOutboundOrders()
 
 persist()
 
@@ -611,6 +638,11 @@ function writeIssuedBatchFields(line, issuedAllocations, { rule, demandQty }) {
   const firstBatch = getBatchById(issuedAllocations[0]?.batchId)
   line.batchAttrs = firstBatch?.attrs ? { ...firstBatch.attrs } : undefined
   line.batchAttrsText = texts.join(' | ')
+  const contentRaw = firstBatch?.attrs?.content ?? firstBatch?.content
+  if (contentRaw != null && contentRaw !== '' && Number(contentRaw) > 0) {
+    const n = Number(contentRaw)
+    line.content = Math.abs(n) <= 1 ? n : n / 100
+  }
 }
 
 function applyOutboundStockMovements(order, { lineIds } = {}) {

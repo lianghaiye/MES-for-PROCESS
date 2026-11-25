@@ -48,20 +48,23 @@ import {
 import {
   addOutputBatch,
   consumeBatchQty,
+  ensureDemoPendingDispositionBatches,
   getMaterialBatch,
+  getMaterialBatchByNo,
   listProcessItems,
   listTanks,
   planFeedFifoAllocations,
-  setBatchStatus,
 } from '@/store/materialBatchStore'
 import { addInboundOrder } from '@/store/inboundOrderStore'
 import { createInboundLine } from '@/mock/inboundOrders'
 import { appendOperationLog, currentOperator } from '@/utils/operationLog'
 import { getDeviceById, updateDevice } from '@/store/equipmentStore'
 import { getProductionLineById } from '@/store/productionLineStore'
+import { getWorkCenterById } from '@/store/workCenterStore'
 import { positionOptions } from '@/store/employeeGroupStore'
 import { EQUIPMENT_OCCUPY_STATUS, EQUIPMENT_STATUS } from '@/mock/equipmentSeed'
 import { generateCodeByBusiness, peekCodesByBusiness } from '@/store/codingRuleStore'
+import { isSequentialBatchStepEnabled } from '@/store/functionParamStore'
 
 const STORAGE_KEY = 'i-doms-batch-instruction-v1'
 
@@ -199,6 +202,7 @@ function buildDemoBatchOrder(demo) {
     reworkOfBatchId: '',
     feedPlanId: '',
     productionLineId: '',
+    workCenterId: '',
     executeBy: 'formula',
     sourceLabel: demo.sourceLabel,
     demandQty: formula.baseBatchQty,
@@ -222,7 +226,151 @@ function ensureDemoBatchOrders() {
   })
 }
 
+/**
+ * 待处置产出演示：一张批令挂齐待判定 / 硬门禁待判定 / 车间暂存(可合+不可合) / 待回用 / 待再提。
+ * 刷新页面会按固定批次 id 拉回数量与状态，便于反复点合并入库与确认去向。
+ */
+function ensureDemoPendingDispositionOutputs() {
+  const batches = ensureDemoPendingDispositionBatches()
+  const byId = Object.fromEntries(batches.map((b) => [b.id, b]))
+  let order = batchInstructionState.orders.find((row) => row.id === 'bo-demo-dispose')
+  if (!order) {
+    const formula = getFormula('formula-paint') || getFormula(DEMO_BATCH_ORDERS[0]?.formulaId)
+    order = {
+      id: 'bo-demo-dispose',
+      batchNo: 'BO-DEMO-DISPOSE',
+      status: 'running',
+      seq: 1,
+      batchCount: 1,
+      qty: formula?.baseBatchQty || 1000,
+      qtyConfirmed: true,
+      unit: 'kg',
+      formulaId: formula?.id || 'formula-paint',
+      formulaVersion: formula?.version || 1,
+      formulaName: formula?.name || '待处置演示',
+      itemId: formula?.itemId || 'pi-paint',
+      theoreticalOutput: formula
+        ? theoreticalOutput(formula.baseBatchQty, formula.theoreticalYield)
+        : 1000,
+      theoreticalFeeds: formula ? snapshotFeeds(formula) : [],
+      expectedOutputs: formula ? snapshotOutputs(formula) : [],
+      routeSnapshot: formula ? snapshotSteps(formula.steps) : [],
+      equipmentRoute: formula ? snapshotEquipmentRoute(formula) : [],
+      feeds: [],
+      paramActuals: [],
+      formActuals: [],
+      ebrEntries: [],
+      stepQcMap: {},
+      confirmedSteps: [],
+      outputs: [],
+      actualOutput: null,
+      yieldGap: null,
+      deviation: '',
+      remark: '演示：待处置产出全场景（待判定/硬门禁/车间暂存/回用/再提）',
+      reworkOfBatchId: '',
+      feedPlanId: '',
+      productionLineId: '',
+      workCenterId: '',
+      executeBy: 'formula',
+      sourceLabel: '演示：待处置产出',
+      demandQty: formula?.baseBatchQty || 1000,
+      createdAt: '2026-11-25 10:00',
+      createdBy: '系统管理员',
+      outputQcRecords: [],
+    }
+    appendOperationLog(order, '生成批次指令', '待处置演示', '系统管理员')
+    appendOperationLog(order, '下发', '待处置演示链路', '系统管理员')
+    batchInstructionState.orders.push(order)
+  }
+
+  const outputDefs = [
+    {
+      id: 'out-demo-decide-1',
+      batchId: 'mb-demo-decide-1',
+      role: 'by',
+      disposition: 'pending_decide',
+      assayHardGate: false,
+      at: '2026-11-25 10:10',
+    },
+    {
+      id: 'out-demo-decide-gate',
+      batchId: 'mb-demo-decide-gate',
+      role: 'co',
+      disposition: 'pending_decide',
+      assayHardGate: true,
+      assayScopes: ['成品检'],
+      at: '2026-11-25 10:15',
+    },
+    {
+      id: 'out-demo-staging-a',
+      batchId: 'mb-demo-staging-a',
+      role: 'main',
+      disposition: 'staging',
+      assayHardGate: false,
+      at: '2026-11-25 10:20',
+    },
+    {
+      id: 'out-demo-staging-b',
+      batchId: 'mb-demo-staging-b',
+      role: 'main',
+      disposition: 'staging',
+      assayHardGate: false,
+      at: '2026-11-25 10:25',
+    },
+    {
+      id: 'out-demo-staging-c',
+      batchId: 'mb-demo-staging-c',
+      role: 'main',
+      disposition: 'staging',
+      assayHardGate: false,
+      at: '2026-11-25 10:30',
+    },
+    {
+      id: 'out-demo-reuse-1',
+      batchId: 'mb-demo-reuse-1',
+      role: 'recycle',
+      disposition: 'reuse',
+      assayHardGate: false,
+      at: '2026-11-25 10:35',
+    },
+    {
+      id: 'out-demo-reextract-1',
+      batchId: 'mb-demo-reextract-1',
+      role: 'by',
+      disposition: 'reextract',
+      assayHardGate: false,
+      at: '2026-11-25 10:40',
+    },
+  ]
+
+  const outputs = outputDefs.map((def) => {
+    const batch = byId[def.batchId]
+    return {
+      id: def.id,
+      role: def.role,
+      itemId: batch.itemId,
+      qty: batch.qty,
+      disposition: def.disposition,
+      batchId: batch.id,
+      batchNo: batch.batchNo,
+      locationId: batch.locationId,
+      stepNo: null,
+      assayScopes: def.assayScopes || [],
+      assayHardGate: Boolean(def.assayHardGate),
+      contentUsed: batch.content,
+      contentPending: false,
+      at: def.at,
+    }
+  })
+
+  // 保留用户在本演示单上已写入的其它产出，演示行按 id 覆盖
+  const keep = (order.outputs || []).filter((row) => !String(row.id || '').startsWith('out-demo-'))
+  order.outputs = [...keep, ...outputs]
+  order.remark = '演示：待处置产出全场景（待判定/硬门禁/车间暂存可合与不可合/回用/再提）'
+}
+
 ensureDemoBatchOrders()
+ensureDemoPendingDispositionOutputs()
 
 let seq = 1
 
@@ -295,6 +443,14 @@ function snapshotFeeds(formula) {
   return (formula.lines || []).map((line) => {
     const calc = calcTheoreticalFeed({ ...line, content: line.content }, formula.baseBatchQty)
     const step = steps.find((item) => item.stepNo === Number(line.stepNo))
+    const rawContent = Number(line.content)
+    // 假定含量随理论量快照，供投料弹窗按批含量反算建议实投（不改理论量）
+    const assumedContent =
+      line.convertByContent && Number.isFinite(rawContent) && rawContent > 0
+        ? Math.abs(rawContent) <= 1
+          ? rawContent
+          : rawContent / 100
+        : null
     return {
       itemId: line.itemId,
       qty: line.theoreticalQty ?? (calc.ok ? calc.qty : 0),
@@ -302,6 +458,7 @@ function snapshotFeeds(formula) {
       stepNo: step ? step.stepNo : null,
       stepName: step?.name || '',
       convertByContent: line.convertByContent,
+      assumedContent,
       tolerance: line.tolerance ?? null,
       isKeyMaterial: Boolean(line.isKeyMaterial),
       isAuxiliary: Boolean(line.isAuxiliary),
@@ -426,6 +583,8 @@ export function attachStepQc(orderId, stepNo, task, scheme = {}) {
     qcResult: task?.qcResult || '',
     inspectedAt: task?.inspectedAt || '',
     processName: task?.processName || '',
+    sampleLocation: task?.sampleLocation || '',
+    createdAt: task?.createdAt || dayjs().format('YYYY-MM-DD HH:mm:ss'),
     updatedAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
   }
   bucket.records.push(record)
@@ -462,6 +621,11 @@ export function attachOutputInboundQc(orderId, record = {}) {
     itemId: record.itemId || '',
     stepNo: Number(record.stepNo) || null,
     bizScope: '成品检',
+    assayType: record.assayType || 'finished',
+    schemeName: record.schemeName || record.templateName || '',
+    templateName: record.templateName || '',
+    templateCode: record.templateCode || '',
+    hardGate: record.hardGate !== false,
     taskId: record.taskId || '',
     qcNo: record.qcNo || '',
     qcStatus: record.qcStatus || '待质检',
@@ -472,9 +636,54 @@ export function attachOutputInboundQc(orderId, record = {}) {
   return row
 }
 
-/** 质检提交后回写到批次步骤，并记一条 EBR */
+/**
+ * 产出化验（成品检）完成后：更新 outputQcRecords，并尝试回填产出批含量。
+ * 检单 sourceType = batch_output。
+ */
+export function syncBatchOutputQcFromTask(task) {
+  if (!task || task.sourceType !== 'batch_output' || !task.sourceDocId) return false
+  const order = getBatchOrder(task.sourceDocId)
+  if (!order) return false
+  const stepNo = Number(task.processIndex)
+  ;(order.outputQcRecords || []).forEach((row) => {
+    if (String(row.taskId || '') !== String(task.id || '')) return
+    row.qcStatus = task.qcStatus || row.qcStatus
+    row.qcResult = task.qcResult || row.qcResult || ''
+    row.updatedAt = dayjs().format('YYYY-MM-DD HH:mm:ss')
+  })
+  appendOperationLog(
+    order,
+    '检验回写',
+    `产出化验 ${task.qcNo || ''} ${task.qcResult || task.qcStatus || ''}`.trim(),
+    task.inspector || undefined,
+  )
+  // 化验完成且能解析出含量时，回写产出行 + 原料批次 content
+  if (String(task.qcStatus || '') === '已完成') {
+    const frac = extractContentFractionFromQcTask(task)
+    if (frac != null) {
+      const code = String(task.itemCode || '').trim()
+      const byCode = code
+        ? listProcessItems().find((item) => String(item.code || '') === code)
+        : null
+      const matchedQc = (order.outputQcRecords || []).find(
+        (row) => String(row.taskId || '') === String(task.id || ''),
+      )
+      backfillOutputContentFromAssay(order.id, {
+        stepNo: stepNo > 0 ? stepNo : matchedQc?.stepNo,
+        itemId: byCode?.id || matchedQc?.itemId || '',
+        role: matchedQc?.role || '',
+        content: frac,
+      })
+    }
+  }
+  return true
+}
+
+/** 质检提交后回写到批次步骤，并记一条 EBR；产出检走 syncBatchOutputQcFromTask */
 export function syncBatchStepQcFromTask(task) {
-  if (!task || task.sourceType !== 'batch_instruction' || !task.sourceDocId) return false
+  if (!task || !task.sourceDocId) return false
+  if (task.sourceType === 'batch_output') return syncBatchOutputQcFromTask(task)
+  if (task.sourceType !== 'batch_instruction') return false
   const order = getBatchOrder(task.sourceDocId)
   if (!order) return false
   const stepNo = Number(task.processIndex)
@@ -665,6 +874,7 @@ export function createOrdersFromDemand({
   sourceLabel,
   batchNos,
   productionLineId,
+  workCenterId,
   remark,
 } = {}) {
   const formula = getFormula(formulaId)
@@ -672,6 +882,7 @@ export function createOrdersFromDemand({
   const count = planBatchCount(demandQty, formula.baseBatchQty)
   if (!count) throw new Error('需求量和基准批量都必须大于 0')
   const lineId = productionLineId || ''
+  const centerId = String(workCenterId || '').trim()
   const remarkText = String(remark || '').trim()
   const created = []
   for (let i = 1; i <= count; i += 1) {
@@ -708,6 +919,7 @@ export function createOrdersFromDemand({
       reworkOfBatchId: '',
       feedPlanId: '',
       productionLineId: lineId,
+      workCenterId: centerId,
       executeBy: lineId ? 'line' : 'formula',
       sourceLabel: sourceLabel || '',
       demandQty: Number(demandQty),
@@ -743,6 +955,7 @@ export function createTankChargeFromPlan({
   formulaId,
   feedPlanId,
   productionLineId,
+  workCenterId,
   sourceLabel,
   planStart,
   planEnd,
@@ -792,6 +1005,7 @@ export function createTankChargeFromPlan({
     reworkOfBatchId: '',
     feedPlanId: feedPlanId || '',
     productionLineId: productionLineId || '',
+    workCenterId: String(workCenterId || '').trim(),
     executeBy: productionLineId ? 'line' : 'formula',
     planStart: planStart || '',
     planEnd: planEnd || '',
@@ -996,8 +1210,28 @@ function applyReleaseStepAssignments(order, steps) {
   }
 }
 
-/** 记下每步设备和岗位后下发。产线和反应设备未传入时不改原值，也不强制填写。 */
-export function confirmReleaseOrder(id, { productionLineId, reactorTankId, steps } = {}) {
+/** 下发前按新的下达数量重算理论投料 / 预期产出（相对配方基准批量缩放）。 */
+function applyReleaseOrderQty(order, qty) {
+  if (qty === undefined) return
+  const next = round3(qty)
+  if (!(next > 0)) throw new Error('下达数量须大于 0')
+  const formula = getFormula(order.formulaId)
+  if (!formula || formula.status !== 'active') throw new Error('配方不存在或未生效，不能改下达数量')
+  const scaled = scaleFeedSnapshots(formula, next)
+  order.qty = next
+  order.qtyConfirmed = true
+  order.demandQty = next
+  order.unit = order.unit || 'kg'
+  order.theoreticalFeeds = scaled.theoreticalFeeds
+  order.expectedOutputs = scaled.expectedOutputs
+  order.theoreticalOutput = scaled.theoreticalOutput
+}
+
+/** 记下每步设备和岗位后下发。产线/反应设备/工作中心/数量未传入时不改原值。 */
+export function confirmReleaseOrder(
+  id,
+  { productionLineId, reactorTankId, workCenterId, qty, remark, steps } = {},
+) {
   const order = getBatchOrder(id)
   if (!order) throw new Error('批次指令不存在')
   if (order.status !== 'pending_release') throw new Error('只有待下发指令可以下发')
@@ -1014,6 +1248,17 @@ export function confirmReleaseOrder(id, { productionLineId, reactorTankId, steps
   if (tankId && line && !(line.equipmentIds || []).includes(tankId)) {
     throw new Error('请选择这条产线上的反应设备')
   }
+  const centerId =
+    workCenterId !== undefined
+      ? String(workCenterId || '').trim()
+      : String(order.workCenterId || '').trim()
+  if (!centerId) throw new Error('请选择工作中心')
+  if (!getWorkCenterById(centerId)) throw new Error('工作中心不存在')
+  order.workCenterId = centerId
+  if (remark !== undefined) {
+    order.remark = String(remark || '').trim()
+  }
+  applyReleaseOrderQty(order, qty)
   if (tankId) {
     const inspection = inspectReactorForRelease(order, tankId)
     if (!inspection.ok) throw new Error(inspection.message)
@@ -1042,8 +1287,8 @@ export function confirmReleaseOrder(id, { productionLineId, reactorTankId, steps
   return order
 }
 
-/** 待下发可改批次号、产线和备注。配方与数量仍用生成时的快照。 */
-export function updatePendingOrder(id, { batchNo, productionLineId, remark } = {}) {
+/** 待下发可改批次号、工作中心、产线和备注。配方仍用生成时的快照；数量请在指定下发时调整。 */
+export function updatePendingOrder(id, { batchNo, productionLineId, workCenterId, remark } = {}) {
   const order = getBatchOrder(id)
   if (!order) throw new Error('批次指令不存在')
   if (order.status !== 'pending_release') throw new Error('只有待下发指令可以编辑')
@@ -1052,10 +1297,19 @@ export function updatePendingOrder(id, { batchNo, productionLineId, remark } = {
   if (batchInstructionState.orders.some((row) => row.id !== id && row.batchNo === nextNo)) {
     throw new Error('批次号已存在')
   }
-  const lineId = String(productionLineId || '').trim()
+  const lineId =
+    productionLineId === undefined
+      ? String(order.productionLineId || '').trim()
+      : String(productionLineId || '').trim()
   if (lineId && !getProductionLineById(lineId)) throw new Error('产线不存在')
+  const centerId =
+    workCenterId === undefined
+      ? String(order.workCenterId || '').trim()
+      : String(workCenterId || '').trim()
+  if (centerId && !getWorkCenterById(centerId)) throw new Error('工作中心不存在')
   order.batchNo = nextNo
   order.productionLineId = lineId
+  order.workCenterId = centerId
   order.executeBy = lineId ? 'line' : order.executeBy || 'formula'
   order.remark = String(remark || '').trim()
   appendOperationLog(order, '编辑')
@@ -1099,24 +1353,128 @@ function formatFormDisplayValue(value) {
   return value
 }
 
-export function confirmStep(id, stepNo, actuals, formValues = {}) {
+/** 本步可执行设备候选：配方/下发快照 → 已落执行台 → 工序允许设备。 */
+export function resolveStepEquipmentCandidates(step) {
+  if (!step) return []
+  const fromStep = cleanIdList(step.equipmentIds)
+  if (fromStep.length) return fromStep
+  const single = String(step.equipmentId || '').trim()
+  if (single) return [single]
+  const proc = step.processId ? getProcessById(step.processId) : null
+  return cleanIdList(proc?.equipmentIds)
+}
+
+function applyStepExecutionEquipment(order, step, equipmentId) {
+  const candidates = resolveStepEquipmentCandidates(step)
+  const selectedId = String(equipmentId || '').trim()
+  const stepLabel = step.name || step.processName || `步骤${step.stepNo}`
+  if (!candidates.length) {
+    throw new Error(`${stepLabel} 未配置候选设备，请先在配方阶段或指定下发时维护`)
+  }
+  if (!selectedId) {
+    throw new Error(`请选择「${stepLabel}」的执行设备`)
+  }
+  if (!candidates.includes(selectedId)) {
+    throw new Error('执行设备须在本步候选设备内')
+  }
+  const device = getDeviceById(selectedId)
+  if (!device) throw new Error('所选设备不存在')
+  if (device.status === EQUIPMENT_STATUS.SCRAPPED || device.status === EQUIPMENT_STATUS.REPAIRING) {
+    throw new Error(`${device.name || '所选设备'} 当前${device.status}，不能作为执行设备`)
+  }
+  if (!Array.isArray(step.equipmentIds) || !step.equipmentIds.length) {
+    step.equipmentIds = [...candidates]
+  }
+  step.equipmentId = selectedId
+  step.equipmentName = deviceLabelById(selectedId) || device.name || ''
+  const routeSteps = order?.equipmentRoute?.steps
+  if (Array.isArray(routeSteps)) {
+    const routeStep = routeSteps.find((row) => Number(row.stepNo) === Number(step.stepNo))
+    if (routeStep) {
+      routeStep.equipmentId = selectedId
+      routeStep.equipmentName = step.equipmentName
+    }
+  }
+  return selectedId
+}
+
+/** 开启「批次阶段时序确认」时：上一步须已确认。 */
+export function stepSequenceConfirmErrors(order, step) {
+  const errors = []
+  if (!order || !step || !isSequentialBatchStepEnabled()) return errors
+  const steps = [...(order.routeSnapshot || [])].sort(
+    (left, right) => Number(left.stepNo) - Number(right.stepNo),
+  )
+  const index = steps.findIndex((row) => Number(row.stepNo) === Number(step.stepNo))
+  if (index <= 0) return errors
+  const prev = steps[index - 1]
+  if ((order.confirmedSteps || []).includes(prev.stepNo)) return errors
+  const prevLabel = prev.name || prev.processName || `步骤${prev.stepNo}`
+  errors.push(`请先确认上一步「${prevLabel}」`)
+  return errors
+}
+
+/** 本步计划投料是否已过账（按步骤号 + 物料）。 */
+export function stepFeedConfirmErrors(order, step) {
+  const errors = []
+  if (!order || !step) return errors
+  const stepNo = Number(step.stepNo)
+  const stepLabel = step.name || step.processName || `步骤${stepNo}`
+  const plans = (order.theoreticalFeeds || []).filter((line) => Number(line.stepNo) === stepNo)
+  plans.forEach((line) => {
+    const actual = round3(
+      (order.feeds || [])
+        .filter((feed) => feed.itemId === line.itemId && Number(feed.stepNo) === stepNo)
+        .reduce((sum, feed) => sum + Number(feed.qty || 0), 0),
+    )
+    if (!(actual > 0)) {
+      errors.push(`${stepLabel} 的${itemLabel(line.itemId)}尚未投料，请先投料再确认`)
+    }
+  })
+  return errors
+}
+
+/** 工艺参数：已配置的须填写，且落在上下限内。 */
+export function stepParamConfirmErrors(step, actuals = []) {
+  const errors = []
+  if (!step) return errors
+  const stepLabel = step.name || step.processName || '本步'
+  const params = stepParamRows(step)
+  params.forEach((param, index) => {
+    const value = actuals?.[index]
+    const empty = value === '' || value == null || value === undefined
+    if (empty) {
+      errors.push(`请填写「${param.name || `参数${index + 1}`}」`)
+      return
+    }
+    const n = Number(value)
+    if (!Number.isFinite(n)) {
+      errors.push(`${stepLabel} 的${param.name}须为数字`)
+      return
+    }
+    if (param.min != null && param.min !== '' && n < Number(param.min)) {
+      errors.push(`${stepLabel} 的${param.name}低于下限 ${param.min}`)
+    }
+    if (param.max != null && param.max !== '' && n > Number(param.max)) {
+      errors.push(`${stepLabel} 的${param.name}高于上限 ${param.max}`)
+    }
+  })
+  return errors
+}
+
+export function confirmStep(id, stepNo, actuals, formValues = {}, options = {}) {
   const order = getBatchOrder(id)
   if (!order || order.status !== 'running') throw new Error('请先下发批次指令')
   const step = (order.routeSnapshot || []).find((s) => s.stepNo === Number(stepNo))
   if (!step) throw new Error('步骤不存在')
   assertHardGateAllowsConfirm(order, step)
-  const params = stepParamRows(step)
-  params.forEach((param, index) => {
-    const value = actuals?.[index]
-    if (value === '' || value == null || value === undefined) return
-    const n = Number(value)
-    if (param.min != null && param.min !== '' && n < Number(param.min)) {
-      throw new Error(`${step.name} 的${param.name}低于下限`)
-    }
-    if (param.max != null && param.max !== '' && n > Number(param.max)) {
-      throw new Error(`${step.name} 的${param.name}高于上限`)
-    }
-  })
+  const sequenceErrors = stepSequenceConfirmErrors(order, step)
+  if (sequenceErrors.length) throw new Error(sequenceErrors[0])
+  const feedErrors = stepFeedConfirmErrors(order, step)
+  if (feedErrors.length) throw new Error(feedErrors[0])
+  applyStepExecutionEquipment(order, step, options.equipmentId)
+  const paramErrors = stepParamConfirmErrors(step, actuals)
+  if (paramErrors.length) throw new Error(paramErrors[0])
 
   const formTemplate = resolveStepFormTemplate(step)
   // 固定项（出料量/备注/系统项）始终采集；模板只追加其余字段。实投量仍走投料过账。
@@ -1170,6 +1528,7 @@ export function confirmStep(id, stepNo, actuals, formValues = {}) {
     resolveProcessFormSystemValue('operator', systemCtx)
 
   order.paramActuals = (order.paramActuals || []).filter((p) => p.stepNo !== step.stepNo)
+  const params = stepParamRows(step)
   const paramRows = []
   params.forEach((param, index) => {
     const value = actuals?.[index]
@@ -1211,10 +1570,20 @@ export function confirmStep(id, stepNo, actuals, formValues = {}) {
   // 旧批次无快照时，确认后补上，便于详情回看
   if (!step.formTemplate && formTemplate) step.formTemplate = formTemplate
   appendOperationLog(order, '确认工序', step.name || String(step.stepNo))
+  tryAutoCompleteOrder(order.id, { log: true })
   return order
 }
 
-export function postFeed(id, { batchId, qty, stepNo, contentUsed, feedSource, allowEmptyContent }) {
+/** 投料扣减方式：自主选批 / 库位先进先出（写入 feeds.deductMode） */
+export const FEED_DEDUCT_MODES = {
+  BATCH_PICK: 'batch_pick',
+  LOCATION_FIFO: 'location_fifo',
+}
+
+export function postFeed(
+  id,
+  { batchId, qty, stepNo, contentUsed, feedSource, allowEmptyContent, deductMode, locationId },
+) {
   const order = getBatchOrder(id)
   if (!order || order.status !== 'running') throw new Error('执行中的指令才能投料')
   const batch = getMaterialBatch(batchId)
@@ -1232,7 +1601,7 @@ export function postFeed(id, { batchId, qty, stepNo, contentUsed, feedSource, al
     content = Number(batch.content)
   }
   if (line?.convertByContent && !(content > 0) && !allowEmptyContent) {
-    throw new Error(`${itemLabel(batch.itemId)} 按含量折算，请填写含量`)
+    throw new Error(`${itemLabel(batch.itemId)} 按有效含量折算，请填写有效含量`)
   }
   const source =
     feedSource ||
@@ -1242,12 +1611,18 @@ export function postFeed(id, { batchId, qty, stepNo, contentUsed, feedSource, al
       (o.outputs || []).some((x) => x.batchId === batch.id),
     )
     const donorOutput = donor?.outputs?.find((x) => x.batchId === batch.id)
-    if (donor && donorOutput) assertSideOutputAssayAllowsUse(donor, donorOutput)
+    if (donor && donorOutput) {
+      assertSideOutputAssayAllowsUse(donor, donorOutput, { action: '回流投料' })
+    }
   }
   consumeBatchQty(batchId, take, { orderId: order.id, orderNo: order.batchNo }, order, source)
   const isRecycle = source === 'recycle' || batch.status === 'await_reuse'
   const isReextract = source === 'reextract' || Boolean(order.reextractOfBatchId)
   const contentPending = Boolean(allowEmptyContent) && !(Number(content) > 0)
+  const mode =
+    deductMode === FEED_DEDUCT_MODES.LOCATION_FIFO
+      ? FEED_DEDUCT_MODES.LOCATION_FIFO
+      : FEED_DEDUCT_MODES.BATCH_PICK
   order.feeds.push({
     id: `feed-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     materialBatchId: batch.id,
@@ -1257,17 +1632,21 @@ export function postFeed(id, { batchId, qty, stepNo, contentUsed, feedSource, al
     stepNo: Number(stepNo) || 1,
     contentUsed: content,
     contentPending,
-    locationId: batch.locationId || '',
+    locationId: String(locationId || batch.locationId || '').trim(),
     isRecycle,
     isReextract,
     feedSource: source,
+    /** batch_pick=自主选批；location_fifo=按库位/储罐先进先出（系统拆批） */
+    deductMode: mode,
     operator: currentOperator(),
     at: dayjs().format('YYYY-MM-DD HH:mm'),
   })
   appendOperationLog(
     order,
     isReextract ? '再提投料' : isRecycle ? '回流投料' : '投料',
-    `${itemLabel(batch.itemId)} ${take}${contentPending ? '（含量待化验回填）' : ''}`,
+    `${itemLabel(batch.itemId)} ${take}${contentPending ? '（有效含量待化验回填）' : ''}${
+      mode === FEED_DEDUCT_MODES.LOCATION_FIFO ? '（库位先进先出）' : ''
+    }`,
   )
   return order
 }
@@ -1297,6 +1676,8 @@ export function postFeeds(id, lines = []) {
           contentUsed: hasUserContent ? row.contentUsed : null,
           allowEmptyContent: allowEmpty || !hasUserContent,
           feedSource: row.feedSource || 'fresh',
+          deductMode: FEED_DEDUCT_MODES.LOCATION_FIFO,
+          locationId,
         })
       })
       return
@@ -1309,6 +1690,8 @@ export function postFeeds(id, lines = []) {
         contentUsed: row.contentUsed,
         allowEmptyContent: false,
         feedSource: row.feedSource,
+        deductMode: FEED_DEDUCT_MODES.BATCH_PICK,
+        locationId: row.locationId || '',
       })
     }
   })
@@ -1321,8 +1704,11 @@ export function postFeeds(id, lines = []) {
       contentUsed: row.contentUsed,
       feedSource: row.feedSource,
       allowEmptyContent: row.allowEmptyContent,
+      deductMode: row.deductMode,
+      locationId: row.locationId,
     })
   })
+  tryAutoCompleteOrder(id)
   return getBatchOrder(id)
 }
 
@@ -1355,14 +1741,67 @@ export function backfillFeedContentFromAssay(orderId, { stepNo, itemId, content,
   if (updated) {
     appendOperationLog(
       order,
-      '含量回填',
-      targetId ? `补录投料含量 ${updated} 行` : `步骤 ${step || '—'} 回填 ${updated} 行投料含量`,
+      '有效含量回填',
+      targetId
+        ? `补录投料有效含量 ${updated} 行`
+        : `步骤 ${step || '—'} 回填 ${updated} 行投料有效含量`,
     )
   }
   return { ok: true, updated }
 }
 
-function extractContentFractionFromQcTask(task) {
+/**
+ * 回填/补录产出含量。content 按 0~1 小数；同步写产出行与 materialBatch.content。
+ * 可按 outputId / batchId 精确补录，或按步骤/物料/角色批量回填待补行。
+ */
+export function backfillOutputContentFromAssay(
+  orderId,
+  { stepNo, itemId, role, content, outputId, batchId } = {},
+) {
+  const order = getBatchOrder(orderId)
+  if (!order) return { ok: false, updated: 0, message: '批次指令不存在' }
+  const frac = Number(content)
+  if (!Number.isFinite(frac) || !(frac > 0)) {
+    return { ok: false, updated: 0, message: '请填写有效含量' }
+  }
+  const step = Number(stepNo)
+  const targetOutId = String(outputId || '').trim()
+  const targetBatchId = String(batchId || '').trim()
+  let updated = 0
+  ;(order.outputs || []).forEach((out) => {
+    if (targetOutId) {
+      if (String(out.id || '') !== targetOutId) return
+    } else if (targetBatchId) {
+      if (String(out.batchId || '') !== targetBatchId) return
+    } else {
+      if (step > 0 && Number(out.stepNo) !== step) return
+      if (itemId && out.itemId !== itemId) return
+      if (role && out.role !== role) return
+      // 已有含量且非待补：跳过，避免覆盖手填
+      if (!out.contentPending && out.contentUsed != null && out.contentUsed !== '') return
+    }
+    out.contentUsed = frac
+    out.contentPending = false
+    if (out.batchId) {
+      const batch = getMaterialBatch(out.batchId)
+      if (batch) batch.content = frac
+    }
+    updated += 1
+  })
+  if (updated) {
+    appendOperationLog(
+      order,
+      '产出含量回填',
+      targetOutId || targetBatchId
+        ? `补录产出有效含量 ${updated} 行`
+        : `步骤 ${step || '—'} 回填 ${updated} 行产出有效含量`,
+    )
+  }
+  return { ok: true, updated }
+}
+
+/** 从质检单解析有效含量（0~1）；无则 null。供投料/产出回填与登记预填共用。 */
+export function extractContentFractionFromQcTask(task) {
   for (const line of task?.lineItems || []) {
     if (line.content != null && line.content !== '') {
       const n = Number(line.content)
@@ -1410,11 +1849,33 @@ export function postOutput(id, { rows, locationId, deviation, stepNo }) {
     const role = row.role || plan?.role || 'by'
     const disposition = normalizeOutputDisposition(row.disposition)
     if (!disposition) throw new Error(`${itemLabel(row.itemId)} 请选择处理方式`)
+    const assayScopes = normalizeOutputAssayScopes(row.assayScopes)
+    const hardGate = Boolean(row.assayHardGate) || assayScopes.length > 0
+    // 硬门禁：登记时不能直接选回用/再提/入仓入罐，须先待判定并完成化验
+    if (hardGate && dispositionRequiresOutputAssayPass(disposition)) {
+      const label = OUTPUT_DISPOSITION_LABEL[disposition] || disposition
+      throw new Error(
+        `${itemLabel(row.itemId)} 已挂产出化验硬门禁，请先选「待判定」并完成化验后再确认「${label}」`,
+      )
+    }
     const makeBatch = createsOutputBatchDisposition(disposition)
     const rowLocation = makeBatch ? row.locationId || locationId : ''
+    // 进暂存池：物料须勾选「允许车间暂存」
+    if (disposition === 'staging') {
+      const { isProcessItemAllowWorkshopStaging } = require('@/store/materialBatchStore')
+      if (!isProcessItemAllowWorkshopStaging(row.itemId)) {
+        throw new Error(`${itemLabel(row.itemId)} 未开启「允许车间暂存」，不能进暂存池`)
+      }
+    }
     if (makeBatch && !rowLocation) {
       const tip =
-        disposition === 'tank' ? '储罐' : disposition === 'warehouse' ? '仓库' : '去向位置'
+        disposition === 'tank'
+          ? '储罐'
+          : disposition === 'warehouse'
+            ? '仓库'
+            : disposition === 'staging'
+              ? '暂存位置'
+              : '去向位置'
       throw new Error(`${itemLabel(row.itemId)} 请选择${tip}`)
     }
     if (makeBatch) {
@@ -1444,9 +1905,20 @@ export function postOutput(id, { rows, locationId, deviation, stepNo }) {
           ? '产出再提'
           : disposition === 'pending_decide'
             ? '产出待判定'
-            : disposition === 'scrap'
-              ? '产出废弃'
-              : '产出入库'
+            : disposition === 'staging'
+              ? '产出暂存'
+              : disposition === 'scrap'
+                ? '产出废弃'
+                : '产出入库'
+    // 有效含量：登记可空；空则待化验/补录回填（与投料 contentPending 同套路）
+    const contentRaw = row.contentUsed
+    const hasUserContent =
+      contentRaw != null &&
+      contentRaw !== '' &&
+      Number.isFinite(Number(contentRaw)) &&
+      Number(contentRaw) > 0
+    const contentUsed = hasUserContent ? Number(contentRaw) : null
+    const contentPending = Boolean(makeBatch) && !hasUserContent
     const batch = makeBatch
       ? addOutputBatch({
           itemId: row.itemId,
@@ -1455,10 +1927,12 @@ export function postOutput(id, { rows, locationId, deviation, stepNo }) {
           batchNo,
           status: batchStatus,
           disposition,
+          content: contentUsed,
           sourceType:
             disposition === 'reuse' ||
             disposition === 'reextract' ||
             disposition === 'pending_decide' ||
+            disposition === 'staging' ||
             disposition === 'scrap'
               ? disposition
               : 'output',
@@ -1467,7 +1941,6 @@ export function postOutput(id, { rows, locationId, deviation, stepNo }) {
           previousBatchId: order.reworkOfBatchId || order.reextractOfBatchId || '',
         })
       : null
-    const assayScopes = normalizeOutputAssayScopes(row.assayScopes)
     created.push({
       id: `out-${Date.now()}-${created.length}`,
       role,
@@ -1479,7 +1952,9 @@ export function postOutput(id, { rows, locationId, deviation, stepNo }) {
       locationId: rowLocation,
       stepNo: step > 0 ? step : plan?.stepNo || null,
       assayScopes,
-      assayHardGate: Boolean(row.assayHardGate) || assayScopes.length > 0,
+      assayHardGate: hardGate,
+      contentUsed,
+      contentPending,
       at: dayjs().format('YYYY-MM-DD HH:mm'),
     })
   })
@@ -1498,8 +1973,34 @@ export function postOutput(id, { rows, locationId, deviation, stepNo }) {
   )
   order.actualOutput = mainQty > 0 ? mainQty : order.actualOutput || 0
   order.yieldGap = yieldGap(order.actualOutput, order.theoreticalOutput)
-  if (deviation != null && deviation !== '') order.deviation = deviation
-  const dispositionText = ['pending_decide', 'warehouse', 'tank', 'reuse', 'reextract', 'scrap']
+  // 异常偏差是整单说明：本次有填写则追加一条记录并刷新「最新」文案；留空不改历史
+  const deviationText = String(deviation ?? '').trim()
+  if (deviationText) {
+    if (!Array.isArray(order.deviationLogs)) order.deviationLogs = []
+    // 兼容旧数据：原先只有 deviation、无流水时，先把旧值迁入流水
+    if (order.deviation && !order.deviationLogs.length) {
+      order.deviationLogs.push({
+        at: order.updatedAt || dayjs().format('YYYY-MM-DD HH:mm:ss'),
+        text: String(order.deviation),
+        operator: '',
+      })
+    }
+    order.deviationLogs.push({
+      at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+      text: deviationText,
+      operator: currentOperator() || '',
+    })
+    order.deviation = deviationText
+  }
+  const dispositionText = [
+    'pending_decide',
+    'warehouse',
+    'tank',
+    'staging',
+    'reuse',
+    'reextract',
+    'scrap',
+  ]
     .map((key) => {
       const count = created.filter((row) => row.disposition === key).length
       return count ? `${OUTPUT_DISPOSITION_LABEL[key]} ${count} 行` : ''
@@ -1511,28 +2012,28 @@ export function postOutput(id, { rows, locationId, deviation, stepNo }) {
     inbound ? '产出入库' : '产出登记',
     inbound ? `${dispositionText}，入库单 ${inbound.docNo}` : dispositionText,
   )
+  tryAutoCompleteOrder(order.id)
   return order
 }
 
-/** 产出过账同时记一张已入库单。每行可以进不同罐或仓。 */
+/** 产出过账生成待确认的生产入库单（仓/罐都是入库，待仓管确认后再可用）。 */
 function createOutputInboundOrder(order, created) {
   const locationName = (id) => listTanks().find((row) => row.id === id)?.name || ''
   const names = [...new Set(created.map((row) => locationName(row.locationId)).filter(Boolean))]
   const warehouse = names.length === 1 ? names[0] : names.join('、')
   const who = currentOperator()
-  const hasMain = created.some((row) => row.role === 'main')
   return addInboundOrder({
-    inboundType: hasMain ? '成品入库' : '半成品入库',
-    status: '已入库',
+    inboundType: '生产入库',
+    status: '待入库',
     warehouse,
     itemType: '产品',
     sourceOrderNo: order.batchNo,
     sourceType: '批次指令',
     creator: who,
     handler: who,
-    confirmer: who,
-    confirmedAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-    remark: `批次指令 ${order.batchNo} 产出入库`,
+    confirmer: '',
+    confirmedAt: '',
+    remark: `批次指令 ${order.batchNo} 产出入库（待仓管确认）`,
     inboundDate: dayjs().format('YYYY-MM-DD'),
     workOrders: [
       {
@@ -1551,13 +2052,44 @@ function createOutputInboundOrder(order, created) {
         unit: itemUnit(row.itemId) || order.unit || 'kg',
         warehouse: locationName(row.locationId) || warehouse,
         lineSource: '生产',
-        lineStatus: '已入库',
+        lineStatus: '待入库',
         barcodeBatchNo: row.batchNo,
         sourceDocNo: order.batchNo,
         productionDate: dayjs().format('YYYY-MM-DD'),
       })
     }),
   })
+}
+
+/**
+ * 仓管确认生产入库后：对应产出批次变为可用（内部 status=released，界面展示为已入库）。
+ * 流程批存在 materialBatchStore，不再走离散条码建批。
+ */
+export function markProcessOutputBatchesAvailableByInbound(inboundOrder, lines = []) {
+  if (!inboundOrder) return
+  const isProcess =
+    inboundOrder.sourceType === '批次指令' || inboundOrder.inboundType === '生产入库'
+  if (!isProcess) return
+  const { getMaterialBatchByNo, setBatchStatus } = require('@/store/materialBatchStore')
+  const targets = (lines.length ? lines : inboundOrder.lineItems || []).filter(Boolean)
+  targets.forEach((line) => {
+    if ((line.lineStatus || '') === '已拒绝') return
+    const batch = getMaterialBatchByNo(line.barcodeBatchNo)
+    if (!batch) return
+    if (batch.status === 'await_inbound' || batch.status === 'pending') {
+      try {
+        setBatchStatus(batch.id, 'released')
+      } catch {
+        batch.status = 'released'
+      }
+    }
+  })
+  const order = batchInstructionState.orders.find(
+    (row) => row.batchNo === inboundOrder.sourceOrderNo,
+  )
+  if (order) {
+    appendOperationLog(order, '产出入库确认', inboundOrder.docNo || '')
+  }
 }
 
 export function completionErrors(order) {
@@ -1602,30 +2134,114 @@ export function completionErrors(order) {
   return errors
 }
 
+export function allRouteStepsConfirmed(order) {
+  const steps = order?.routeSnapshot || []
+  if (!steps.length) return false
+  const confirmed = new Set(order.confirmedSteps || [])
+  return steps.every((step) => confirmed.has(step.stepNo))
+}
+
+function clearCompletionBlockers(order) {
+  if (!order) return
+  order.completionBlockers = []
+  order.autoCompletePending = false
+  order.completionBlockersAt = ''
+}
+
+/**
+ * 全部步骤已确认时尝试自动关单。
+ * 条件不齐则把原因写入 completionBlockers，供详情页展示。
+ */
+export function tryAutoCompleteOrder(id, { log = false } = {}) {
+  const order = getBatchOrder(id)
+  if (!order) return { ok: false, attempted: false, completed: false, errors: [] }
+  if (order.status === 'done') {
+    clearCompletionBlockers(order)
+    return { ok: true, attempted: false, completed: true, errors: [] }
+  }
+  if (order.status !== 'running') {
+    clearCompletionBlockers(order)
+    return { ok: false, attempted: false, completed: false, errors: [] }
+  }
+  if (!allRouteStepsConfirmed(order)) {
+    clearCompletionBlockers(order)
+    return { ok: false, attempted: false, completed: false, errors: [] }
+  }
+  const errors = completionErrors(order)
+  if (!errors.length) {
+    releaseReactorHold(order)
+    order.status = 'done'
+    order.completedAt = dayjs().format('YYYY-MM-DD HH:mm')
+    clearCompletionBlockers(order)
+    appendOperationLog(order, '自动完成')
+    return { ok: true, attempted: true, completed: true, errors: [] }
+  }
+  const prev = (order.completionBlockers || []).join('|')
+  const next = errors.join('|')
+  order.completionBlockers = errors.slice()
+  order.autoCompletePending = true
+  order.completionBlockersAt = dayjs().format('YYYY-MM-DD HH:mm')
+  if (log && prev !== next) {
+    appendOperationLog(order, '自动完成未通过', errors.join('；'))
+  }
+  return { ok: false, attempted: true, completed: false, errors }
+}
+
 export function completeOrder(id) {
   const order = getBatchOrder(id)
   const errors = completionErrors(order)
-  if (errors.length) throw new Error(errors.join('；'))
+  if (errors.length) {
+    if (order?.status === 'running' && allRouteStepsConfirmed(order)) {
+      order.completionBlockers = errors.slice()
+      order.autoCompletePending = true
+      order.completionBlockersAt = dayjs().format('YYYY-MM-DD HH:mm')
+    }
+    throw new Error(errors.join('；'))
+  }
   releaseReactorHold(order)
   order.status = 'done'
   order.completedAt = dayjs().format('YYYY-MM-DD HH:mm')
+  clearCompletionBlockers(order)
   appendOperationLog(order, '完成')
   return order
 }
 
-/** 产出化验硬门禁：有关联待检或不合格时，不能回流投料 / 开再提。 */
-export function assertSideOutputAssayAllowsUse(order, outputRow) {
+/**
+ * 硬门禁下须化验合格才允许的最终去向。
+ * 待判定 / 废弃不卡；回用、再提、入仓库、入储罐须合格。
+ */
+export function dispositionRequiresOutputAssayPass(value) {
+  const text = normalizeOutputDisposition(value)
+  if (!text || text === 'pending_decide' || text === 'scrap') return false
+  // 进暂存池与入仓入罐同属落库存类，硬门禁下须化验合格
+  return (
+    text === 'reuse' || text === 'reextract' || text === 'staging' || isStockOutputDisposition(text)
+  )
+}
+
+/** 产出行是否挂产出化验硬门禁（勾选产出检即硬门禁）。 */
+export function isOutputAssayHardGate(order, outputRow) {
+  if (!outputRow) return false
+  if (outputRow.assayHardGate === true) return true
+  if (Array.isArray(outputRow.assayScopes) && outputRow.assayScopes.length > 0) return true
+  if (!order) return false
+  return (order.outputQcRecords || []).some(
+    (row) =>
+      row.itemId === outputRow.itemId &&
+      row.role === outputRow.role &&
+      Number(row.stepNo) === Number(outputRow.stepNo),
+  )
+}
+
+/**
+ * 产出化验硬门禁：未完成或不合格时，拦截需合格才能走的动作
+ * （确认最终去向、回流投料、开再提、发货选批等）。
+ * @param {{ action?: string }} [options] action 用于文案，如「确认该去向」「回用或再提」
+ */
+export function assertSideOutputAssayAllowsUse(order, outputRow, options = {}) {
   if (!order || !outputRow) return
-  const hard =
-    outputRow.assayHardGate === true ||
-    (Array.isArray(outputRow.assayScopes) && outputRow.assayScopes.length > 0) ||
-    (order.outputQcRecords || []).some(
-      (row) =>
-        row.itemId === outputRow.itemId &&
-        row.role === outputRow.role &&
-        Number(row.stepNo) === Number(outputRow.stepNo),
-    )
-  if (!hard) return
+  if (!isOutputAssayHardGate(order, outputRow)) return
+  const action = String(options.action || '继续').trim() || '继续'
   const records = (order.outputQcRecords || []).filter(
     (row) =>
       row.itemId === outputRow.itemId &&
@@ -1633,33 +2249,86 @@ export function assertSideOutputAssayAllowsUse(order, outputRow) {
       (!outputRow.stepNo || Number(row.stepNo) === Number(outputRow.stepNo)),
   )
   if (!records.length) {
-    throw new Error(`${itemLabel(outputRow.itemId)} 已勾选产出化验，请先完成化验再回用或再提`)
+    throw new Error(`${itemLabel(outputRow.itemId)} 已挂产出化验硬门禁，请先完成化验再${action}`)
   }
   const { getQcTaskById: loadQc } = require('@/store/qcTaskStore')
   for (const row of records) {
     const task = row.taskId ? loadQc(row.taskId) : null
     const status = task?.qcStatus || row.qcStatus || ''
     const result = task?.qcResult || row.qcResult || ''
-    if (!status || /待|draft|pending/i.test(String(status))) {
-      throw new Error(`${itemLabel(outputRow.itemId)} 产出化验未完成，不能回用或再提`)
+    const pending =
+      !status ||
+      status === '待质检' ||
+      status === '检验中' ||
+      /待|draft|pending|inspecting/i.test(String(status))
+    if (pending && !result) {
+      throw new Error(`${itemLabel(outputRow.itemId)} 产出化验未完成，不能${action}`)
     }
     if (/不通过|不合格|FAIL/i.test(String(result))) {
-      throw new Error(`${itemLabel(outputRow.itemId)} 产出化验不合格，不能回用或再提`)
+      throw new Error(`${itemLabel(outputRow.itemId)} 产出化验不合格，不能${action}`)
+    }
+    // 已完成但无明确不合格字样：再确认须有通过类结论
+    if (status === '已完成' || /完成|completed/i.test(String(status))) {
+      const passed =
+        result === '质检通过' ||
+        result === '合格' ||
+        result === 'PASS' ||
+        /通过|合格|让步/.test(String(result))
+      if (!passed) {
+        throw new Error(`${itemLabel(outputRow.itemId)} 产出化验未通过，不能${action}`)
+      }
     }
   }
 }
 
 /**
  * 待判定批次确认最终去向：入仓库 / 入储罐 / 回用 / 再提 / 废弃。
+ * 硬门禁：未出结果或不合格时，不能确认回用/再提/入仓入罐（废弃仍可）。
  */
+/** 解析产出行对应物料批次：id → 批号；待判定行若库存丢失则按产出行重建。 */
+function resolveOrRecreateOutputBatch(order, output, batchId) {
+  let batch = getMaterialBatch(output.batchId || batchId)
+  if (!batch && (output.batchNo || batchId)) {
+    batch = getMaterialBatchByNo(output.batchNo) || getMaterialBatchByNo(batchId)
+    if (batch && output.batchId !== batch.id) output.batchId = batch.id
+  }
+  if (batch) return batch
+  // 指令上有待判定产出行，但 materialBatch 被清掉/不同步时，按行重建后再确认去向
+  if (output.disposition !== 'pending_decide' && !String(output.batchNo || '').trim()) {
+    return null
+  }
+  const loc = output.locationId
+  if (!loc) throw new Error('产出暂存位置缺失，无法恢复批次，请重新登记产出')
+  const qty = Number(output.qty)
+  if (!(qty > 0)) throw new Error('产出数量无效，无法恢复批次')
+  const batchNo =
+    String(output.batchNo || '').trim() ||
+    `${order.batchNo}-FIX-${Date.now().toString(36).slice(-4)}`
+  batch = addOutputBatch({
+    itemId: output.itemId,
+    qty,
+    locationId: loc,
+    batchNo,
+    status: 'await_decide',
+    disposition: 'pending_decide',
+    sourceType: 'pending_decide',
+    movementType: '产出待判定',
+    sourceId: order.id,
+  })
+  output.batchId = batch.id
+  output.batchNo = batch.batchNo
+  return batch
+}
+
 export function confirmOutputDisposition(orderId, { outputId, batchId, disposition, locationId }) {
   const order = getBatchOrder(orderId)
   if (!order) throw new Error('指令不存在')
   const output =
     (order.outputs || []).find((row) => row.id === outputId) ||
-    (order.outputs || []).find((row) => row.batchId === batchId)
+    (order.outputs || []).find((row) => row.batchId === batchId) ||
+    (order.outputs || []).find((row) => row.batchNo && row.batchNo === batchId)
   if (!output) throw new Error('产出行不存在')
-  const batch = getMaterialBatch(output.batchId || batchId)
+  const batch = resolveOrRecreateOutputBatch(order, output, batchId)
   if (!batch) throw new Error('产出批次不存在')
   if (batch.status !== 'await_decide' && output.disposition !== 'pending_decide') {
     throw new Error('只有待判定产出才能确认去向')
@@ -1668,6 +2337,16 @@ export function confirmOutputDisposition(orderId, { outputId, batchId, dispositi
   if (!next || next === 'pending_decide') throw new Error('请选择最终处理方式')
   if (!createsOutputBatchDisposition(next) || next === 'pending_decide') {
     throw new Error('处理方式不正确')
+  }
+  if (dispositionRequiresOutputAssayPass(next)) {
+    const label = OUTPUT_DISPOSITION_LABEL[next] || '该去向'
+    assertSideOutputAssayAllowsUse(order, output, { action: `确认「${label}」` })
+  }
+  if (next === 'staging') {
+    const { isProcessItemAllowWorkshopStaging } = require('@/store/materialBatchStore')
+    if (!isProcessItemAllowWorkshopStaging(output.itemId || batch.itemId)) {
+      throw new Error(`${itemLabel(output.itemId)} 未开启「允许车间暂存」，不能进暂存池`)
+    }
   }
   const loc = locationId || output.locationId || batch.locationId
   if (!loc) throw new Error('请选择去向位置')
@@ -1678,7 +2357,6 @@ export function confirmOutputDisposition(orderId, { outputId, batchId, dispositi
   if (needKind && actualKind !== needKind) {
     throw new Error(next === 'tank' ? '入储罐请选择储罐' : '入仓库请选择仓库或料仓')
   }
-  // 回用/再提去向可先确认；硬门禁在回流投料列表 / 开再提指令时拦截。
   output.disposition = next
   output.locationId = loc
   batch.disposition = next
@@ -1687,6 +2365,7 @@ export function confirmOutputDisposition(orderId, { outputId, batchId, dispositi
   batch.sourceType =
     next === 'warehouse' || next === 'tank' ? 'output' : next === 'scrap' ? 'scrap' : next
   let inbound = null
+  // 进暂存池不生成入库单；入仓库/入储罐仍立刻生成
   if (isStockOutputDisposition(next)) {
     inbound = createOutputInboundOrder(order, [output])
     output.inboundOrderId = inbound.id
@@ -1699,12 +2378,13 @@ export function confirmOutputDisposition(orderId, { outputId, batchId, dispositi
       inbound ? `，入库单 ${inbound.docNo}` : ''
     }`,
   )
+  tryAutoCompleteOrder(order.id)
   return { order, batch, inbound }
 }
 
-/** 待判定 / 待回用 / 待再提产出汇总，供待处置菜单。 */
+/** 待判定 / 车间暂存 / 待回用 / 待再提产出汇总，供待处置菜单。 */
 export function listPendingDispositionOutputs() {
-  const statuses = new Set(['await_decide', 'await_reuse', 'await_reextract'])
+  const statuses = new Set(['await_decide', 'await_staging', 'await_reuse', 'await_reextract'])
   const rows = []
   batchInstructionState.orders.forEach((order) => {
     ;(order.outputs || []).forEach((output) => {
@@ -1724,6 +2404,7 @@ export function listPendingDispositionOutputs() {
         locationId: batch.locationId || output.locationId,
         qty: batch.qty,
         unit: batch.unit,
+        content: batch.content,
         status: batch.status,
         stepNo: output.stepNo,
         at: output.at,
@@ -1734,10 +2415,145 @@ export function listPendingDispositionOutputs() {
   return rows.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
 }
 
+/** 含量键：两边都空视为相同；有值则按数值字符串比对（避免 0.55 vs 0.550） */
+function stagingContentKey(content) {
+  if (content == null || content === '') return ''
+  const n = Number(content)
+  if (!Number.isFinite(n)) return String(content)
+  return String(Math.round(n * 1e6) / 1e6)
+}
+
+/**
+ * 车间暂存批合并入库：同物料、含量相同；跨批令/跨暂存位置；写入统一正式位置并生成生产入库单。
+ * @param {{ batchIds: string[], locationId: string, operator?: string }} payload
+ */
+export function mergeStagingBatchesToInbound({ batchIds = [], locationId, operator } = {}) {
+  const ids = [...new Set((batchIds || []).map((id) => String(id || '').trim()).filter(Boolean))]
+  if (ids.length < 1) throw new Error('请勾选至少一条车间暂存产出')
+  const loc = String(locationId || '').trim()
+  if (!loc) throw new Error('请选择正式入库位置')
+  const tank = listTanks().find((row) => row.id === loc)
+  if (!tank) throw new Error('入库位置不存在')
+
+  const rows = []
+  for (const id of ids) {
+    const batch = getMaterialBatch(id)
+    if (!batch || batch.status !== 'await_staging') {
+      throw new Error(`批次 ${batch?.batchNo || id} 不是车间暂存状态，不能合并入库`)
+    }
+    if (!(Number(batch.qty) > 0)) throw new Error(`批次 ${batch.batchNo} 数量无效`)
+    const order =
+      batchInstructionState.orders.find((o) => o.id === batch.sourceId) ||
+      batchInstructionState.orders.find((o) => o.outputs?.some((x) => x.batchId === batch.id))
+    const output = order?.outputs?.find((x) => x.batchId === batch.id)
+    rows.push({ batch, order, output })
+  }
+
+  const itemId = rows[0].batch.itemId
+  if (rows.some((row) => row.batch.itemId !== itemId)) {
+    throw new Error('只能合并同一物料的暂存批')
+  }
+  const contentKey = stagingContentKey(rows[0].batch.content)
+  if (rows.some((row) => stagingContentKey(row.batch.content) !== contentKey)) {
+    throw new Error('有效含量不一致，不能合并（可在功能参数中调整合并策略）')
+  }
+
+  const locationName = tank.name || ''
+  const who = operator || currentOperator()
+  const orderNos = [...new Set(rows.map((row) => row.order?.batchNo).filter(Boolean))]
+  const createdLines = rows.map(({ batch, order, output }) => ({
+    id: output?.id || `stg-${batch.id}`,
+    role: output?.role || 'by',
+    itemId: batch.itemId,
+    qty: batch.qty,
+    disposition: tank.kind === 'tank' ? 'tank' : 'warehouse',
+    batchId: batch.id,
+    batchNo: batch.batchNo,
+    locationId: loc,
+    content: batch.content,
+    stepNo: output?.stepNo || null,
+    orderId: order?.id || '',
+    orderNo: order?.batchNo || '',
+  }))
+
+  // 暂存批先改为待入库并迁到正式位置，再挂生产入库单
+  rows.forEach(({ batch }) => {
+    batch.status = 'await_inbound'
+    batch.disposition = tank.kind === 'tank' ? 'tank' : 'warehouse'
+    batch.locationId = loc
+    batch.sourceType = 'output'
+  })
+
+  const primaryOrder = rows.find((row) => row.order)?.order
+  const inbound = addInboundOrder({
+    inboundType: '生产入库',
+    status: '待入库',
+    warehouse: locationName,
+    itemType: '产品',
+    sourceOrderNo: orderNos.join('、'),
+    sourceType: '合并入库',
+    creator: who,
+    handler: who,
+    confirmer: '',
+    confirmedAt: '',
+    remark: `车间暂存合并入库（批令 ${orderNos.join('、') || '—'}）`,
+    inboundDate: dayjs().format('YYYY-MM-DD'),
+    workOrders: orderNos.map((no) => {
+      const hit = rows.find((row) => row.order?.batchNo === no)?.order
+      return {
+        workOrderNo: no,
+        workOrderId: hit?.id || '',
+        qty: rows
+          .filter((row) => row.order?.batchNo === no)
+          .reduce((sum, row) => sum + Number(row.batch.qty || 0), 0),
+      }
+    }),
+    lineItems: createdLines.map((row) => {
+      const card = itemMasterCard(row.itemId)
+      return createInboundLine({
+        itemCode: card.code || '',
+        itemName: card.name || itemLabel(row.itemId),
+        specModel: card.specModel || '',
+        qty: row.qty,
+        unit: itemUnit(row.itemId) || 'kg',
+        warehouse: locationName,
+        content: row.content,
+        barcodeBatchNo: row.batchNo,
+        sourceDocNo: row.orderNo,
+        lineSource: '生产',
+        workOrderNo: row.orderNo,
+      })
+    }),
+  })
+
+  createdLines.forEach((row) => {
+    const order = row.orderId ? getBatchOrder(row.orderId) : primaryOrder
+    const output = order?.outputs?.find((x) => x.batchId === row.batchId)
+    if (output) {
+      output.disposition = row.disposition
+      output.locationId = loc
+      output.inboundOrderId = inbound.id
+      output.inboundOrderNo = inbound.docNo
+    }
+    if (order) {
+      appendOperationLog(
+        order,
+        '合并入库',
+        `${itemLabel(row.itemId)} ${row.batchNo} → 入库单 ${inbound.docNo}`,
+      )
+    }
+  })
+
+  return { inbound, lines: createdLines }
+}
+
 export function createRework({ sourceBatchId, qty }) {
   const src = getMaterialBatch(sourceBatchId)
   if (!src) throw new Error('原批次不存在')
-  if (src.status !== 'released') throw new Error('只能对已放行批次返工')
+  // 须仓管已确认入库（可用库存）；不再依赖批令上的「成品放行」
+  if (src.status !== 'released') {
+    throw new Error('只能对已入库确认的产出批次返工，请先完成生产入库确认')
+  }
   const take = round3(qty)
   if (!(take > 0) || take > Number(src.qty) + 1e-9)
     throw new Error('返工批量不能超过原批次剩余重量')
@@ -1800,7 +2616,9 @@ export function createReextract({ sourceBatchId, qty }) {
     o.outputs?.some((x) => x.batchId === src.id),
   )
   const originOutput = origin?.outputs?.find((x) => x.batchId === src.id)
-  if (origin && originOutput) assertSideOutputAssayAllowsUse(origin, originOutput)
+  if (origin && originOutput) {
+    assertSideOutputAssayAllowsUse(origin, originOutput, { action: '开再提指令' })
+  }
   const formula = origin ? getFormula(origin.formulaId) : null
   const batchNo = nextBatchNo()
   const order = {
@@ -1843,18 +2661,61 @@ export function createReextract({ sourceBatchId, qty }) {
   return order
 }
 
-export function releaseOutputBatch(batchId) {
-  const order = batchInstructionState.orders.find((row) =>
-    (row.outputs || []).some((item) => item.batchId === batchId),
-  )
-  const result = setBatchStatus(batchId, 'released')
-  if (order) appendOperationLog(order, '成品放行', getMaterialBatch(batchId)?.batchNo || '')
-  return result
+/**
+ * @deprecated 产出可用性改为「生产入库确认 + 检单硬门禁」，批令不再做成品放行。
+ */
+export function releaseOutputBatch() {
+  throw new Error('已取消批令成品放行：请到待入库列表确认生产入库；硬门禁看检单是否合格')
+}
+
+/** 已入库确认的产出批次，若挂硬门禁则须化验合格才可发货/普通投料。 */
+export function assertProcessOutputBatchUsable(batch, action = '使用') {
+  if (!batch || batch.sourceType === 'purchase') return
+  if (batch.status !== 'released') {
+    throw new Error(`批次 ${batch.batchNo || ''} 尚未入库确认，不能${action}`)
+  }
+  const order =
+    (batch.sourceId && getBatchOrder(batch.sourceId)) ||
+    batchInstructionState.orders.find((row) =>
+      (row.outputs || []).some((item) => item.batchId === batch.id),
+    )
+  const output = order?.outputs?.find((item) => item.batchId === batch.id)
+  if (order && output) {
+    assertSideOutputAssayAllowsUse(order, output, { action })
+  }
+}
+
+export function isProcessOutputBatchUsable(batch) {
+  try {
+    assertProcessOutputBatchUsable(batch, '使用')
+    return true
+  } catch {
+    return false
+  }
 }
 
 export function listFeeds() {
   return batchInstructionState.orders.flatMap((order) =>
-    (order.feeds || []).map((feed) => ({ ...feed, orderId: order.id, orderNo: order.batchNo })),
+    (order.feeds || []).map((feed) => ({
+      ...feed,
+      orderId: order.id,
+      orderNo: order.batchNo,
+      workCenterId: order.workCenterId || '',
+      productionLineId: order.productionLineId || '',
+    })),
+  )
+}
+
+/** 全库产出过账扁平列表（交班按时段汇总用）。 */
+export function listOutputs() {
+  return batchInstructionState.orders.flatMap((order) =>
+    (order.outputs || []).map((out) => ({
+      ...out,
+      orderId: order.id,
+      orderNo: order.batchNo,
+      workCenterId: order.workCenterId || '',
+      productionLineId: order.productionLineId || '',
+    })),
   )
 }
 

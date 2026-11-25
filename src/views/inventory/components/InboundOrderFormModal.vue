@@ -47,12 +47,23 @@
               </a-form-item>
             </a-col>
             <a-col :span="6">
-              <a-form-item label="入库仓库">
+              <a-form-item label="位置类型">
+                <a-select
+                  v-model:value="form.locationType"
+                  size="small"
+                  :options="inboundLocationTypeOptions"
+                  @change="onLocationTypeChange"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item label="入库位置">
                 <a-select
                   v-model:value="form.warehouse"
                   allow-clear
                   size="small"
-                  placeholder="请选择 入库仓库"
+                  show-search
+                  :placeholder="form.locationType === 'tank' ? '请选择储罐' : '请选择仓库'"
                   :options="warehouseOpts"
                   @change="onHeaderWarehouseChange"
                 />
@@ -189,7 +200,7 @@
               <PlusOutlined />
               添加物品
             </a-button>
-            <a-button size="small" @click="bomModalOpen = true">按BOM添加</a-button>
+            <a-button size="small" @click="convertToolOpen = true">换算工具</a-button>
             <TableColumnSettingButton @click="columnDrawerOpen = true" />
           </a-space>
         </div>
@@ -378,6 +389,33 @@
                     </template>
                   </InventoryLineEditableCell>
                 </template>
+                <template v-else-if="column.key === 'content'">
+                  <InventoryLineEditableCell
+                    :active="isLineCellEditing(record.id, 'content')"
+                    :display="formatContentPctText(record.content)"
+                    :empty="record.content == null || record.content === ''"
+                    numeric
+                    placeholder="请输入"
+                    @activate="startLineCellEdit(record.id, 'content')"
+                    @end="endLineCellEdit"
+                  >
+                    <template #edit="{ endEdit }">
+                      <a-input-number
+                        :value="contentToPct(record.content)"
+                        :min="0"
+                        :max="100"
+                        :precision="4"
+                        size="small"
+                        style="width: 100%"
+                        placeholder="%"
+                        autofocus
+                        @update:value="(v) => (record.content = contentPctToFraction(v))"
+                        @blur="endEdit"
+                        @pressEnter="endEdit"
+                      />
+                    </template>
+                  </InventoryLineEditableCell>
+                </template>
                 <template v-else-if="column.key === 'qty'">
                   <InventoryLineEditableCell
                     :active="isLineCellEditing(record.id, 'qty')"
@@ -393,14 +431,14 @@
                       <a-input-number
                         v-if="isInboundDualUnitLine(record)"
                         v-model:value="record.purchaseQty"
-                        :min="1"
-                        :precision="0"
+                        :min="0.0001"
+                        :precision="4"
                         size="small"
                         style="width: 100%"
                         autofocus
                         @blur="endEdit"
                         @pressEnter="endEdit"
-                        @change="() => onLineQtyChange(record)"
+                        @change="() => onLinePurchaseQtyChange(record)"
                       />
                       <a-input-number
                         v-else
@@ -418,69 +456,36 @@
                   </InventoryLineEditableCell>
                 </template>
                 <template v-else-if="column.key === 'stockUnitQty'">
-                  <template v-if="isInboundDualUnitLine(record)">
-                    <InventoryLineEditableCell
-                      v-if="allowsLineTotalEntry(record)"
-                      :active="isLineCellEditing(record.id, 'stockUnitQty')"
-                      :display="
-                        formatQtyWithUnit(
-                          getStockUnitQtyValue(record),
-                          resolveInboundStockUnit(record),
-                        )
-                      "
-                      :empty="
-                        getStockUnitQtyValue(record) == null || getStockUnitQtyValue(record) === ''
-                      "
-                      numeric
-                      @activate="startLineCellEdit(record.id, 'stockUnitQty')"
-                      @end="endLineCellEdit"
-                    >
-                      <template #edit="{ endEdit }">
-                        <a-input-number
-                          :value="getStockUnitQtyValue(record)"
-                          :min="0.001"
-                          :precision="4"
-                          size="small"
-                          style="width: 100%"
-                          autofocus
-                          @update:value="(v) => onLineStockUnitQtyInput(record, v)"
-                          @blur="endEdit"
-                          @pressEnter="endEdit"
-                        />
-                      </template>
-                    </InventoryLineEditableCell>
-                    <InventoryLineEditableCell
-                      v-else
-                      :active="isLineCellEditing(record.id, 'stockUnitQty')"
-                      :display="
-                        formatQtyWithUnit(
-                          getStockUnitQtyValue(record),
-                          resolveInboundStockUnit(record),
-                        )
-                      "
-                      :empty="
-                        getUniformPieceValue(record) == null || getUniformPieceValue(record) === ''
-                      "
-                      numeric
-                      @activate="startLineCellEdit(record.id, 'stockUnitQty')"
-                      @end="endLineCellEdit"
-                    >
-                      <template #edit="{ endEdit }">
-                        <a-input-number
-                          :value="getUniformPieceValue(record)"
-                          :min="0.001"
-                          :precision="4"
-                          size="small"
-                          style="width: 100%"
-                          autofocus
-                          placeholder="单件数量"
-                          @update:value="(v) => onLineStockUnitQtyInput(record, v)"
-                          @blur="endEdit"
-                          @pressEnter="endEdit"
-                        />
-                      </template>
-                    </InventoryLineEditableCell>
-                  </template>
+                  <InventoryLineEditableCell
+                    v-if="isInboundDualUnitLine(record)"
+                    :active="isLineCellEditing(record.id, 'stockUnitQty')"
+                    :display="
+                      formatQtyWithUnit(
+                        getStockUnitQtyValue(record),
+                        resolveInboundStockUnit(record),
+                      )
+                    "
+                    :empty="
+                      getStockUnitQtyValue(record) == null || getStockUnitQtyValue(record) === ''
+                    "
+                    numeric
+                    @activate="startLineCellEdit(record.id, 'stockUnitQty')"
+                    @end="endLineCellEdit"
+                  >
+                    <template #edit="{ endEdit }">
+                      <a-input-number
+                        :value="getStockUnitQtyValue(record)"
+                        :min="0.0001"
+                        :precision="4"
+                        size="small"
+                        style="width: 100%"
+                        autofocus
+                        @update:value="(v) => onLineStockUnitQtyInput(record, v)"
+                        @blur="endEdit"
+                        @pressEnter="endEdit"
+                      />
+                    </template>
+                  </InventoryLineEditableCell>
                   <span v-else class="cell-disabled">{{
                     formatQtyWithUnit(record.qty, resolveInboundStockUnit(record))
                   }}</span>
@@ -651,17 +656,6 @@
     @confirm="onVariantConfigConfirm"
   />
 
-  <AddByBomModal
-    v-if="isActive"
-    v-model:open="bomModalOpen"
-    own-active-only
-    qty-label="入库数量"
-    qty-hint="子项入库数量 = 入库数量 × 子件原单位用量"
-    preview-tip="确定后将添加所选物品自有生效 BOM 的下级结构"
-    modal-width="720px"
-    @confirm="onBomAdded"
-  />
-
   <InboundLineEditModal
     v-if="isActive"
     v-model:open="lineEditOpen"
@@ -686,6 +680,8 @@
     :confirm-loading="refuseLineLoading"
     @confirm="handleRefuseLineConfirm"
   />
+
+  <UnitConvertToolModal v-model:open="convertToolOpen" />
 </template>
 
 <script setup>
@@ -709,17 +705,24 @@ import { useInventoryLineCellEdit } from '@/composables/useInventoryLineCellEdit
 import { useTableColumnSettings } from '@/composables/useTableColumnSettings'
 import SelectBomMaterialModal from '@/views/product-process/components/SelectBomMaterialModal.vue'
 import ConfigureSalesSpuVariantModal from '@/views/sales/components/ConfigureSalesSpuVariantModal.vue'
-import AddByBomModal from '@/views/product-process/components/AddByBomModal.vue'
 import InboundLineEditModal from './InboundLineEditModal.vue'
 import InboundRefuseModal from './InboundRefuseModal.vue'
+import UnitConvertToolModal from '@/components/UnitConvertToolModal.vue'
 import InventoryLineItemSelect from './InventoryLineItemSelect.vue'
 import InventoryLineEditableCell from './InventoryLineEditableCell.vue'
 import InventoryLineTableFooter from './InventoryLineTableFooter.vue'
 import { inboundTypeOptions, handlerOptions, INBOUND_SOURCE } from '@/mock/inboundOptions'
 import { supplierOptions } from '@/mock/purchaseRequisitionOptions'
 import { customerOptions } from '@/mock/salesOrderOptions'
-import { getWarehouseSelectOptions, warehouseState } from '@/store/warehouseStore'
+import { warehouseState } from '@/store/warehouseStore'
 import { getLocationSelectOptions, warehouseLocationState } from '@/store/warehouseLocationStore'
+import {
+  getInboundLocationSelectOptions,
+  inboundLocationTypeOptions,
+  INBOUND_LOCATION_TYPE,
+  resolveInboundLocationType,
+} from '@/utils/inboundBatchDisplay'
+import { materialBatchState } from '@/store/materialBatchStore'
 import {
   addInboundOrder,
   updateInboundOrder,
@@ -743,13 +746,12 @@ import { warehouseOptionLabel } from '@/utils/inventoryFormLineDisplay'
 import {
   applyPickerItemToInboundLine,
   buildInboundLineFromPickerItem,
-  buildInboundLinesFromBom,
   cloneInboundLine,
   createBlankInboundLine,
   enrichInboundLine,
+  findMaterialByCode,
   getInboundQtyValue,
   getStockUnitQtyValue,
-  getUniformPieceValue,
   isInboundDualUnitLine,
   mergeInboundLines,
   resolveInboundQtyUnit,
@@ -759,12 +761,10 @@ import {
   SETTLE_ENTRY_MODE,
 } from '@/utils/inboundLineHelpers'
 import { hasSettleUnit } from '@/utils/settleUnit'
+import { contentPctToFraction, contentToPct, formatContentPctText } from '@/utils/batchContent'
 import { createInboundLine } from '@/mock/inboundOrders'
-import {
-  INBOUND_ENTRY_MODE,
-  allowsInboundTotalEntry,
-  isOneItemOneCodeBarcode,
-} from '@/utils/variableLengthMaterial'
+import { isOneItemOneCodeBarcode } from '@/utils/variableLengthMaterial'
+import { purchaseQtyToStockQty, resolvePurchaseConvertRate } from '@/utils/purchaseUomConvert'
 import { useSpuVariantConfig } from '@/composables/useSpuVariantConfig'
 import {
   createInventorySpuLineDraft,
@@ -829,7 +829,8 @@ const {
 const saving = ref(false)
 const addingItems = ref(false)
 const pickerOpen = ref(false)
-const bomModalOpen = ref(false)
+/** 清单工具栏「换算工具」弹窗 */
+const convertToolOpen = ref(false)
 const {
   variantConfigOpen,
   variantConfigSpuId,
@@ -910,8 +911,17 @@ const dedicatedSplitPreview = computed(() => {
 
 const warehouseOpts = computed(() => {
   void warehouseState.warehouses
-  return getWarehouseSelectOptions()
+  void materialBatchState.tanks
+  return getInboundLocationSelectOptions(form.locationType || INBOUND_LOCATION_TYPE.WAREHOUSE)
 })
+
+function onLocationTypeChange() {
+  const allowed = new Set(warehouseOpts.value.map((o) => o.value))
+  if (form.warehouse && !allowed.has(form.warehouse)) {
+    form.warehouse = undefined
+    onHeaderWarehouseChange()
+  }
+}
 
 function locationOptsForLine(line) {
   void warehouseLocationState.locations
@@ -933,6 +943,7 @@ const {
 const form = reactive({
   docNo: '',
   inboundType: '其他入库',
+  locationType: INBOUND_LOCATION_TYPE.WAREHOUSE,
   warehouse: undefined,
   inboundDate: dayjs(),
   supplier: undefined,
@@ -950,8 +961,9 @@ const form = reactive({
 })
 
 const { columnSettings, columnDrawerOpen, displayColumns, tableScrollX, defaultColumnSettings } =
-  useTableColumnSettings('inbound-form-lines-v9', inboundFormLineColumns, {
-    minScrollX: 2150,
+  // v11：明细列「物品名称」排在「物品编码」前
+  useTableColumnSettings('inbound-form-lines-v11', inboundFormLineColumns, {
+    minScrollX: 2270,
     pinEdgeColumns: false,
     pinActionColumn: true,
   })
@@ -1038,6 +1050,7 @@ function resetForm() {
   Object.assign(form, {
     docNo: '',
     inboundType: '其他入库',
+    locationType: INBOUND_LOCATION_TYPE.WAREHOUSE,
     warehouse: undefined,
     inboundDate: dayjs(),
     supplier: undefined,
@@ -1063,6 +1076,7 @@ function loadEditForm(record) {
   Object.assign(form, {
     docNo: record.docNo,
     inboundType: record.inboundType,
+    locationType: resolveInboundLocationType(record.warehouse),
     warehouse: record.warehouse || undefined,
     inboundDate: record.inboundDate ? dayjs(record.inboundDate) : dayjs(),
     supplier: record.supplier,
@@ -1189,30 +1203,25 @@ function onLineQtyChange(line) {
   syncInboundLineTotalFromUnit(line)
 }
 
-function allowsLineTotalEntry(line) {
-  return allowsInboundTotalEntry(line?.barcodeType)
-}
-
-function isOneItemOneCodeLine(line) {
-  return isOneItemOneCodeBarcode(line?.barcodeType)
-}
-
-function onLineStockUnitQtyInput(line, value) {
-  if (allowsLineTotalEntry(line)) {
-    line.inboundEntryMode = INBOUND_ENTRY_MODE.TOTAL
-    line.totalValue = value
-    line.qty = value
-    line.uniformValue = undefined
-    syncInboundLineTotalFromUnit(line)
-    return
+/** 列表改点收：有固定换算率则预填入库数量 */
+function onLinePurchaseQtyChange(line) {
+  const mat = findMaterialByCode(line.itemCode)
+  const rate = resolvePurchaseConvertRate(mat || line)
+  if (rate != null && Number(line.purchaseQty) > 0) {
+    line.qty = purchaseQtyToStockQty(line.purchaseQty, rate)
   }
-  // 一物一码或一类/一批按件：列表按「统一单件数量」填写
-  line.inboundEntryMode = INBOUND_ENTRY_MODE.UNIFORM
-  line.uniformValue = value
+  line.inboundEntryMode = undefined
+  line.isVariableLength = false
+  syncInboundLineTotalFromUnit(line)
+}
+
+/** 列表改入库数量（库存单位合计） */
+function onLineStockUnitQtyInput(line, value) {
+  line.qty = value
   line.totalValue = undefined
-  const n = Number(line.purchaseQty) || 0
-  const per = Number(value) || 0
-  line.qty = n > 0 && per > 0 ? Math.round(n * per * 10000) / 10000 : null
+  line.uniformValue = undefined
+  line.inboundEntryMode = undefined
+  line.isVariableLength = false
   syncInboundLineTotalFromUnit(line)
 }
 
@@ -1395,21 +1404,6 @@ function onLineItemClear(record) {
   record.warehouseStockQty = null
 }
 
-function onBomAdded({ pickerRow, usageCoefficient }) {
-  const incoming = buildInboundLinesFromBom(
-    pickerRow,
-    usageCoefficient,
-    form.warehouse || '',
-    false,
-  )
-  if (!incoming.length) {
-    message.warning('该物品无自有生效 BOM 明细，请先维护 SKU 产品 BOM')
-    return
-  }
-  form.lineItems = mergeInboundLines(form.lineItems, incoming)
-  message.success(`已添加 ${incoming.length} 条明细`)
-}
-
 function openLineEdit(record, mode) {
   lineEditSourceId.value = record.id
   lineEditTarget.value = { ...record }
@@ -1491,25 +1485,14 @@ function validateInboundForm() {
   }
 
   const invalidDual = validLines.find((line) => {
-    if (!isInboundDualUnitLine(line)) return false
-    if (allowsInboundTotalEntry(line.barcodeType)) {
-      return !(Number(line.purchaseQty) > 0) || !(Number(getStockUnitQtyValue(line)) > 0)
-    }
-    // 一物一码：须已按件展开（pieceValues / pieceLengths）或统一单件
-    const mode = line.inboundEntryMode
-    if (mode === INBOUND_ENTRY_MODE.TOTAL) return true
-    if (!(Number(line.purchaseQty) > 0)) return true
-    if (mode === INBOUND_ENTRY_MODE.UNIFORM) {
-      return !(Number(line.uniformValue ?? line.uniformLength ?? line.uniformWeight) > 0)
-    }
-    const pieces = line.pieceValues || line.pieceLengths || []
-    return !pieces.length || pieces.some((v) => !(Number(v) > 0))
+    if (!isInboundDualUnitLine(line)) return !(Number(line.qty) > 0)
+    return !(Number(line.purchaseQty) > 0) || !(Number(getStockUnitQtyValue(line)) > 0)
   })
   if (invalidDual) {
     message.warning(
-      isOneItemOneCodeLine(invalidDual)
-        ? `一物一码「${invalidDual.itemName}」请填写统一单件数量（库存单位量），或点编辑改逐件`
-        : `双物料单位「${invalidDual.itemName}」请填写点收数量与入库数量`,
+      isInboundDualUnitLine(invalidDual)
+        ? `「${invalidDual.itemName}」请填写点收数量与入库数量`
+        : `「${invalidDual.itemName}」请填写入库数量`,
     )
     return false
   }

@@ -48,7 +48,8 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { SearchOutlined } from '@ant-design/icons-vue'
-import { getEnabledEmployeeGroups, workCenterOptions } from '@/store/employeeGroupStore'
+import { getEnabledEmployeeGroups } from '@/store/employeeGroupStore'
+import { listWorkCenterNames, workCenterState } from '@/store/workCenterStore'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -63,7 +64,10 @@ const appliedSearch = reactive({ name: '', workCenter: undefined })
 const selectedRowKeys = ref([])
 const selectedRows = ref([])
 
-const workCenterOpts = workCenterOptions.map((v) => ({ label: v, value: v }))
+const workCenterOpts = computed(() => {
+  void workCenterState.centers
+  return listWorkCenterNames({ enabledOnly: true }).map((v) => ({ label: v, value: v }))
+})
 
 const columns = [
   { title: '编码', dataIndex: 'code', width: 140 },

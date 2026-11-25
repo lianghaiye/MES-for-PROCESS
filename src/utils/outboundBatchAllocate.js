@@ -1,7 +1,6 @@
-/** 出库按规则自动分配批次（FIFO / LIFO）及自主多批分配 */
+/** 出库按规则自动分配批次（FEFO / 自主多批）及行级改批 */
 
 import { getBatchById, listBatches } from '@/store/stockBatchStore'
-import { compareExpiry, isIssueAllowedBatch } from '@/utils/processBatchMath'
 import {
   getStockPieceById,
   isPieceManagedBatch,
@@ -15,6 +14,31 @@ import {
   getDualUnitIssueStrategy,
 } from '@/store/functionParamStore'
 import { resolveNeedsBlankingSettle } from '@/utils/blankingSettleMaterial'
+
+/** 仓库批次失效日期：顶栏字段或 attrs.expiryDate（入库写入 attrs） */
+export function resolveStockBatchExpiryDate(batch) {
+  return String(batch?.expiryDate || batch?.attrs?.expiryDate || '').trim()
+}
+
+/** 在库批是否未过期（无失效日期视为可用） */
+export function isStockBatchNotExpired(batch, today) {
+  const exp = resolveStockBatchExpiryDate(batch)
+  if (exp && today && exp < String(today)) return false
+  return true
+}
+
+/** FEFO：失效日期升序；同效期再按批次号先进先出 */
+export function compareStockBatchFefo(a, b) {
+  const ea = resolveStockBatchExpiryDate(a)
+  const eb = resolveStockBatchExpiryDate(b)
+  if (ea && eb && ea !== eb) return ea < eb ? -1 : 1
+  if (ea && !eb) return -1
+  if (!ea && eb) return 1
+  const ka = String(a?.batchNo || a?.createdAt || '')
+  const kb = String(b?.batchNo || b?.createdAt || '')
+  if (ka !== kb) return ka < kb ? -1 : 1
+  return (Number(a?.currentLength) || 0) - (Number(b?.currentLength) || 0)
+}
 
 /**
  * 行级发料策略（仅「需要下料结算」能力物料读功能参数；普通料恒为 partial）：
@@ -134,60 +158,43 @@ function isRemnantPiece(piece) {
 }
 
 /**
- * 出库候选排序：余料优先 → 数量短优先（够用前提下）→ 批次号 FIFO/LIFO
- * @param {{ remnant: boolean, length: number, batchNo: string, serialNo?: string }} a
- * @param {{ remnant: boolean, length: number, batchNo: string, serialNo?: string }} b
+ * 出库候选排序：余料优先 → 数量短优先（够用前提下）→ FEFO（效期 / 批次号）
+ * @param {{ remnant: boolean, length: number, batchNo: string, serialNo?: string, expiryDate?: string }} a
+ * @param {{ remnant: boolean, length: number, batchNo: string, serialNo?: string, expiryDate?: string }} b
  */
-export function compareOutboundPickCandidates(a, b, rule) {
+export function compareOutboundPickCandidates(a, b) {
   if (Boolean(a.remnant) !== Boolean(b.remnant)) {
     return a.remnant ? -1 : 1
   }
   const la = Number(a.length) || 0
   const lb = Number(b.length) || 0
   if (la !== lb) return la - lb
-  const ka = String(a.batchNo || '')
-  const kb = String(b.batchNo || '')
-  if (ka !== kb) {
-    const cmp = ka < kb ? -1 : 1
-    return rule === OUTBOUND_ISSUE_RULES.LIFO ? -cmp : cmp
-  }
+  const expCmp = compareStockBatchFefo(
+    { batchNo: a.batchNo, expiryDate: a.expiryDate, currentLength: la },
+    { batchNo: b.batchNo, expiryDate: b.expiryDate, currentLength: lb },
+  )
+  if (expCmp) return expCmp
   const sa = String(a.serialNo || '')
   const sb = String(b.serialNo || '')
   if (sa !== sb) return sa < sb ? -1 : 1
   return 0
 }
 
-/** 跨批回退时的在库批排序：余料优先 → 批次号 FIFO/LIFO → 数量短优先 */
-export function sortBatchesByIssueRule(batches, rule) {
+/** 跨批回退：余料优先 → FEFO → 数量短优先 */
+export function sortBatchesByIssueRule(batches) {
   const list = (batches || []).slice()
   list.sort((a, b) => {
     const ra = isRemnantBatch(a)
     const rb = isRemnantBatch(b)
     if (ra !== rb) return ra ? -1 : 1
-    const ka = String(a.batchNo || a.createdAt || '')
-    const kb = String(b.batchNo || b.createdAt || '')
-    if (ka !== kb) {
-      const cmp = ka < kb ? -1 : 1
-      return rule === OUTBOUND_ISSUE_RULES.LIFO ? -cmp : cmp
-    }
-    return (Number(a.currentLength) || 0) - (Number(b.currentLength) || 0)
+    return compareStockBatchFefo(a, b)
   })
   return list
 }
 
-/** 普通物料：仅按批次号先进先出（不做余料优先 / 最短够用） */
-export function sortBatchesSimpleFifo(batches, rule) {
-  const list = (batches || []).slice()
-  list.sort((a, b) => {
-    const ka = String(a.batchNo || a.createdAt || '')
-    const kb = String(b.batchNo || b.createdAt || '')
-    if (ka !== kb) {
-      const cmp = ka < kb ? -1 : 1
-      return rule === OUTBOUND_ISSUE_RULES.LIFO ? -cmp : cmp
-    }
-    return (Number(a.currentLength) || 0) - (Number(b.currentLength) || 0)
-  })
-  return list
+/** 普通物料：纯 FEFO（效期升序，同效期批次号 FIFO） */
+export function sortBatchesSimpleFifo(batches) {
+  return (batches || []).slice().sort(compareStockBatchFefo)
 }
 
 function sortedInStockPiecesForBatch(batchId) {
@@ -206,7 +213,7 @@ function sortedInStockPiecesForBatch(batchId) {
  * 排序：余料优先 → 最短够用 → 批次号 FIFO/LIFO
  * @returns {null | {batchId,batchNo,qty,unit,pieceIds?,pieceSerialNos?,pieceSplit?}}
  */
-export function pickWholeSatisfyAllocation(batches, demandQty, rule) {
+export function pickWholeSatisfyAllocation(batches, demandQty) {
   const need = roundQty(demandQty)
   if (!(need > 0)) return null
   const candidates = []
@@ -214,6 +221,7 @@ export function pickWholeSatisfyAllocation(batches, demandQty, rule) {
   for (const b of batches || []) {
     const avail = roundQty(Number(b.currentLength) || 0)
     if (!(avail > 0)) continue
+    const expiryDate = resolveStockBatchExpiryDate(b)
 
     if (isPieceManagedBatch(b)) {
       for (const p of sortedInStockPiecesForBatch(b.id)) {
@@ -223,6 +231,7 @@ export function pickWholeSatisfyAllocation(batches, demandQty, rule) {
           remnant: isRemnantPiece(p) || isRemnantBatch(b),
           length: pq,
           batchNo: b.batchNo || '',
+          expiryDate,
           serialNo: p.serialNo || '',
           allocation: {
             batchId: b.id,
@@ -243,6 +252,7 @@ export function pickWholeSatisfyAllocation(batches, demandQty, rule) {
       remnant: isRemnantBatch(b),
       length: avail,
       batchNo: b.batchNo || '',
+      expiryDate,
       serialNo: '',
       allocation: {
         batchId: b.id,
@@ -254,18 +264,19 @@ export function pickWholeSatisfyAllocation(batches, demandQty, rule) {
   }
 
   if (!candidates.length) return null
-  candidates.sort((a, b) => compareOutboundPickCandidates(a, b, rule))
+  candidates.sort((a, b) => compareOutboundPickCandidates(a, b))
   return candidates[0].allocation
 }
 
-/** 仓库+物料在库批次可用合计 */
+/** 仓库+物料在库批次可用合计（已排除过期批） */
 export function getOutboundAvailableBatchQty(warehouse, itemCode) {
   if (!warehouse || !itemCode) return 0
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   return roundQty(
-    listBatches({ warehouse, itemCode, inStockOnly: true }).reduce(
-      (s, b) => s + (Number(b.currentLength) || 0),
-      0,
-    ),
+    listBatches({ warehouse, itemCode, inStockOnly: true })
+      .filter((b) => isStockBatchNotExpired(b, today))
+      .reduce((s, b) => s + (Number(b.currentLength) || 0), 0),
   )
 }
 
@@ -292,9 +303,9 @@ export function allocateOutboundBatches({
     return { ok: false, message: '缺少仓库或物料编码', allocations: [], available: 0 }
   }
 
+  // rule 参数保留兼容；自动扣批统一 FEFO（manual 由调用方改走手选）
+  void rule
   const enhancedPick = line ? isLineEnhancedBlankingPick(line) : false
-  const issueRule =
-    rule === OUTBOUND_ISSUE_RULES.LIFO ? OUTBOUND_ISSUE_RULES.LIFO : OUTBOUND_ISSUE_RULES.FIFO
   let rawBatches = listBatches({ warehouse, itemCode, inStockOnly: true })
   if (freeOnly) {
     rawBatches = rawBatches.filter((b) => !(b.salesOrderId || b.salesOrderNo))
@@ -310,8 +321,8 @@ export function allocateOutboundBatches({
   }
   const now = new Date()
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-  rawBatches = rawBatches.filter((b) => isIssueAllowedBatch(b, today))
-  if (rule !== OUTBOUND_ISSUE_RULES.LIFO) rawBatches = [...rawBatches].sort(compareExpiry)
+  // 过期批不参与（效期在 attrs.expiryDate 或顶栏 expiryDate）
+  rawBatches = rawBatches.filter((b) => isStockBatchNotExpired(b, today))
   const available = roundQty(rawBatches.reduce((s, b) => s + (Number(b.currentLength) || 0), 0))
   if (available < need) {
     return {
@@ -324,15 +335,15 @@ export function allocateOutboundBatches({
 
   // 需下料结算能力物料：优先单批够用 + 余料优先；分配量仍 = 出库数量
   if (enhancedPick) {
-    const wholePick = pickWholeSatisfyAllocation(rawBatches, need, issueRule)
+    const wholePick = pickWholeSatisfyAllocation(rawBatches, need)
     if (wholePick) {
       return { ok: true, allocations: [wholePick], available }
     }
   }
 
   const batches = enhancedPick
-    ? sortBatchesByIssueRule(rawBatches, issueRule)
-    : sortBatchesSimpleFifo(rawBatches, issueRule)
+    ? sortBatchesByIssueRule(rawBatches)
+    : sortBatchesSimpleFifo(rawBatches)
   let left = need
   const allocations = []
   for (const b of batches) {

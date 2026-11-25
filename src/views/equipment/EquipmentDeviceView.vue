@@ -14,7 +14,7 @@
             </a-form-item>
           </a-col>
           <a-col :xs="24" :sm="12" :md="6">
-            <a-form-item label="设备类别">
+            <a-form-item label="设备类型">
               <a-select
                 v-model:value="filters.category"
                 allow-clear
@@ -70,7 +70,7 @@
         size="small"
         bordered
         :pagination="false"
-        :scroll="{ x: 1560 }"
+        :scroll="{ x: 1780 }"
       >
         <template #bodyCell="{ column, record, index }">
           <template v-if="column.key === 'index'">{{ rowIndex(index) }}</template>
@@ -89,11 +89,21 @@
             </a-tag>
             <template v-else>—</template>
           </template>
+          <template v-else-if="column.key === 'asStockLocation'">
+            <a-tag v-if="record.asStockLocation" color="processing">是</a-tag>
+            <span v-else>—</span>
+          </template>
+          <template v-else-if="column.key === 'stockKeeperName'">
+            {{ record.asStockLocation && record.stockKeeperName ? record.stockKeeperName : '—' }}
+          </template>
           <template v-else-if="column.key === 'inventoryLocationId'">
-            <span v-if="record.category === '储罐' && record.inventoryLocationId">{{
+            <span v-if="record.asStockLocation && record.inventoryLocationId">{{
               locationLabel(record.inventoryLocationId)
             }}</span>
             <span v-else>—</span>
+          </template>
+          <template v-else-if="column.key === 'workCenterId'">
+            {{ formatWorkCenterLabel(record.workCenterId) || '—' }}
           </template>
           <template v-else-if="column.key === 'category'">
             <a-tag>{{ record.category }}</a-tag>
@@ -139,6 +149,7 @@ import {
 } from '@/mock/equipmentSeed'
 import { deleteDevice, equipmentState, listDevices } from '@/store/equipmentStore'
 import { getStockLocation } from '@/store/materialBatchStore'
+import { formatWorkCenterLabel } from '@/store/workCenterStore'
 import DeviceFormModal from './components/DeviceFormModal.vue'
 
 const filters = reactive({ code: '', name: '', category: undefined, status: undefined })
@@ -152,11 +163,13 @@ const columns = [
   { title: '序号', key: 'index', width: 56, align: 'center', fixed: 'left' },
   { title: '设备编码', dataIndex: 'code', width: 130, fixed: 'left' },
   { title: '设备名称', dataIndex: 'name', width: 140, ellipsis: true },
-  { title: '设备类别', key: 'category', width: 110 },
+  { title: '设备类型', key: 'category', width: 110 },
   { title: '型号', dataIndex: 'model', width: 110 },
-  { title: '车间', dataIndex: 'workshop', width: 100 },
+  { title: '工作中心', key: 'workCenterId', width: 120, ellipsis: true },
   { title: '位置', dataIndex: 'location', width: 100 },
   { title: '设备状态', key: 'status', width: 90 },
+  { title: '库存存放点', key: 'asStockLocation', width: 100, align: 'center' },
+  { title: '库存责任人', key: 'stockKeeperName', width: 100 },
   { title: '公称容积', key: 'nominalCapacity', width: 110, align: 'right' },
   { title: '工作容积', key: 'workingCapacity', width: 110, align: 'right' },
   { title: '占釜状态', key: 'occupyStatus', width: 90 },

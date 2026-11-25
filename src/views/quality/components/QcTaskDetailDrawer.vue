@@ -59,6 +59,10 @@
                 task.scheduleBatchNo != null ? `批次${task.scheduleBatchNo}` : '—'
               }}</span>
             </a-col>
+            <a-col v-if="isProductionScope" :span="12">
+              <span class="info-label">取样位置：</span>
+              <span class="info-value">{{ task.sampleLocation || '—' }}</span>
+            </a-col>
             <a-col :span="12">
               <span class="info-label">物料编码：</span>
               <span class="info-value">{{ task.itemCode || '—' }}</span>

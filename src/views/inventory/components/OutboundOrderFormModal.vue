@@ -52,12 +52,23 @@
               </a-form-item>
             </a-col>
             <a-col :span="6">
-              <a-form-item label="出库仓库">
+              <a-form-item label="位置类型">
+                <a-select
+                  v-model:value="form.locationType"
+                  size="small"
+                  :options="inboundLocationTypeOptions"
+                  @change="onLocationTypeChange"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item label="出库位置">
                 <a-select
                   v-model:value="form.warehouse"
                   allow-clear
                   size="small"
-                  placeholder="请选择 出库仓库"
+                  show-search
+                  :placeholder="form.locationType === 'tank' ? '请选择储罐' : '请选择仓库'"
                   :options="warehouseOpts"
                   @change="onHeaderWarehouseChange"
                 />
@@ -190,7 +201,7 @@
               <PlusOutlined />
               添加物品
             </a-button>
-            <a-button size="small" @click="bomModalOpen = true">按BOM添加</a-button>
+            <a-button size="small" @click="convertToolOpen = true">换算工具</a-button>
             <TableColumnSettingButton @click="columnDrawerOpen = true" />
           </a-space>
         </div>
@@ -312,7 +323,8 @@
                         v-model:value="record.shipWarehouse"
                         allow-clear
                         size="small"
-                        placeholder="请选择"
+                        show-search
+                        :placeholder="form.locationType === 'tank' ? '请选择储罐' : '请选择仓库'"
                         style="width: 100%"
                         :open="lineCellSelectOpen"
                         :options="warehouseOpts"
@@ -400,7 +412,9 @@
                       />
                       <div class="batch-pick-actions">
                         <a @click="openBatchSearch(record)">搜索更多</a>
-                        <a @click="restoreAutoBatchPick(record)">恢复自动</a>
+                        <a v-if="!isForcedManualOutboundIssue" @click="restoreAutoBatchPick(record)"
+                          >恢复自动</a
+                        >
                       </div>
                       <div v-if="manualBatchSummary(record)" class="batch-alloc-summary">
                         {{ manualBatchSummary(record) }}
@@ -410,12 +424,18 @@
                       <a-tooltip :title="autoAllocPreview(record)">
                         <span class="cell-auto-batch">{{ autoAllocPreview(record) }}</span>
                       </a-tooltip>
-                      <a class="manual-pick-link" @click="enableManualBatchPick(record)"
+                      <a
+                        v-if="allowManualBatchPickEntry"
+                        class="manual-pick-link"
+                        @click="enableManualBatchPick(record)"
                         >自主拣选</a
                       >
                     </div>
                   </template>
                   <span v-else class="cell-disabled">—</span>
+                </template>
+                <template v-else-if="column.key === 'content'">
+                  {{ lineContentText(record) }}
                 </template>
                 <template v-else-if="column.key === 'barcodeType'">
                   {{ record.barcodeType || '—' }}
@@ -591,17 +611,6 @@
     @confirm="onVariantConfigConfirm"
   />
 
-  <AddByBomModal
-    v-if="isActive"
-    v-model:open="bomModalOpen"
-    own-active-only
-    qty-label="出库数量"
-    qty-hint="子项出库数量 = 出库数量 × 子件原单位用量"
-    preview-tip="确定后将添加所选物品自有生效 BOM 的下级结构"
-    modal-width="720px"
-    @confirm="onBomAdded"
-  />
-
   <OutboundLineEditModal
     v-if="isActive"
     v-model:open="lineEditOpen"
@@ -636,6 +645,8 @@
     :confirm-loading="refuseLineLoading"
     @confirm="handleRefuseLineConfirm"
   />
+
+  <UnitConvertToolModal v-model:open="convertToolOpen" />
 </template>
 
 <script setup>
@@ -660,9 +671,9 @@ import { useInventoryLineCellEdit } from '@/composables/useInventoryLineCellEdit
 import { useTableColumnSettings } from '@/composables/useTableColumnSettings'
 import SelectBomMaterialModal from '@/views/product-process/components/SelectBomMaterialModal.vue'
 import ConfigureSalesSpuVariantModal from '@/views/sales/components/ConfigureSalesSpuVariantModal.vue'
-import AddByBomModal from '@/views/product-process/components/AddByBomModal.vue'
 import OutboundLineEditModal from './OutboundLineEditModal.vue'
 import OutboundBatchSearchModal from './OutboundBatchSearchModal.vue'
+import UnitConvertToolModal from '@/components/UnitConvertToolModal.vue'
 import OutboundWorkOrderList from './OutboundWorkOrderList.vue'
 import OutboundOutsourcingOrderList from './OutboundOutsourcingOrderList.vue'
 import InventoryLineItemSelect from './InventoryLineItemSelect.vue'
@@ -683,7 +694,14 @@ import {
   outboundSourceLabel,
   isOutboundBusinessSource,
 } from '@/mock/outboundOptions'
-import { getWarehouseSelectOptions, warehouseState } from '@/store/warehouseStore'
+import { warehouseState } from '@/store/warehouseStore'
+import { materialBatchState } from '@/store/materialBatchStore'
+import {
+  getInboundLocationSelectOptions,
+  inboundLocationTypeOptions,
+  INBOUND_LOCATION_TYPE,
+  resolveInboundLocationType,
+} from '@/utils/inboundBatchDisplay'
 import {
   addOutboundOrder,
   generateOutboundNo,
@@ -708,11 +726,11 @@ import { warehouseOptionLabel } from '@/utils/inventoryFormLineDisplay'
 import {
   applyPickerItemToOutboundLine,
   buildOutboundLineFromPickerItem,
-  buildOutboundLinesFromBom,
   cloneOutboundLine,
   createBlankOutboundLine,
   enrichOutboundLine,
   canOutboundBatchPick,
+  formatOutboundLineContentText,
   isOutboundDualUnitLine,
   mergeOutboundLines,
   resolveOutboundStockUnit,
@@ -724,6 +742,8 @@ import {
   getOutboundIssueRule,
   isSalesOutboundByOrder,
   OUTBOUND_ISSUE_RULE_OPTIONS,
+  canOutboundManualBatchPick,
+  isManualOutboundIssue,
   functionParamState,
 } from '@/store/functionParamStore'
 import {
@@ -735,6 +755,8 @@ import {
   getManualPickBatchIds,
   getOutboundAvailableBatchQty,
   isLineManualBatchPick,
+  isStockBatchNotExpired,
+  sortBatchesSimpleFifo,
   syncManualPickBatchesToLine,
   validateManualBatchAllocations,
 } from '@/utils/outboundBatchAllocate'
@@ -846,6 +868,8 @@ const { isActive, shellTitle, handleCancel, closeAfterSave } = useFormCreateModa
 const saving = ref(false)
 const addingItems = ref(false)
 const pickerOpen = ref(false)
+/** 清单工具栏「换算工具」弹窗 */
+const convertToolOpen = ref(false)
 const {
   variantConfigOpen,
   variantConfigSpuId,
@@ -854,7 +878,6 @@ const {
   openVariantConfig,
   lineVariantDisplay,
 } = useSpuVariantConfig()
-const bomModalOpen = ref(false)
 const lineEditOpen = ref(false)
 const lineEditTarget = ref(null)
 const lineEditMode = ref('edit')
@@ -873,8 +896,18 @@ const requisitionDeptOpts = requisitionDeptOptions.map((v) => ({ label: v, value
 
 const warehouseOpts = computed(() => {
   void warehouseState.warehouses
-  return getWarehouseSelectOptions()
+  void materialBatchState.tanks
+  return getInboundLocationSelectOptions(form.locationType || INBOUND_LOCATION_TYPE.WAREHOUSE)
 })
+
+/** 切换位置类型后：当前选中位置若不在新类型下拉里则清空并同步明细 */
+function onLocationTypeChange() {
+  const allowed = new Set(warehouseOpts.value.map((o) => o.value))
+  if (form.warehouse && !allowed.has(form.warehouse)) {
+    form.warehouse = undefined
+    onHeaderWarehouseChange()
+  }
+}
 
 const receiveWarehouseOpts = computed(() => {
   void warehouseState.warehouses
@@ -886,8 +919,21 @@ const receiveWarehouseOpts = computed(() => {
 const batchPickTip = computed(() => OUTBOUND_BATCH_PICK_TIP_AUTO)
 
 const issueRuleLabel = computed(() => {
+  void functionParamState.params.outboundIssueRule
   const rule = getOutboundIssueRule()
-  return OUTBOUND_ISSUE_RULE_OPTIONS.find((o) => o.value === rule)?.label || '先进先出'
+  return OUTBOUND_ISSUE_RULE_OPTIONS.find((o) => o.value === rule)?.label || 'FEFO'
+})
+
+/** 功能参数允许行上手选时才露出「自主拣选」 */
+const allowManualBatchPickEntry = computed(() => {
+  void functionParamState.params.outboundIssueRule
+  return canOutboundManualBatchPick()
+})
+
+/** 全局强制自主选批时不可「恢复自动」 */
+const isForcedManualOutboundIssue = computed(() => {
+  void functionParamState.params.outboundIssueRule
+  return isManualOutboundIssue()
 })
 
 function isRecordManualPick(line) {
@@ -1024,6 +1070,31 @@ function autoAllocPreview(record) {
   return formatBatchAllocationPreview(res.allocations, resolveOutboundStockUnit(record))
 }
 
+/** 有效含量只读：优先已选/预分配批次，否则 — */
+function lineContentText(record) {
+  void stockBatchState.batches
+  void functionParamState.params.outboundIssueRule
+  if (isRecordManualPick(record)) {
+    return formatOutboundLineContentText(record)
+  }
+  const wh = record.shipWarehouse || form.warehouse
+  if (!record.itemCode || !wh || !(Number(record.shipQty) > 0)) {
+    return formatOutboundLineContentText(record)
+  }
+  const rule = getOutboundIssueRule()
+  const res = allocateOutboundBatches({
+    warehouse: wh,
+    itemCode: record.itemCode,
+    demandQty: record.shipQty,
+    rule,
+    line: record,
+  })
+  if (res.ok && res.allocations?.length) {
+    return formatOutboundLineContentText(record, res.allocations)
+  }
+  return formatOutboundLineContentText(record)
+}
+
 function lineWarehouseLabel(value) {
   return warehouseOptionLabel(value, warehouseOpts.value)
 }
@@ -1040,6 +1111,7 @@ const form = reactive({
   docNo: '',
   outboundType: '其他出库',
   outboundTime: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+  locationType: INBOUND_LOCATION_TYPE.WAREHOUSE,
   warehouse: undefined,
   receiveWarehouse: undefined,
   handler: 'admin1',
@@ -1069,7 +1141,7 @@ const {
   columnDrawerOpen,
   displayColumns: rawDisplayColumns,
   defaultColumnSettings,
-} = useTableColumnSettings('outbound-form-lines-v11', baseLineColumns, {
+} = useTableColumnSettings('outbound-form-lines-v14', baseLineColumns, {
   minScrollX: 1874,
   pinEdgeColumns: false,
   pinActionColumn: true,
@@ -1166,6 +1238,7 @@ function loadEditForm(record) {
     docNo: record.docNo,
     outboundType: record.outboundType,
     outboundTime: normalizeOutboundTime(record.outboundTime || record.createdAt),
+    locationType: resolveInboundLocationType(record.warehouse),
     warehouse: record.warehouse || undefined,
     receiveWarehouse: record.receiveWarehouse || undefined,
     handler: record.handler || 'admin1',
@@ -1316,6 +1389,7 @@ function resetForm() {
     docNo: generateOutboundNo(),
     outboundType: '其他出库',
     outboundTime: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+    locationType: INBOUND_LOCATION_TYPE.WAREHOUSE,
     warehouse: undefined,
     receiveWarehouse: undefined,
     handler: 'admin1',
@@ -1370,18 +1444,20 @@ function batchOptionsFor(record) {
   const warehouse = record.shipWarehouse || ''
   const unit = resolveOutboundStockUnit(record)
   if (!record.itemCode || !warehouse) return []
-  return listBatches({ warehouse, itemCode: record.itemCode, inStockOnly: true })
-    .slice()
-    .sort((a, b) => {
-      const da = Number(a.currentLength) || 0
-      const db = Number(b.currentLength) || 0
-      if (da !== db) return da - db
-      return String(a.batchNo || '').localeCompare(String(b.batchNo || ''), 'zh-CN')
-    })
-    .map((b) => ({
-      label: `${b.batchNo}（当前 ${formatQty(b.currentLength)}${unit}）`,
+  const today = dayjs().format('YYYY-MM-DD')
+  // 手选列表：排除过期，按 FEFO 排序便于对照自动建议
+  return sortBatchesSimpleFifo(
+    listBatches({ warehouse, itemCode: record.itemCode, inStockOnly: true }).filter((b) =>
+      isStockBatchNotExpired(b, today),
+    ),
+  ).map((b) => {
+    const exp = b.expiryDate || b.attrs?.expiryDate
+    const expHint = exp ? ` 效期${exp}` : ''
+    return {
+      label: `${b.batchNo}（当前 ${formatQty(b.currentLength)}${unit}${expHint}）`,
       value: b.id,
-    }))
+    }
+  })
 }
 
 function onMultiPickBatches(record, batchIds) {
@@ -1644,22 +1720,6 @@ function onLineItemClear(record) {
   record.softAllocatedQty = null
   record.dedicatedStockQty = null
   record.warehouseStockQty = null
-}
-
-function onBomAdded({ pickerRow, usageCoefficient }) {
-  const incoming = buildOutboundLinesFromBom(
-    pickerRow,
-    usageCoefficient,
-    form.warehouse || '',
-    false,
-  )
-  if (!incoming.length) {
-    message.warning('该物品无自有生效 BOM 明细，请先维护 SKU 产品 BOM')
-    return
-  }
-  form.lineItems = mergeOutboundLines(form.lineItems, incoming)
-  syncTotalWeight()
-  message.success(`已添加 ${incoming.length} 条明细`)
 }
 
 function openLineEdit(record, mode) {

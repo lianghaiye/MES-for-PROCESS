@@ -2,6 +2,7 @@
  * 设备管理：流程型设备台账 / 点检 / 保养 / 维修 演示种子
  */
 import dayjs from 'dayjs'
+import { getWorkCenterByName } from '@/store/workCenterStore'
 
 export const EQUIPMENT_STATUS = {
   IN_USE: '在用',
@@ -15,8 +16,11 @@ export const EQUIPMENT_STATUS_OPTIONS = Object.values(EQUIPMENT_STATUS).map((v) 
   value: v,
 }))
 
-/** 反应设备和储罐才维护容积与占釜。占釜和设备完好状态分开。 */
-export const VESSEL_CATEGORIES = ['反应设备', '储罐']
+/**
+ * 反应设备、储运设备才维护占釜状态。
+ * 容积：上述类型，或勾选「作为库存存放点」时必填（同步库存位置需要罐容）。
+ */
+export const VESSEL_CATEGORIES = ['反应设备', '储运设备']
 
 export const EQUIPMENT_OCCUPY_STATUS = {
   CLEAN: '清洁',
@@ -39,15 +43,25 @@ export function isVesselCategory(category) {
   return VESSEL_CATEGORIES.includes(category)
 }
 
+/** 是否需要维护容积（反应/储运，或作为库存存放点）。 */
+export function needsCapacityFields(payload = {}) {
+  return isVesselCategory(payload.category) || Boolean(payload.asStockLocation)
+}
+
 function positiveOrNull(value) {
   if (value == null || value === '') return null
   const n = Number(value)
   return Number.isFinite(n) ? n : null
 }
 
-/** 反应设备、储罐：公称容积必填；工作容积可空，有值时不超过公称容积。 */
+/**
+ * 容积校验：反应/储运设备或「作为库存存放点」时公称容积必填；
+ * 占釜状态仅反应/储运设备必填。
+ */
 export function validateVesselCapacity(payload = {}) {
-  if (!isVesselCategory(payload.category)) return { ok: true }
+  const vessel = isVesselCategory(payload.category)
+  const asStock = Boolean(payload.asStockLocation)
+  if (!vessel && !asStock) return { ok: true }
   const nominal = positiveOrNull(payload.nominalCapacity)
   if (!(nominal > 0)) return { ok: false, message: '请填写大于 0 的公称容积' }
   const unit = String(payload.capacityUnit || '').trim()
@@ -61,20 +75,42 @@ export function validateVesselCapacity(payload = {}) {
   if (working != null && working - nominal > 1e-9) {
     return { ok: false, message: '工作容积不能超过公称容积' }
   }
-  const occupy = payload.occupyStatus || EQUIPMENT_OCCUPY_STATUS.CLEAN
-  if (!Object.values(EQUIPMENT_OCCUPY_STATUS).includes(occupy)) {
-    return { ok: false, message: '请选择占釜状态' }
+  if (vessel) {
+    const occupy = payload.occupyStatus || EQUIPMENT_OCCUPY_STATUS.CLEAN
+    if (!Object.values(EQUIPMENT_OCCUPY_STATUS).includes(occupy)) {
+      return { ok: false, message: '请选择占釜状态' }
+    }
   }
   return { ok: true }
 }
 
+/**
+ * 流程型企业设备类型基础枚举（后续可迁业务字典，供租户自定义扩展）。
+ * 「是否库存存放点」由 asStockLocation 单独控制，不与类型绑定。
+ */
 export const EQUIPMENT_CATEGORY_OPTIONS = [
   { label: '反应设备', value: '反应设备' },
+  { label: '换热设备', value: '换热设备' },
   { label: '分离设备', value: '分离设备' },
-  { label: '储罐', value: '储罐' },
+  { label: '储运设备', value: '储运设备' },
+  { label: '输送设备', value: '输送设备' },
+  { label: '干燥设备', value: '干燥设备' },
   { label: '计量灌装', value: '计量灌装' },
   { label: '公用工程', value: '公用工程' },
+  { label: '其他', value: '其他' },
 ]
+
+/** 旧版「储罐」类型 → 储运设备 + 作为库存存放点 */
+export function migrateLegacyEquipmentCategory(category, asStockLocation) {
+  const raw = String(category || '').trim()
+  if (raw === '储罐') {
+    return { category: '储运设备', asStockLocation: true }
+  }
+  return {
+    category: raw || '公用工程',
+    asStockLocation: Boolean(asStockLocation),
+  }
+}
 
 export const INSPECTION_CYCLE_OPTIONS = [
   { label: '每班', value: '每班' },
@@ -126,7 +162,7 @@ export function createEquipmentDeviceSeed() {
       name: '配料罐 R-101',
       category: '反应设备',
       model: 'JK-2000L',
-      workshop: '配料车间',
+      workCenterId: 'wc-paint',
       location: 'A区-配料跨',
       status: EQUIPMENT_STATUS.IN_USE,
       nominalCapacity: 2000,
@@ -149,7 +185,7 @@ export function createEquipmentDeviceSeed() {
       name: '反应釜 R-201',
       category: '反应设备',
       model: 'FK-5000L',
-      workshop: '反应车间',
+      workCenterId: 'wc-react',
       location: 'B区-1号位',
       status: EQUIPMENT_STATUS.IN_USE,
       nominalCapacity: 5000,
@@ -172,7 +208,7 @@ export function createEquipmentDeviceSeed() {
       name: '板框过滤机 F-301',
       category: '分离设备',
       model: 'BK-80',
-      workshop: '分离车间',
+      workCenterId: 'wc-acid-1',
       location: 'C区-过滤线',
       status: EQUIPMENT_STATUS.IN_USE,
       responsible: '分离班长',
@@ -190,7 +226,7 @@ export function createEquipmentDeviceSeed() {
       name: '离心机 C-401',
       category: '分离设备',
       model: 'LX-1200',
-      workshop: '分离车间',
+      workCenterId: 'wc-acid-1',
       location: 'C区-离心线',
       status: EQUIPMENT_STATUS.IN_USE,
       responsible: '分离班长',
@@ -206,9 +242,10 @@ export function createEquipmentDeviceSeed() {
       id: 'eq-d-5',
       code: 'EQ-T-501',
       name: '中间罐 T-501',
-      category: '储罐',
+      category: '储运设备',
+      asStockLocation: true,
       model: 'CG-3000L',
-      workshop: '储运车间',
+      workCenterId: 'wc-mvr',
       location: 'D区-中间罐区',
       status: EQUIPMENT_STATUS.IN_USE,
       nominalCapacity: 3000,
@@ -216,6 +253,7 @@ export function createEquipmentDeviceSeed() {
       capacityUnit: 'L',
       occupyStatus: EQUIPMENT_OCCUPY_STATUS.WAIT_DISCHARGE,
       occupiedBatchNo: '',
+      stockKeeperName: '储运班长',
       responsible: '储运班长',
       manufacturer: '自制',
       installDate: '2022-04-15',
@@ -229,9 +267,10 @@ export function createEquipmentDeviceSeed() {
       id: 'eq-d-6',
       code: 'EQ-T-601',
       name: '成品罐 T-601',
-      category: '储罐',
+      category: '储运设备',
+      asStockLocation: true,
       model: 'CG-5000L',
-      workshop: '储运车间',
+      workCenterId: 'wc-mvr',
       location: 'D区-成品罐区',
       status: EQUIPMENT_STATUS.IN_USE,
       nominalCapacity: 5000,
@@ -239,6 +278,7 @@ export function createEquipmentDeviceSeed() {
       capacityUnit: 'L',
       occupyStatus: EQUIPMENT_OCCUPY_STATUS.CLEAN,
       occupiedBatchNo: '',
+      stockKeeperName: '储运班长',
       responsible: '储运班长',
       manufacturer: '自制',
       installDate: '2022-04-16',
@@ -254,7 +294,7 @@ export function createEquipmentDeviceSeed() {
       name: '计量灌装机 P-701',
       category: '计量灌装',
       model: 'GZ-50',
-      workshop: '灌装车间',
+      workCenterId: 'wc-assy',
       location: 'E区-灌装线',
       status: EQUIPMENT_STATUS.IDLE,
       responsible: '灌装班长',
@@ -471,8 +511,13 @@ export function createRepairOrderSeed(devices = []) {
 }
 
 export function normalizeDevice(row = {}) {
-  const category = row.category || '公用工程'
+  // 兼容旧数据：类别「储罐」迁为「储运设备」并默认作为库存存放点
+  const migrated = migrateLegacyEquipmentCategory(row.category, row.asStockLocation)
+  const category = migrated.category
+  const asStockLocation = migrated.asStockLocation
   const vessel = isVesselCategory(category)
+  // 容积：反应/储运，或勾选库存存放点都要保留
+  const keepCapacity = vessel || asStockLocation
   const occupy = vessel ? row.occupyStatus || EQUIPMENT_OCCUPY_STATUS.CLEAN : ''
   const holdsBatch =
     occupy === EQUIPMENT_OCCUPY_STATUS.OCCUPIED || occupy === EQUIPMENT_OCCUPY_STATUS.WAIT_DISCHARGE
@@ -481,17 +526,26 @@ export function normalizeDevice(row = {}) {
     code: String(row.code || '').trim(),
     name: String(row.name || '').trim(),
     category,
+    /** 勾选后保存同步库存「储罐位置」，与设备类型解耦 */
+    asStockLocation,
     model: row.model || '',
-    workshop: row.workshop || '',
+    // 所属工作中心：优先 id；旧数据 workshop 文本按名称回落匹配
+    workCenterId:
+      String(row.workCenterId || '').trim() || getWorkCenterByName(row.workshop)?.id || '',
     location: row.location || '',
     status: row.status || EQUIPMENT_STATUS.IN_USE,
-    nominalCapacity: vessel ? positiveOrNull(row.nominalCapacity) : null,
-    workingCapacity: vessel ? positiveOrNull(row.workingCapacity) : null,
-    capacityUnit: vessel ? String(row.capacityUnit || 'L').trim() : '',
+    nominalCapacity: keepCapacity ? positiveOrNull(row.nominalCapacity) : null,
+    workingCapacity: keepCapacity ? positiveOrNull(row.workingCapacity) : null,
+    capacityUnit: keepCapacity ? String(row.capacityUnit || 'L').trim() : '',
     occupyStatus: occupy,
     occupiedBatchNo: vessel && holdsBatch ? String(row.occupiedBatchNo || '').trim() : '',
-    /** 类别为储罐时，挂接的库存位置 id（由同步写入） */
-    inventoryLocationId: category === '储罐' ? String(row.inventoryLocationId || '').trim() : '',
+    /** 作为库存存放点时挂接的库存位置 id（由同步写入） */
+    inventoryLocationId: asStockLocation ? String(row.inventoryLocationId || '').trim() : '',
+    /**
+     * 库存责任人：仅 asStockLocation 时有效，同步到库存位置 managerName。
+     * 与设备维保「责任人」responsible 分开，避免混用。
+     */
+    stockKeeperName: asStockLocation ? String(row.stockKeeperName || '').trim() : '',
     responsible: row.responsible || '',
     manufacturer: row.manufacturer || '',
     installDate: row.installDate || '',

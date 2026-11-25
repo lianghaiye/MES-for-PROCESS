@@ -32,6 +32,20 @@
             </a-form-item>
           </a-col>
           <a-col :span="8">
+            <a-form-item label="工作中心">
+              <a-select
+                v-model:value="workCenterId"
+                size="small"
+                allow-clear
+                show-search
+                option-filter-prop="label"
+                placeholder="可不选"
+                :options="workCenterOptions"
+                :disabled="workCenterLocked"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
             <a-form-item label="目标投料量">
               <a-input :value="qtyText(coverage.target)" size="small" disabled />
             </a-form-item>
@@ -179,6 +193,11 @@ import {
 } from '@/store/feedPlanStore'
 import { previewNextBatchNos } from '@/store/batchInstructionStore'
 import { getFormula, itemLabel, itemUnit } from '@/store/processFormulaStore'
+import {
+  formatWorkCenterLabel,
+  listEnabledWorkCenters,
+  workCenterState,
+} from '@/store/workCenterStore'
 import { round3, splitPlanFeedQty, theoreticalOutput } from '@/utils/processBatchMath'
 import { inputNumberFormatter, inputNumberParser } from '@/utils/numberFormat'
 
@@ -201,6 +220,7 @@ const count = ref(1)
 const feedQty = ref(null)
 const ceil = ref(false)
 const remark = ref('')
+const workCenterId = ref(undefined)
 const lines = ref([])
 const saving = ref(false)
 let lineKey = 0
@@ -208,6 +228,22 @@ let lineKey = 0
 const plan = computed(() => (props.planId ? getFeedPlan(props.planId) : null))
 const formula = computed(() => (plan.value ? getFormula(plan.value.formulaId) : null))
 const coverage = computed(() => planFeedCoverage(props.planId))
+const workCenterLocked = computed(() => Boolean(String(plan.value?.workCenterId || '').trim()))
+const workCenterOptions = computed(() => {
+  void workCenterState.centers
+  const rows = listEnabledWorkCenters().map((row) => ({
+    value: row.id,
+    label: `${row.code || ''} ${row.name || ''}`.trim(),
+  }))
+  const lockedId = String(plan.value?.workCenterId || '').trim()
+  if (lockedId && !rows.some((row) => row.value === lockedId)) {
+    rows.unshift({
+      value: lockedId,
+      label: formatWorkCenterLabel(lockedId),
+    })
+  }
+  return rows
+})
 const planLabel = computed(() => {
   const row = plan.value
   if (!row) return '—'
@@ -313,6 +349,7 @@ function fillDefault() {
   ceil.value = false
   remark.value = ''
   splitMode.value = 'by_count'
+  workCenterId.value = plan.value?.workCenterId || undefined
   const rows = splitPlanFeedQty(remaining, coverage.value.base, { ceil: false })
   lines.value = withPrefillBatchNos(rows.map((row) => nextLine(row.qty)))
   count.value = Math.max(1, lines.value.length || 1)
@@ -378,7 +415,7 @@ function submit() {
     const created = executeFeedPlan(props.planId, {
       qtys,
       batchNos,
-      productionLineId: '',
+      workCenterId: workCenterId.value || '',
       ceil: splitMode.value === 'by_qty' ? ceil.value : false,
       remark: String(remark.value || '').trim(),
     })
