@@ -32,14 +32,14 @@
             </a-form-item>
           </a-col>
           <a-col :span="8">
-            <a-form-item label="工作中心">
+            <a-form-item label="工作中心" required>
               <a-select
                 v-model:value="workCenterId"
                 size="small"
                 allow-clear
                 show-search
                 option-filter-prop="label"
-                placeholder="可不选"
+                placeholder="请选择工作中心"
                 :options="workCenterOptions"
                 :disabled="workCenterLocked"
               />
@@ -97,34 +97,37 @@
               />
             </a-form-item>
           </a-col>
-          <template v-else>
-            <a-col :span="8">
-              <a-form-item label="本次投料量" required>
-                <a-input-number
-                  v-model:value="feedQty"
-                  size="small"
-                  :min="0.001"
-                  :step="0.001"
-                  :formatter="inputNumberFormatter"
-                  :parser="inputNumberParser"
-                  addon-after="kg"
-                  :disabled="!coverage.remaining"
-                  style="width: 100%"
-                  @change="rebuildByQty"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item label="向上取整">
-                <a-switch v-model:checked="ceil" size="small" @change="rebuildByQty" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item label="预计张数">
-                <a-input :value="String(lines.length || 0)" size="small" disabled />
-              </a-form-item>
-            </a-col>
-          </template>
+          <a-col v-else :span="8">
+            <a-form-item label="本次投料量" required>
+              <a-input-number
+                v-model:value="feedQty"
+                size="small"
+                :min="0.001"
+                :step="0.001"
+                :formatter="inputNumberFormatter"
+                :parser="inputNumberParser"
+                addon-after="kg"
+                :disabled="!coverage.remaining"
+                style="width: 100%"
+                @change="rebuildByQty"
+              />
+            </a-form-item>
+          </a-col>
+          <!-- 按张数 / 按投料量均支持：余数不足基准批量时向上取整为一整批 -->
+          <a-col :span="8">
+            <a-form-item label="向上取整">
+              <a-switch
+                v-model:checked="ceil"
+                size="small"
+                @change="splitMode === 'by_count' ? resizeByCount() : rebuildByQty()"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col v-if="splitMode === 'by_qty'" :span="8">
+            <a-form-item label="预计张数">
+              <a-input :value="String(lines.length || 0)" size="small" disabled />
+            </a-form-item>
+          </a-col>
           <a-col :span="24">
             <a-form-item label="备注" class="remark-item">
               <a-textarea
@@ -293,19 +296,20 @@ const theoreticalOutputText = computed(() => {
 })
 const hint = computed(() => {
   if (!coverage.value.remaining) return '这张计划的目标投料量已经分完，不能再生成。'
+  const ceilTip = ceil.value
+    ? '余数不足一个基准批量时向上取整为完整批量。'
+    : '整批等于基准批量，余数单独一张。'
   if (splitMode.value === 'by_qty') {
     if (!coverage.value.base) {
       return '配方没有基准批量，按投料量会合成一张。可改每张计划投料量；批次号已按编码规则预填，可改。'
     }
-    return ceil.value
-      ? `按投料量拆分，余数不足一个基准批量时向上取整为完整批量。本次合计 ${sumQty.value} kg。批次号已按编码规则预填，可改。`
-      : `按投料量拆分，整批等于基准批量，余数单独一张。本次合计 ${sumQty.value} kg。批次号已按编码规则预填，可改。`
+    return `按投料量拆分，${ceilTip}本次合计 ${sumQty.value} kg。批次号已按编码规则预填，可改。`
   }
   if (!coverage.value.base) {
     return '配方没有基准批量，默认把剩余目标做成一张。可以改张数和每张计划投料量。批次号已按编码规则预填，可改。'
   }
   const over = sumQty.value > coverage.value.remaining + 1e-9
-  return `按张数拆分。本次合计 ${sumQty.value} kg${over ? '，已超过剩余目标' : ''}。批次号已按编码规则预填，可改；清空后提交时再自动生成。`
+  return `按张数拆分，${ceilTip}本次合计 ${sumQty.value} kg${over ? '，已超过剩余目标' : ''}。明细倒序展示（补足/余数在上）。批次号已按编码规则预填，可改；清空后提交时再自动生成。`
 })
 
 function qtyText(value) {
@@ -346,13 +350,16 @@ function withPrefillBatchNos(rows) {
 function fillDefault() {
   const remaining = coverage.value.remaining
   feedQty.value = remaining > 0 ? remaining : null
-  ceil.value = false
+  // 按张默认开启向上取整，与「余数单独一张」可切换
+  ceil.value = true
   remark.value = ''
   splitMode.value = 'by_count'
   workCenterId.value = plan.value?.workCenterId || undefined
-  const rows = splitPlanFeedQty(remaining, coverage.value.base, { ceil: false })
+  // 先按剩余目标拆一版，再按张数对齐（保证整批在前、余数/补足在后，便于倒序展示）
+  const rows = splitPlanFeedQty(remaining, coverage.value.base, { ceil: ceil.value })
   lines.value = withPrefillBatchNos(rows.map((row) => nextLine(row.qty)))
   count.value = Math.max(1, lines.value.length || 1)
+  resizeByCount()
 }
 
 function onModeChange() {
@@ -367,16 +374,44 @@ function onModeChange() {
   resizeByCount()
 }
 
+/**
+ * 按张数重建明细：先按剩余目标 + 向上取整拆分（整批在前、余数/补足在后），
+ * 再按张数增删整批；倒序展示后余数/补足行在顶部。
+ */
 function resizeByCount() {
   const next = Math.max(1, Math.min(200, Number(count.value) || 1))
   count.value = next
-  const base = coverage.value.base > 0 ? coverage.value.base : coverage.value.remaining
-  const prev = lines.value.slice()
-  const nextLines = []
-  for (let i = 0; i < next; i += 1) {
-    const keep = prev[i]
-    nextLines.push(nextLine(keep?.qty > 0 ? keep.qty : base, keep?.batchNo || ''))
+  const remaining = coverage.value.remaining
+  const base = coverage.value.base > 0 ? coverage.value.base : 0
+  if (!(remaining > 0)) {
+    lines.value = []
+    return
   }
+  const prev = lines.value.slice()
+  const natural = splitPlanFeedQty(remaining, base || remaining, { ceil: ceil.value })
+  let qtys = []
+  if (next <= natural.length) {
+    // 张数少于自然拆分：保留末尾若干行，优先保住余数/补足行
+    qtys = natural.slice(-next).map((row) => row.qty)
+  } else {
+    const pad = next - natural.length
+    const padQty = base > 0 ? base : remaining
+    const pads = Array.from({ length: pad }, () => padQty)
+    const last = natural[natural.length - 1]
+    const lastIsShort = last && (last.remainder || (base > 0 && Number(last.qty) < base - 1e-9))
+    if (lastIsShort) {
+      // 整批… + 追加整批… + 余数/补足
+      qtys = [...natural.slice(0, -1).map((row) => row.qty), ...pads, last.qty]
+    } else {
+      qtys = [...natural.map((row) => row.qty), ...pads]
+    }
+  }
+  // 从尾部对齐保留已填批次号，避免倒序后号段错乱
+  const nextLines = qtys.map((qty, index) => {
+    const fromEnd = qtys.length - 1 - index
+    const keep = prev[prev.length - 1 - fromEnd]
+    return nextLine(qty, keep?.batchNo || '')
+  })
   lines.value = withPrefillBatchNos(nextLines)
 }
 
@@ -395,6 +430,10 @@ function rebuildByQty() {
 }
 
 function submit() {
+  if (!String(workCenterId.value || '').trim()) {
+    message.warning('请选择工作中心')
+    return
+  }
   const qtys = lines.value.map((row) => Number(row.qty))
   if (qtys.some((qty) => !(qty > 0))) {
     message.warning('每张计划投料量都要大于 0')
@@ -416,7 +455,7 @@ function submit() {
       qtys,
       batchNos,
       workCenterId: workCenterId.value || '',
-      ceil: splitMode.value === 'by_qty' ? ceil.value : false,
+      ceil: ceil.value,
       remark: String(remark.value || '').trim(),
     })
     message.success(`已生成 ${created.length} 张批次指令`)

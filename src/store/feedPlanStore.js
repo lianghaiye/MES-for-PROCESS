@@ -795,7 +795,11 @@ export function saveFeedPlan(payload, id) {
 
   const splitTo = draft.splitTo
   if (!id && splitTo && splitTo !== FEED_PLAN_SPLIT.NONE) {
-    splitFeedPlan(row.id, splitTo, { replace: true })
+    // 新增时勾选的「跳过休息日」仅对拆日生效
+    splitFeedPlan(row.id, splitTo, {
+      replace: true,
+      skipRestDays: payload.skipRestDays !== false,
+    })
   }
   return row
 }
@@ -803,8 +807,10 @@ export function saveFeedPlan(payload, id) {
 /**
  * 把月/周计划拆成下级草稿。下级目标均分，拆完可改。
  * 已有下级时默认拒绝；replace=true 时先清未挂指令的下级。
+ * @param {{ replace?: boolean, skipRestDays?: boolean }} [options]
+ *   skipRestDays：拆日时是否跳过周末；默认 true（与表单勾选默认一致）
  */
-export function splitFeedPlan(planId, splitTo, { replace = false } = {}) {
+export function splitFeedPlan(planId, splitTo, { replace = false, skipRestDays = true } = {}) {
   const parent = getFeedPlan(planId)
   if (!parent) throw new Error('计划不存在')
   if (splitTo !== FEED_PLAN_SPLIT.WEEK && splitTo !== FEED_PLAN_SPLIT.DAY) {
@@ -835,8 +841,12 @@ export function splitFeedPlan(planId, splitTo, { replace = false } = {}) {
     }
   }
 
-  const periods = listChildPeriods(parent, splitTo)
-  if (!periods.length) throw new Error('该期间拆不出下级')
+  // 仅拆日时尊重勾选；拆周不涉及休息日
+  const applySkipRest = splitTo === FEED_PLAN_SPLIT.DAY && skipRestDays !== false
+  const periods = listChildPeriods(parent, splitTo, { skipRestDays: applySkipRest })
+  if (!periods.length) {
+    throw new Error(applySkipRest ? '该期间没有工作日可拆（休息日已过滤）' : '该期间拆不出下级')
+  }
   if (!parent.planNo) {
     parent.planNo = nextRootPlanNo(dayjs(parent.createdAt || parent.start || undefined))
     parent.rootPlanNo = parent.planNo

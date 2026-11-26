@@ -51,14 +51,14 @@
             </a-form-item>
           </a-col>
           <a-col :span="8">
-            <a-form-item label="工作中心">
+            <a-form-item label="工作中心" required>
               <a-select
                 v-model:value="workCenterId"
                 size="small"
                 allow-clear
                 show-search
                 option-filter-prop="label"
-                placeholder="可不选"
+                placeholder="请选择工作中心"
                 :options="workCenterOptions"
                 :disabled="workCenterLocked"
               />
@@ -105,33 +105,31 @@
               />
             </a-form-item>
           </a-col>
-          <template v-else>
-            <a-col :span="8">
-              <a-form-item label="本次投料量" required>
-                <a-input-number
-                  v-model:value="demandQty"
-                  size="small"
-                  :min="0.001"
-                  :step="0.001"
-                  :formatter="inputNumberFormatter"
-                  :parser="inputNumberParser"
-                  addon-after="kg"
-                  style="width: 100%"
-                  @change="refreshPreview"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item label="向上取整">
-                <a-switch v-model:checked="ceil" size="small" @change="refreshPreview" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item label="预计张数">
-                <a-input :value="String(preview.length || 0)" size="small" disabled />
-              </a-form-item>
-            </a-col>
-          </template>
+          <a-col v-else :span="8">
+            <a-form-item label="本次投料量" required>
+              <a-input-number
+                v-model:value="demandQty"
+                size="small"
+                :min="0.001"
+                :step="0.001"
+                :formatter="inputNumberFormatter"
+                :parser="inputNumberParser"
+                addon-after="kg"
+                style="width: 100%"
+                @change="refreshPreview"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="向上取整">
+              <a-switch v-model:checked="ceil" size="small" @change="refreshPreview" />
+            </a-form-item>
+          </a-col>
+          <a-col v-if="splitMode === 'by_qty'" :span="8">
+            <a-form-item label="预计张数">
+              <a-input :value="String(preview.length || 0)" size="small" disabled />
+            </a-form-item>
+          </a-col>
           <a-col :span="24">
             <a-form-item label="来源单号">
               <a-input
@@ -330,12 +328,13 @@ const displayLines = computed(() => preview.value.slice().reverse())
 const hint = computed(() => {
   if (!selectedFormula.value) return '请先选择主产品与配方。'
   const planTip = feedPlanId.value ? '将挂到所选生产计划。' : '未选生产计划时按手工需求生成。'
+  const ceilTip = ceil.value
+    ? '余数不足一个基准批量时向上取整为完整批量。'
+    : '整批等于基准批量，余数单独一张。'
   if (splitMode.value === 'by_qty') {
-    return ceil.value
-      ? `${planTip}按投料量拆分，余数不足一个基准批量时向上取整为完整批量。本次合计 ${sumQty.value} kg。批次号已按编码规则预填，可改。`
-      : `${planTip}按投料量拆分，整批等于基准批量，余数单独一张。本次合计 ${sumQty.value} kg。批次号已按编码规则预填，可改。`
+    return `${planTip}按投料量拆分，${ceilTip}本次合计 ${sumQty.value} kg。批次号已按编码规则预填，可改。`
   }
-  return `${planTip}按张数拆分。本次合计 ${sumQty.value} kg。批次号已按编码规则预填，可改；清空后提交时再自动生成。`
+  return `${planTip}按张数拆分，${ceilTip}本次合计 ${sumQty.value} kg。明细倒序展示（补足/余数在上）。批次号已按编码规则预填，可改；清空后提交时再自动生成。`
 })
 
 watch(
@@ -353,7 +352,7 @@ function resetForm() {
   demandQty.value = props.presetDemand || 100
   batchCount.value = 1
   splitMode.value = 'by_count'
-  ceil.value = false
+  ceil.value = true
   sourceLabel.value = props.presetSource || ''
   remark.value = ''
   workCenterId.value = undefined
@@ -393,7 +392,7 @@ function onPlanChange() {
   if (formula?.baseBatchQty > 0 && demandQty.value > 0) {
     batchCount.value = Math.max(
       1,
-      splitPlanFeedQty(demandQty.value, formula.baseBatchQty, { ceil: false }).length,
+      splitPlanFeedQty(demandQty.value, formula.baseBatchQty, { ceil: ceil.value }).length,
     )
   }
   refreshPreview()
@@ -456,7 +455,32 @@ function refreshPreview() {
       preview.value = []
       return
     }
-    rows = Array.from({ length: n }, (_, index) => nextPreviewRow(base, prev[index]?.batchNo || ''))
+    // 有本次/计划投料量时：按量拆分（含向上取整）再按张数补整批；无量时仍按张数×基准批量
+    const qty = Number(demandQty.value)
+    if (qty > 0) {
+      const natural = splitPlanFeedQty(qty, base, { ceil: ceil.value })
+      let qtys = []
+      if (n <= natural.length) {
+        qtys = natural.slice(-n).map((row) => row.qty)
+      } else {
+        const pad = n - natural.length
+        const pads = Array.from({ length: pad }, () => base)
+        const last = natural[natural.length - 1]
+        const lastIsShort = last && (last.remainder || Number(last.qty) < base - 1e-9)
+        qtys = lastIsShort
+          ? [...natural.slice(0, -1).map((row) => row.qty), ...pads, last.qty]
+          : [...natural.map((row) => row.qty), ...pads]
+      }
+      rows = qtys.map((q, index) => {
+        const fromEnd = qtys.length - 1 - index
+        const keep = prev[prev.length - 1 - fromEnd]
+        return nextPreviewRow(q, keep?.batchNo || '')
+      })
+    } else {
+      rows = Array.from({ length: n }, (_, index) =>
+        nextPreviewRow(base, prev[index]?.batchNo || ''),
+      )
+    }
   } else {
     const qty = Number(demandQty.value)
     if (!(qty > 0) || !(base > 0)) {
@@ -478,6 +502,10 @@ function submit() {
   const formula = selectedFormula.value
   if (!formula || formula.status !== 'active') {
     message.warning('请选择生效配方')
+    return
+  }
+  if (!String(workCenterId.value || '').trim()) {
+    message.warning('请选择工作中心')
     return
   }
   if (!preview.value.length) {
@@ -508,7 +536,7 @@ function submit() {
         qtys,
         batchNos,
         workCenterId: workCenterId.value || '',
-        ceil: splitMode.value === 'by_qty' ? ceil.value : false,
+        ceil: ceil.value,
         remark: remarkText,
       })
     } else {

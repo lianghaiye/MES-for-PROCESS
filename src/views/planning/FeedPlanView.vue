@@ -336,7 +336,28 @@
                   v-model:value="form.splitTo"
                   size="small"
                   :options="splitOptionsForCreate"
+                  @change="onCreateSplitToChange"
                 />
+              </a-form-item>
+            </a-col>
+            <!-- 仅拆成日计划时出现：拆分规则勾选，保存时生效 -->
+            <a-col
+              v-if="
+                !editingId &&
+                form.splitTo === FEED_PLAN_SPLIT.DAY &&
+                form.periodType !== 'day' &&
+                form.periodType !== 'custom'
+              "
+              :span="16"
+            >
+              <a-form-item label="拆分规则">
+                <a-space :size="16" wrap>
+                  <a-checkbox v-model:checked="form.skipRestDays">跳过休息日</a-checkbox>
+                  <!-- 法定假日过滤未落地，先置灰占位 -->
+                  <a-checkbox v-model:checked="form.skipHolidays" disabled>
+                    跳过法定假日
+                  </a-checkbox>
+                </a-space>
               </a-form-item>
             </a-col>
             <a-col :span="24">
@@ -419,7 +440,23 @@
             </a-col>
             <a-col :span="24">
               <a-form-item label="拆成" required>
-                <a-select v-model:value="splitTo" size="small" :options="splitOptionsForRow" />
+                <a-select
+                  v-model:value="splitTo"
+                  size="small"
+                  :options="splitOptionsForRow"
+                  @change="onSplitModalSplitToChange"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col v-if="splitTo === FEED_PLAN_SPLIT.DAY" :span="24">
+              <a-form-item label="拆分规则">
+                <a-space :size="16" wrap>
+                  <a-checkbox v-model:checked="splitSkipRestDays">跳过休息日</a-checkbox>
+                  <!-- 法定假日过滤未落地，先置灰占位 -->
+                  <a-checkbox v-model:checked="splitSkipHolidays" disabled>
+                    跳过法定假日
+                  </a-checkbox>
+                </a-space>
               </a-form-item>
             </a-col>
           </a-row>
@@ -704,12 +741,18 @@ const form = reactive({
   source: FEED_PLAN_SOURCE.MPS,
   sourceRef: '',
   splitTo: FEED_PLAN_SPLIT.NONE,
+  /** 拆分规则：跳过休息日（默认勾）；跳过法定假日暂未实现，始终 false */
+  skipRestDays: true,
+  skipHolidays: false,
   remark: '',
 })
 
 const splitOpen = ref(false)
 const splitPlanId = ref('')
 const splitTo = ref(FEED_PLAN_SPLIT.DAY)
+/** 拆分子计划弹窗 · 拆分规则 */
+const splitSkipRestDays = ref(true)
+const splitSkipHolidays = ref(false)
 const generateOpen = ref(false)
 const generatePlanId = ref('')
 const statPeriod = ref('本月')
@@ -1160,6 +1203,11 @@ function onPeriodTypeChange() {
     form.splitTo = FEED_PLAN_SPLIT.NONE
     if (!form.range?.[0] || !form.range?.[1]) form.range = [dayjs(), dayjs()]
   }
+  // 不能拆日时清空拆分规则联动字段
+  if (form.splitTo !== FEED_PLAN_SPLIT.DAY) {
+    form.skipRestDays = true
+    form.skipHolidays = false
+  }
   syncDefaultPlanName()
 }
 
@@ -1189,6 +1237,8 @@ function resetForm() {
   form.source = FEED_PLAN_SOURCE.MPS
   form.sourceRef = ''
   form.splitTo = FEED_PLAN_SPLIT.NONE
+  form.skipRestDays = true
+  form.skipHolidays = false
   form.remark = ''
 }
 
@@ -1242,6 +1292,11 @@ function handleSave() {
           ? feedPlanState.plans.find((row) => row.id === editingId.value)?.splitTo ||
             FEED_PLAN_SPLIT.NONE
           : form.splitTo,
+        // 仅新增且拆日时带勾选值；未拆日不传意义
+        skipRestDays:
+          !editingId.value && form.splitTo === FEED_PLAN_SPLIT.DAY
+            ? Boolean(form.skipRestDays)
+            : true,
         remark: form.remark,
       },
       editingId.value,
@@ -1258,12 +1313,29 @@ function openSplit(record) {
   splitPlanId.value = record.id
   splitTo.value =
     record.periodType === FEED_PLAN_PERIOD.WEEK ? FEED_PLAN_SPLIT.DAY : FEED_PLAN_SPLIT.DAY
+  splitSkipRestDays.value = true
+  splitSkipHolidays.value = false
   splitOpen.value = true
+}
+
+/** 拆分弹窗：非拆日清空规则；切回拆日默认勾「跳过休息日」 */
+function onSplitModalSplitToChange(value) {
+  splitSkipRestDays.value = value === FEED_PLAN_SPLIT.DAY
+  splitSkipHolidays.value = false
+}
+
+/** 新增表单：非拆日清空规则；切回拆日默认勾「跳过休息日」 */
+function onCreateSplitToChange(value) {
+  form.skipRestDays = value === FEED_PLAN_SPLIT.DAY
+  form.skipHolidays = false
 }
 
 function handleSplit() {
   try {
-    const created = splitFeedPlan(splitPlanId.value, splitTo.value)
+    const created = splitFeedPlan(splitPlanId.value, splitTo.value, {
+      skipRestDays:
+        splitTo.value === FEED_PLAN_SPLIT.DAY ? Boolean(splitSkipRestDays.value) : false,
+    })
     message.success(`已拆出 ${created.length} 条下级计划`)
     splitOpen.value = false
   } catch (error) {

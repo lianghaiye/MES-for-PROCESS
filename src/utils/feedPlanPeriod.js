@@ -160,14 +160,27 @@ export function distributeTargetQty(total, count) {
 }
 
 /**
- * 在 parent.start~parent.end 内枚举下级期间。
- * 拆到周：覆盖到的 ISO 周；拆到日：日历日。
+ * 一期休息日：周六、周日。
+ * 后续可接工厂日历 / 法定假；未接前拆日只认周末。
  */
-export function listChildPeriods(parent, splitTo) {
+export function isRestDay(date) {
+  const d = dayjs(date)
+  if (!d.isValid()) return false
+  const weekday = d.day() // 0=周日 … 6=周六
+  return weekday === 0 || weekday === 6
+}
+
+/**
+ * 在 parent.start~parent.end 内枚举下级期间。
+ * 拆到周：覆盖到的 ISO 周；拆到日：日历日（可选跳过休息日）。
+ * @param {{ skipRestDays?: boolean }} [options] skipRestDays 默认 true：拆日时跳过周末
+ */
+export function listChildPeriods(parent, splitTo, options = {}) {
   if (!parent?.start || !parent?.end) return []
   const start = dayjs(parent.start)
   const end = dayjs(parent.end)
   if (!start.isValid() || !end.isValid() || end.isBefore(start, 'day')) return []
+  const skipRestDays = options.skipRestDays !== false
 
   if (splitTo === FEED_PLAN_SPLIT.WEEK) {
     const keys = new Set()
@@ -191,8 +204,11 @@ export function listChildPeriods(parent, splitTo) {
     const rows = []
     let cursor = start.startOf('day')
     while (cursor.isBefore(end) || cursor.isSame(end, 'day')) {
-      const period = buildFeedPlanPeriod(FEED_PLAN_PERIOD.DAY, cursor)
-      if (period) rows.push(period)
+      // 休息日不生成日计划；目标量只均分到留下的工作日
+      if (!(skipRestDays && isRestDay(cursor))) {
+        const period = buildFeedPlanPeriod(FEED_PLAN_PERIOD.DAY, cursor)
+        if (period) rows.push(period)
+      }
       cursor = cursor.add(1, 'day')
     }
     return rows
