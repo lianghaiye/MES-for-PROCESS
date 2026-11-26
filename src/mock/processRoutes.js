@@ -1,9 +1,19 @@
-import { getProcessByName, resolveDefaultExecutors } from '@/store/processConfigStore'
+import {
+  getProcessByName,
+  getProcessById,
+  resolveDefaultExecutors,
+} from '@/store/processConfigStore'
 import {
   buildWorkOrderProcessesFromGrid,
   syncStepPolicies,
   COMPLETION_MODE_ALL,
+  countGridProcesses,
 } from '@/utils/processRouteGrid'
+import {
+  ROUTE_LAYOUT_TOPOLOGY,
+  resolveRouteLayout,
+  buildWorkOrderProcessesFromTopology,
+} from '@/utils/processRouteTopology'
 import { createEmptyWorkOrderProcessExtras } from '@/utils/workOrderProcessDisplay'
 
 function getProcessRouteByNameLazy(name) {
@@ -51,7 +61,46 @@ export const disassemblyProcessDefs = [
 /** 从工艺路线生成工单工序 + 步骤完成方式快照 */
 export function buildRouteDispatchSnapshot(routeName) {
   const route = getProcessRouteByNameLazy(routeName)
-  if (route?.grid) {
+  // 拓扑路线：按下发快照展开（默认仅主线节点）
+  if (route && resolveRouteLayout(route) === ROUTE_LAYOUT_TOPOLOGY) {
+    const raw = buildWorkOrderProcessesFromTopology(route.nodes, route.id, getProcessById).filter(
+      (row) => row.includeInDispatch !== false,
+    )
+    const processes = raw.map((step, index) => {
+      const proc = getProcessById(step.processId)
+      return {
+        ...step,
+        index: index + 1,
+        stepNo: index + 1,
+        completionMode: COMPLETION_MODE_ALL,
+        processCode: proc?.code || '',
+        hasFeeding: Boolean(proc?.operations?.opFeeding),
+        isBlanking: Boolean(proc?.isBlanking),
+        resourceType: proc?.resourceType || '工人',
+        executors: resolveDefaultExecutors(proc),
+        ...createEmptyWorkOrderProcessExtras(),
+        opOutsource: Boolean(proc?.operations?.opOutsource),
+        feedingMaterials: proc?.operations?.opFeeding
+          ? [
+              {
+                id: `feed-${Date.now()}-${index}`,
+                materialId: undefined,
+                materialName: '',
+                qty: null,
+              },
+            ]
+          : [],
+      }
+    })
+    return {
+      processes,
+      stepPolicies: processes.map((p) => ({
+        stepNo: p.stepNo,
+        completionMode: COMPLETION_MODE_ALL,
+      })),
+    }
+  }
+  if (route && countGridProcesses(route.grid) > 0) {
     const stepPolicies = syncStepPolicies(route.grid, route.stepPolicies)
     return {
       processes: buildWorkOrderProcessesFromGrid(route.grid, route.id, stepPolicies),

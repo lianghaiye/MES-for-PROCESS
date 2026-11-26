@@ -43,35 +43,26 @@
           />
         </DetailSectionCard>
 
-        <DetailSectionCard v-else-if="hasProcessGrid" title="工序流程">
-          <a-tabs v-model:active-key="flowTab" class="detail-tabs detail-tabs-pill">
-            <a-tab-pane key="grid" tab="网格展示">
-              <ProcessRouteGridEditor
-                :grid="record.grid || []"
-                :step-policies="record.stepPolicies || []"
-                v-model:selected-step="selectedStep"
-                v-model:selected-row="selectedRow"
-                readonly
-              />
+        <DetailSectionCard v-else title="路线拓扑">
+          <p class="topo-summary">{{ topologySummary }}</p>
+          <a-tabs v-model:active-key="topoTab" class="detail-tabs detail-tabs-pill">
+            <a-tab-pane key="grid" tab="网格（含连线）">
+              <ProcessRouteTopologyGridEditor :nodes="record.nodes || []" readonly />
             </a-tab-pane>
-            <a-tab-pane key="flat" tab="扁平展示">
+            <a-tab-pane key="preview" tab="拓扑预览">
+              <ProcessRouteTopologyPreview :nodes="record.nodes || []" />
+            </a-tab-pane>
+            <a-tab-pane key="list" tab="节点列表">
               <a-table
-                :columns="stepCols"
-                :data-source="flatSteps"
+                class="node-table"
+                :columns="nodeCols"
+                :data-source="nodeRows"
                 row-key="id"
                 size="small"
                 bordered
                 :pagination="false"
-              >
-                <template #bodyCell="{ column, record: row }">
-                  <template v-if="column.key === 'processFile'">
-                    {{ row.processFileName || '—' }}
-                  </template>
-                  <template v-else>
-                    {{ row[column.dataIndex] ?? '—' }}
-                  </template>
-                </template>
-              </a-table>
+                :locale="{ emptyText: '还没有节点' }"
+              />
             </a-tab-pane>
           </a-tabs>
         </DetailSectionCard>
@@ -98,26 +89,21 @@ import {
   unarchiveProcessRoute,
   cloneProcessRoute,
 } from '@/store/processRouteStore'
-import {
-  countGridProcesses,
-  flattenGridToSteps,
-  formatApplyScopeLabel,
-  syncStepPolicies,
-} from '@/utils/processRouteGrid'
+import { formatApplyScopeLabel } from '@/utils/processRouteGrid'
+import { formatTopologySummary, normalizeRouteNodes } from '@/utils/processRouteTopology'
 import { deviceLabelById } from '@/store/equipmentStore'
 import { ROUTE_MODE_EQUIPMENT } from '@/constants/processRouteMode'
 import { resolveRouteEditMode } from '@/store/processMesSettingsStore'
 import DetailInfoGrid from './components/DetailInfoGrid.vue'
-import ProcessRouteGridEditor from './components/ProcessRouteGridEditor.vue'
+import ProcessRouteTopologyPreview from './components/ProcessRouteTopologyPreview.vue'
+import ProcessRouteTopologyGridEditor from './components/ProcessRouteTopologyGridEditor.vue'
 
 const route = useRoute()
 const router = useRouter()
 const { openTab } = useTabs()
 const loading = ref(false)
 const record = ref(null)
-const flowTab = ref('grid')
-const selectedStep = ref(-1)
-const selectedRow = ref(-1)
+const topoTab = ref('grid')
 
 function display(val) {
   return val !== undefined && val !== null && String(val).trim() !== '' ? String(val) : '—'
@@ -150,7 +136,29 @@ const basicFields = computed(() => {
 })
 
 const isEquipmentMode = computed(() => resolveRouteEditMode(record.value) === ROUTE_MODE_EQUIPMENT)
-const hasProcessGrid = computed(() => countGridProcesses(record.value?.grid) > 0)
+const topologySummary = computed(() => formatTopologySummary(record.value?.nodes || []))
+
+const nodeCols = [
+  { title: '路径', dataIndex: 'pathText', width: 80 },
+  { title: '支线', dataIndex: 'branchName', width: 100 },
+  { title: '节点', dataIndex: 'name', width: 120 },
+  { title: '分出节点', dataIndex: 'forkText', width: 120 },
+  { title: '汇入节点', dataIndex: 'joinText', width: 120 },
+  { title: '设备', dataIndex: 'equipmentText' },
+]
+
+const nodeRows = computed(() => {
+  const list = normalizeRouteNodes(record.value?.nodes || [])
+  const byId = new Map(list.map((n) => [n.id, n]))
+  return list.map((n) => ({
+    ...n,
+    pathText: n.pathKind === 'main' ? '主线' : n.pathKind === 'sink' ? '汇合点' : '支线',
+    branchName: n.branchName || '—',
+    forkText: n.forkAfterNodeId ? byId.get(n.forkAfterNodeId)?.name || n.forkAfterNodeId : '—',
+    joinText: n.joinToNodeId ? byId.get(n.joinToNodeId)?.name || n.joinToNodeId : '—',
+    equipmentText: (n.equipmentIds || []).map((id) => deviceLabelById(id) || id).join('、') || '—',
+  }))
+})
 
 const unitCols = [
   { title: '顺序', dataIndex: 'seq', width: 70, align: 'center' },
@@ -164,29 +172,6 @@ const unitRows = computed(() =>
     equipmentText: deviceLabelById(unit.equipmentId) || '—',
   })),
 )
-
-const stepCols = [
-  { title: '列', dataIndex: 'stepNo', width: 70 },
-  { title: '行', dataIndex: 'rowNo', width: 70 },
-  { title: '工序', dataIndex: 'name', width: 120 },
-  { title: '设备', dataIndex: 'equipmentText', width: 180 },
-  { title: '回流', dataIndex: 'returnText', width: 220 },
-  { title: '工艺文件', key: 'processFile', width: 160 },
-]
-
-const flatSteps = computed(() => {
-  if (!record.value?.grid) return []
-  const policies = syncStepPolicies(record.value.grid, record.value.stepPolicies)
-  return flattenGridToSteps(record.value.grid, policies).map((s, i) => ({
-    ...s,
-    id: `${s.stepNo}-${s.rowNo}-${i}`,
-    equipmentText:
-      (Array.isArray(s.equipmentIds) && s.equipmentIds.length
-        ? s.equipmentIds.map((id) => deviceLabelById(id) || id).join('、')
-        : deviceLabelById(s.equipmentId)) || '—',
-    returnText: s.returnText || '—',
-  }))
-})
 
 function statusColor(status) {
   if (status === '使用中') return 'processing'
@@ -261,9 +246,6 @@ watch(
   (id) => {
     loading.value = true
     record.value = getProcessRouteById(id)
-    flowTab.value = 'grid'
-    selectedStep.value = -1
-    selectedRow.value = -1
     loading.value = false
   },
   { immediate: true },
@@ -271,6 +253,17 @@ watch(
 </script>
 
 <style scoped lang="less">
+.topo-summary {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #4e5969;
+  line-height: 22px;
+}
+
+.node-table {
+  margin-top: 12px;
+}
+
 .process-route-detail-page {
   :deep(.detail-section-card) {
     margin-bottom: 8px;

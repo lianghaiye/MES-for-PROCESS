@@ -8,10 +8,16 @@ import {
   createEmptyGrid,
   normalizeGrid,
   syncStepPolicies,
-  unitsFromGrid,
-  validateCellReturns,
   validateProcessRouteGrid,
 } from '@/utils/processRouteGrid'
+import {
+  ROUTE_LAYOUT_TOPOLOGY,
+  resolveRouteLayout,
+  normalizeRouteNodes,
+  validateRouteTopology,
+  unitsFromTopologyNodes,
+  createRouteNode,
+} from '@/utils/processRouteTopology'
 import { defaultQcConfigsFromOperations } from '@/utils/qcProcessConfig'
 import { persistJson, safeSetItem } from '@/utils/safeStorage'
 import { getUser } from '@/utils/auth'
@@ -57,10 +63,18 @@ function normalizeRouteRow(row) {
   if (!row.updater) row.updater = row.creator || 'admin1'
   row.units = normalizeRouteUnits(row.units)
   if (Array.isArray(row.grid)) row.grid = normalizeGrid(row.grid)
+  // 拓扑节点归一化
+  if (Array.isArray(row.nodes)) {
+    row.nodes = normalizeRouteNodes(row.nodes.map((n) => createRouteNode(n)))
+  } else {
+    row.nodes = []
+  }
+  row.layout = resolveRouteLayout(row)
   if (row.routeMode) row.routeMode = normalizeRouteMode(row.routeMode)
   else if (
     (row.units || []).length &&
-    !(row.grid || []).some((step) => (step || []).some((c) => c?.processId))
+    !(row.grid || []).some((step) => (step || []).some((c) => c?.processId)) &&
+    !(row.nodes || []).length
   ) {
     row.routeMode = ROUTE_MODE_EQUIPMENT
   } else {
@@ -71,7 +85,8 @@ function normalizeRouteRow(row) {
 
 const STORAGE_KEY = 'i_doms_process_routes'
 const SEED_VERSION_KEY = 'i_doms_process_routes_seed_v'
-const CURRENT_SEED_VERSION = '3'
+/** v6：工艺路线 MOCK 全部拓扑，去掉旧网格种子 */
+const CURRENT_SEED_VERSION = '6'
 
 function getProcessIdByName(name) {
   const proc = processConfigState.processes.find((p) => p.name === name)
@@ -153,9 +168,12 @@ export function getProcessRouteByName(name) {
 /** 一条路线里出现多次仍算 1 */
 export function countRoutesReferencingProcess(processId) {
   if (!processId) return 0
-  return processRouteState.routes.filter((route) =>
-    (route.grid || []).some((step) => (step || []).some((cell) => cell?.processId === processId)),
-  ).length
+  return processRouteState.routes.filter((route) => {
+    if ((route.nodes || []).some((n) => n?.processId === processId)) return true
+    return (route.grid || []).some((step) =>
+      (step || []).some((cell) => cell?.processId === processId),
+    )
+  }).length
 }
 
 export function resolveRouteProductDisplay(route) {
@@ -186,16 +204,18 @@ function validateRouteForm(payload) {
   if (routeMode === ROUTE_MODE_EQUIPMENT) {
     const units = normalizeRouteUnits(payload.units)
     if (!units.length) return { ok: false, message: '请至少添加一台设备' }
-    return { ok: true, routeMode, units }
+    return { ok: true, routeMode, units, layout: ROUTE_LAYOUT_TOPOLOGY, nodes: [] }
   }
-  const gridCheck = validateProcessRouteGrid(payload.grid)
-  if (!gridCheck.ok) return gridCheck
-  const returnCheck = validateCellReturns(payload.grid)
-  if (!returnCheck.ok) return returnCheck
+  // 工艺路线一律拓扑：节点挂工序 + 分出/汇入
+  const topoCheck = validateRouteTopology(payload.nodes)
+  if (!topoCheck.ok) return topoCheck
+  const nodes = topoCheck.nodes || normalizeRouteNodes(payload.nodes)
   return {
     ok: true,
     routeMode: ROUTE_MODE_PROCESS,
-    units: normalizeRouteUnits(unitsFromGrid(payload.grid)),
+    layout: ROUTE_LAYOUT_TOPOLOGY,
+    nodes,
+    units: normalizeRouteUnits(unitsFromTopologyNodes(nodes)),
   }
 }
 
@@ -222,15 +242,11 @@ export function addProcessRoute(payload) {
     productDisplay: payload.productDisplay || '',
     remark: payload.remark || '',
     routeMode: check.routeMode,
+    layout: ROUTE_LAYOUT_TOPOLOGY,
+    nodes: check.nodes || [],
     units: check.units,
-    grid:
-      check.routeMode === ROUTE_MODE_PROCESS && payload.grid
-        ? normalizeGrid(payload.grid)
-        : createEmptyGrid(),
-    stepPolicies:
-      check.routeMode === ROUTE_MODE_PROCESS
-        ? syncStepPolicies(payload.grid, payload.stepPolicies)
-        : [],
+    grid: createEmptyGrid(),
+    stepPolicies: [],
     creator: operator,
     updater: operator,
     createdAt: now,
@@ -260,15 +276,11 @@ export function updateProcessRoute(id, payload) {
     productDisplay: payload.productDisplay || '',
     remark: payload.remark || '',
     routeMode: check.routeMode,
+    layout: ROUTE_LAYOUT_TOPOLOGY,
+    nodes: check.nodes || [],
     units: check.units,
-    grid:
-      check.routeMode === ROUTE_MODE_PROCESS && payload.grid
-        ? normalizeGrid(payload.grid)
-        : processRouteState.routes[idx].grid,
-    stepPolicies:
-      check.routeMode === ROUTE_MODE_PROCESS && payload.grid
-        ? syncStepPolicies(payload.grid, payload.stepPolicies)
-        : processRouteState.routes[idx].stepPolicies,
+    grid: createEmptyGrid(),
+    stepPolicies: [],
     updater: resolveOperatorName(),
     updatedAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
   })

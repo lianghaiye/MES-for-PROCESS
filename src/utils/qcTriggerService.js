@@ -38,6 +38,11 @@ export function resolveProcessQcConfigs(process = {}) {
   const override = normalizeRouteQcOverride(process.routeQcOverride ?? process.qcOverride)
   if (override === ROUTE_QC_OFF) return []
 
+  // 工单快照已带合并后的 assaySchemes（含按方案本路线不检/门禁覆盖）时优先用
+  if (Array.isArray(process.assaySchemes)) {
+    return normalizeProcessQcConfigs(process.assaySchemes).filter((c) => c.enabled)
+  }
+
   const procConfig = getProcessConfigByNameOrCode(process)
   if (procConfig && Array.isArray(procConfig.qcConfigs)) {
     return normalizeProcessQcConfigs(procConfig.qcConfigs).filter((c) => c.enabled)

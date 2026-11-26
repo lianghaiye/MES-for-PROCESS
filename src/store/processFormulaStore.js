@@ -18,6 +18,12 @@ import {
   deriveProcessGateFromAssaySchemes,
   normalizeProcessQcConfigs,
 } from '@/utils/qcProcessConfig'
+import {
+  PARALLEL_JOIN_MODE,
+  normalizeStepParallelFields,
+  validateParallelGroups,
+} from '@/utils/formulaParallelGroup'
+import { normalizeDownstreamSpawn } from '@/utils/outputDownstreamSpawn'
 import { getUser } from '@/utils/auth'
 
 const STORAGE_KEY = 'i-doms-process-formula-v2'
@@ -556,7 +562,7 @@ function seed() {
     {
       id: 'formula-licarbon',
       formulaNo: 'PF-LIC-001',
-      name: '工业级碳酸锂（酸浸沉锂）',
+      name: '工业级碳酸锂（酸浸沉锂·并行MOCK）',
       itemId: 'pi-licarbon',
       version: 'V1.0',
       lineageId: 'lineage-licarbon',
@@ -565,17 +571,27 @@ function seed() {
       isDefault: true,
       // 单槽一次进料约 100 吨（调研）；日计划约 150 吨会跨多槽。
       // 基准批量按原料吨计；理论得率 = 工碳产出 / 原料吨，约 6.4%。
+      // 挂路线 GYLX0012；阶段 G2=二次浆化‖氟渣洗涤，joinMode=any。
       baseBatchQty: 100000,
       theoreticalYield: 0.064,
       routeId: 'route-012',
       // 角色口径：卤水/渣=副产品；洗渣水/母液=回收料；氟钙镁渣=废弃物
       outputs: [
-        { role: 'main', itemId: 'pi-licarbon', expectedQty: 6400, stepNo: 9 },
+        { role: 'main', itemId: 'pi-licarbon', expectedQty: 6400, stepNo: 10 },
         { role: 'by', itemId: 'pi-acid-brine', expectedQty: 95000, stepNo: 3 },
         { role: 'by', itemId: 'pi-acid-slag', expectedQty: 82000, stepNo: 3 },
-        { role: 'recycle', itemId: 'pi-wash-water', expectedQty: 12000, stepNo: 3 },
-        { role: 'recycle', itemId: 'pi-mother-liquor', expectedQty: 8000, stepNo: 7 },
-        { role: 'waste', itemId: 'pi-f-slag', expectedQty: 2800, stepNo: 5 },
+        { role: 'recycle', itemId: 'pi-wash-water', expectedQty: 12000, stepNo: 6 },
+        { role: 'recycle', itemId: 'pi-mother-liquor', expectedQty: 8000, stepNo: 8 },
+        {
+          role: 'waste',
+          itemId: 'pi-f-slag',
+          expectedQty: 2800,
+          stepNo: 6,
+          // 方案 A：登渣后可开支线洗涤指令
+          downstreamSpawnEnabled: true,
+          downstreamFormulaId: 'formula-f-slag-wash',
+          downstreamSpawnMode: 'manual',
+        },
       ],
       lines: [
         {
@@ -651,13 +667,14 @@ function seed() {
           lossRate: 0.01,
           tolerance: 0.03,
           feedSequence: 6,
-          stepNo: 6,
+          stepNo: 7,
           convertByContent: true,
           content: 0.99,
           isKeyMaterial: true,
           isAuxiliary: false,
         },
       ],
+      // 一次净化后：二次浆化 ‖ 氟渣洗涤（并行组 G2，默认 any：组内完成一条即可汇合）
       steps: [
         {
           stepNo: 1,
@@ -704,6 +721,8 @@ function seed() {
           processId: 'proc-op-013',
           equipmentCategory: '反应设备',
           equipmentIds: ['eq-d-2'],
+          parallelGroupId: 'G2',
+          joinMode: 'any',
           params: [
             { name: 'pH', unit: '', target: 10.5, min: 9.5, max: 11.5 },
             { name: '时间', unit: 'min', target: 90, min: 60, max: 150 },
@@ -711,6 +730,16 @@ function seed() {
         },
         {
           stepNo: 6,
+          name: '氟渣洗涤',
+          processId: 'proc-op-011',
+          equipmentCategory: '分离设备',
+          equipmentIds: ['eq-d-3'],
+          parallelGroupId: 'G2',
+          joinMode: 'any',
+          params: [],
+        },
+        {
+          stepNo: 7,
           name: '沉锂',
           processId: 'proc-op-014',
           equipmentCategory: '反应设备',
@@ -722,7 +751,7 @@ function seed() {
           ],
         },
         {
-          stepNo: 7,
+          stepNo: 8,
           name: '锂盐洗涤',
           processId: 'proc-op-015',
           equipmentCategory: '分离设备',
@@ -730,7 +759,7 @@ function seed() {
           params: [],
         },
         {
-          stepNo: 8,
+          stepNo: 9,
           name: '离心',
           processId: 'proc-op-005',
           equipmentCategory: '分离设备',
@@ -741,7 +770,7 @@ function seed() {
           ],
         },
         {
-          stepNo: 9,
+          stepNo: 10,
           name: '包装',
           processId: 'proc-op-016',
           equipmentCategory: '计量灌装',
@@ -767,6 +796,85 @@ function seed() {
           action: '审核发布',
           operator: '系统管理员',
           remark: '挂路线 GYLX0012，基准批量 100 吨/槽',
+        },
+        {
+          id: 'flog-lic-3',
+          operatedAt: dayjs().format('YYYY-MM-DD HH:mm'),
+          action: '更新',
+          operator: '系统管理员',
+          remark: 'MOCK 并行组 G2：二次浆化 ‖ 氟渣洗涤（any），对齐路线第5步选做完成',
+        },
+        {
+          id: 'flog-lic-4',
+          operatedAt: dayjs().format('YYYY-MM-DD HH:mm'),
+          action: '更新',
+          operator: '系统管理员',
+          remark: 'MOCK 方案A：氟钙镁渣产出挂下游配方 PF-FSW-001，一键开支线',
+        },
+      ],
+    },
+    // 支线配方：主线登渣后一键开本指令（方案 A）
+    {
+      id: 'formula-f-slag-wash',
+      formulaNo: 'PF-FSW-001',
+      name: '氟渣洗涤（支线MOCK）',
+      itemId: 'pi-f-slag',
+      version: 'V1.0',
+      lineageId: 'lineage-f-slag-wash',
+      formulaType: 'standard',
+      status: 'active',
+      isDefault: false,
+      baseBatchQty: 2800,
+      theoreticalYield: 0.95,
+      routeId: '',
+      outputs: [
+        { role: 'main', itemId: 'pi-f-slag', expectedQty: 2660, stepNo: 2 },
+        { role: 'recycle', itemId: 'pi-wash-water', expectedQty: 800, stepNo: 2 },
+      ],
+      lines: [
+        {
+          itemId: 'pi-f-slag',
+          feedQty: 2800,
+          ratio: null,
+          lossRate: 0,
+          tolerance: 0.05,
+          feedSequence: 1,
+          stepNo: 1,
+          convertByContent: false,
+          content: 1,
+          isKeyMaterial: true,
+          isAuxiliary: false,
+        },
+      ],
+      steps: [
+        {
+          stepNo: 1,
+          name: '氟渣投料',
+          processId: 'proc-op-011',
+          equipmentCategory: '分离设备',
+          equipmentIds: ['eq-d-3'],
+          params: [],
+        },
+        {
+          stepNo: 2,
+          name: '洗涤出料',
+          processId: 'proc-op-011',
+          equipmentCategory: '分离设备',
+          equipmentIds: ['eq-d-3'],
+          params: [],
+        },
+      ],
+      creator: '系统管理员',
+      createdAt: dayjs().format('YYYY-MM-DD HH:mm'),
+      updater: '系统管理员',
+      updatedAt: dayjs().format('YYYY-MM-DD HH:mm'),
+      operationLogs: [
+        {
+          id: 'flog-fsw-1',
+          operatedAt: dayjs().format('YYYY-MM-DD HH:mm'),
+          action: '审核发布',
+          operator: '系统管理员',
+          remark: 'MOCK 支线：承接主线氟钙镁渣洗涤',
         },
       ],
     },
@@ -872,6 +980,27 @@ function migrateLicarbonOutputRoles(list) {
   target.outputs = demo.outputs.map((o) => ({ ...o }))
 }
 
+/** 演示配方：同步并行组阶段（二次浆化 ‖ 氟渣洗涤）及投料/产出步号。 */
+function migrateLicarbonParallelSteps(list) {
+  const demo = seed().find((row) => row.id === 'formula-licarbon')
+  if (!demo) return
+  const target = list.find((row) => row.id === 'formula-licarbon' || row.formulaNo === 'PF-LIC-001')
+  if (!target) return
+  target.name = demo.name
+  target.routeId = demo.routeId
+  target.steps = demo.steps.map((s) => ({ ...s, params: (s.params || []).map((p) => ({ ...p })) }))
+  target.outputs = demo.outputs.map((o) => ({ ...o }))
+  target.lines = demo.lines.map((line) => ({ ...line }))
+}
+
+/** 确保支线洗涤配方存在（mergeSeed 按 id/编号补入） */
+function ensureFSlagWashFormula(list) {
+  const demo = seed().find((row) => row.id === 'formula-f-slag-wash')
+  if (!demo) return
+  if (list.some((row) => row.id === 'formula-f-slag-wash' || row.formulaNo === 'PF-FSW-001')) return
+  list.push(normalizeStoredFormula(demo))
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -881,6 +1010,8 @@ function load() {
     const list = mergeSeedFormulas(parsed.map(normalizeStoredFormula))
     migrateMissingDefault(parsed, list)
     migrateLicarbonOutputRoles(list)
+    migrateLicarbonParallelSteps(list)
+    ensureFSlagWashFormula(list)
     exclusiveActiveDefault(list)
     return list
   } catch {
@@ -1167,7 +1298,7 @@ export function resolveFormulaStepAssaySchemes(step, process) {
 }
 
 function normalizeFormulaSteps(steps) {
-  return (steps || []).map((s, i) => {
+  const mapped = (steps || []).map((s, i) => {
     const name = String(s.name || '').trim() || `阶段${i + 1}`
     const processId = String(s.processId || '').trim()
     const equipmentCategory = String(s.equipmentCategory || '').trim()
@@ -1183,6 +1314,7 @@ function normalizeFormulaSteps(steps) {
       }
     }
     const assaySchemes = resolveFormulaStepAssaySchemes(s, proc)
+    const parallel = normalizeStepParallelFields(s)
     return {
       stepNo: i + 1,
       name,
@@ -1193,6 +1325,8 @@ function normalizeFormulaSteps(steps) {
       equipmentId: equipmentIds[0] || '',
       assaySchemes,
       gateMode: deriveProcessGateFromAssaySchemes(assaySchemes),
+      parallelGroupId: parallel.parallelGroupId,
+      joinMode: parallel.joinMode,
       params: (s.params || [])
         .filter((param) => String(param.name || '').trim())
         .map((param) => {
@@ -1210,6 +1344,19 @@ function normalizeFormulaSteps(steps) {
         }),
     }
   })
+  // 同组汇合方式对齐为组内第一条的配置，避免漏填
+  const modeByGroup = new Map()
+  mapped.forEach((step) => {
+    if (!step.parallelGroupId) return
+    if (!modeByGroup.has(step.parallelGroupId)) modeByGroup.set(step.parallelGroupId, step.joinMode)
+  })
+  mapped.forEach((step) => {
+    if (!step.parallelGroupId) return
+    step.joinMode = modeByGroup.get(step.parallelGroupId) || PARALLEL_JOIN_MODE.ANY
+  })
+  const check = validateParallelGroups(mapped)
+  if (!check.ok) throw new Error(check.message)
+  return mapped
 }
 
 export function saveFormula(payload, id) {
@@ -1242,6 +1389,13 @@ export function saveFormula(payload, id) {
       const stepNo = Number(o.stepNo) > 0 ? Number(o.stepNo) : null
       const step = steps.find((item) => Number(item.stepNo) === stepNo)
       const fromSchemes = assayScopesFromSchemes(step?.assaySchemes)
+      const spawn = normalizeDownstreamSpawn(o)
+      if (spawn.downstreamSpawnEnabled && !spawn.downstreamFormulaId) {
+        throw new Error('启用「生成下游指令」时请选择下游配方')
+      }
+      if (spawn.downstreamSpawnEnabled && spawn.downstreamFormulaId === (id || payload.id)) {
+        throw new Error('下游配方不能是本配方')
+      }
       return {
         role: o.role,
         itemId: o.itemId,
@@ -1250,6 +1404,7 @@ export function saveFormula(payload, id) {
         stepName: step?.name || o.stepName || '',
         // 优先按产出工序上的化验方案快照推导；无方案时保留行上手勾的业务类型
         assayScopes: fromSchemes.length ? fromSchemes : normalizeOutputAssayScopes(o.assayScopes),
+        ...spawn,
       }
     }),
     lines: checked.lines,

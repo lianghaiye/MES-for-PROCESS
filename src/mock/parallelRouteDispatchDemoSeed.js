@@ -1,11 +1,17 @@
 /**
- * 演示：网格「并行 + 全部完成」工艺路线 + 待下发工单
- * 路线名：湿法并行演示路线
+ * 演示：拓扑支线（过滤/离心分出汇入）+ 待下发工单
+ * 路线名：湿法并行演示路线（已改为拓扑，不再用网格并行格）
  */
 
 import dayjs from 'dayjs'
 import { buildRouteDispatchSnapshot } from '@/mock/processRoutes'
-import { createEmptyGrid, syncStepPolicies } from '@/utils/processRouteGrid'
+import { createEmptyGrid } from '@/utils/processRouteGrid'
+import {
+  ROUTE_LAYOUT_TOPOLOGY,
+  ROUTE_PATH_MAIN,
+  ROUTE_PATH_BRANCH,
+  createRouteNode,
+} from '@/utils/processRouteTopology'
 import { processConfigState } from '@/store/processConfigStore'
 import { syncWorkOrderBlankingMaterials } from '@/utils/blankingSettleMaterial'
 
@@ -33,39 +39,15 @@ function getProcessIdByName(name) {
   return proc?.id || `proc-unknown-${name}`
 }
 
-function cell(processId, extra = {}) {
-  const row = { processId }
-  if (extra.processFileId) row.processFileId = extra.processFileId
-  if (extra.equipmentId) row.equipmentId = extra.equipmentId
-  if (extra.qcOverride) row.qcOverride = extra.qcOverride
-  return row
-}
-
-function buildParallelDemoGrid() {
-  const p = getProcessIdByName
-  const pairs = [
-    [1, 1, p('投料'), { processFileId: 'pdoc-001', equipmentId: EQ.R101 }],
-    // 演示：本路线不检（相对串行演示路线过滤「继承工序」）
-    [2, 1, p('过滤'), { processFileId: 'pdoc-003', equipmentId: EQ.F301, qcOverride: 'off' }],
-    [2, 2, p('离心'), { processFileId: 'pdoc-004', equipmentId: EQ.C401 }],
-    [3, 1, p('转罐'), { equipmentId: EQ.T501 }],
-    [4, 1, p('灌装'), { processFileId: 'pdoc-005', equipmentId: EQ.P701 }],
-  ]
-  const grid = createEmptyGrid(4, 2)
-  pairs.forEach(([step, row, processId, extra]) => {
-    grid[step - 1][row - 1] = cell(processId, extra)
-  })
-  return grid
-}
-
 function buildParallelDemoRoute() {
-  const grid = buildParallelDemoGrid()
-  const stepPolicies = syncStepPolicies(grid, [
-    { stepNo: 1, completionMode: 'all' },
-    { stepNo: 2, completionMode: 'all' },
-    { stepNo: 3, completionMode: 'all' },
-    { stepNo: 4, completionMode: 'all' },
-  ])
+  const p = getProcessIdByName
+  const id = {
+    feed: 'prn-par-feed',
+    tank: 'prn-par-tank',
+    fill: 'prn-par-fill',
+    filter: 'prn-par-filter',
+    cen: 'prn-par-cen',
+  }
   const now = dayjs().format('YYYY-MM-DD HH:mm:ss')
   return {
     id: PARALLEL_ROUTE_DEMO_ID,
@@ -74,9 +56,56 @@ function buildParallelDemoRoute() {
     status: '使用中',
     applyScope: '全部产品',
     productDisplay: '',
-    remark: '第2步过滤/离心并行；过滤「本路线不检」。对照串行演示路线过滤「继承工序」',
-    grid,
-    stepPolicies,
+    remark: '拓扑：主线投料→转罐→灌装；过滤/离心自投料分出、汇入转罐',
+    layout: ROUTE_LAYOUT_TOPOLOGY,
+    nodes: [
+      createRouteNode({
+        id: id.feed,
+        seq: 1,
+        pathKind: ROUTE_PATH_MAIN,
+        processId: p('投料'),
+        name: '投料',
+        equipmentIds: [EQ.R101],
+      }),
+      createRouteNode({
+        id: id.tank,
+        seq: 2,
+        pathKind: ROUTE_PATH_MAIN,
+        processId: p('转罐'),
+        name: '转罐',
+        equipmentIds: [EQ.T501],
+      }),
+      createRouteNode({
+        id: id.fill,
+        seq: 3,
+        pathKind: ROUTE_PATH_MAIN,
+        processId: p('灌装'),
+        name: '灌装',
+        equipmentIds: [EQ.P701],
+      }),
+      createRouteNode({
+        id: id.filter,
+        pathKind: ROUTE_PATH_BRANCH,
+        branchName: '过滤支线',
+        processId: p('过滤'),
+        name: '过滤',
+        equipmentIds: [EQ.F301],
+        forkAfterNodeId: id.feed,
+        joinToNodeId: id.tank,
+      }),
+      createRouteNode({
+        id: id.cen,
+        pathKind: ROUTE_PATH_BRANCH,
+        branchName: '离心支线',
+        processId: p('离心'),
+        name: '离心',
+        equipmentIds: [EQ.C401],
+        forkAfterNodeId: id.feed,
+        joinToNodeId: id.tank,
+      }),
+    ],
+    grid: createEmptyGrid(),
+    stepPolicies: [],
     creator: '李工艺',
     updater: '李工艺',
     createdAt: '2026-10-08 10:30:00',
@@ -120,7 +149,7 @@ function createParallelRouteDispatchDemoOrder() {
     warehouse: '成品仓',
     urgency: '正常',
     planDateRange: [today, end],
-    remark: '演示：工艺路线「湿法并行演示路线」；第2步过滤+离心并行（全部完成）',
+    remark: '演示：工艺路线「湿法并行演示路线」拓扑主线；过滤/离心为支线',
     processRouteName: PARALLEL_ROUTE_DEMO_NAME,
     source: 'parallel-route-dispatch-demo',
     sourceOrderNo: 'SO20261008002',

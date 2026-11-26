@@ -86,12 +86,9 @@
         </a-form>
       </div>
 
-      <ProcessRouteGridEditor
+      <ProcessRouteTopologyEditor
         v-if="editMode === ROUTE_MODE_PROCESS"
-        v-model:grid="form.grid"
-        v-model:step-policies="form.stepPolicies"
-        v-model:selected-step="selectedStep"
-        v-model:selected-row="selectedRow"
+        v-model:nodes="form.nodes"
       />
 
       <div v-else class="form-section-box modal-basic-card">
@@ -165,7 +162,11 @@ import { computed, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import FormCreateShell from '@/components/FormCreateShell.vue'
 import { useFormCreateModal } from '@/composables/useFormCreateModal'
-import { createEmptyGrid, syncStepPolicies } from '@/utils/processRouteGrid'
+import {
+  ROUTE_LAYOUT_TOPOLOGY,
+  normalizeRouteNodes,
+  createDefaultMainLineNodes,
+} from '@/utils/processRouteTopology'
 import { addProcessRoute, updateProcessRoute } from '@/store/processRouteStore'
 import { productCategoryState } from '@/store/productCategoryStore'
 import { materialCategoryState } from '@/store/materialCategoryStore'
@@ -174,7 +175,7 @@ import { ROUTE_MODE_EQUIPMENT, ROUTE_MODE_PROCESS } from '@/constants/processRou
 import { resolveRouteEditMode } from '@/store/processMesSettingsStore'
 import { EQUIPMENT_STATUS } from '@/mock/equipmentSeed'
 import { equipmentState, formatDeviceLabel } from '@/store/equipmentStore'
-import ProcessRouteGridEditor from './ProcessRouteGridEditor.vue'
+import ProcessRouteTopologyEditor from './ProcessRouteTopologyEditor.vue'
 import EquipmentSearchSelect from './EquipmentSearchSelect.vue'
 import SelectProductMaterialModal from './SelectProductMaterialModal.vue'
 
@@ -194,8 +195,6 @@ const { isActive, shellTitle, handleCancel, closeAfterSave } = useFormCreateModa
   getTitle: () => (isEdit.value ? '编辑工艺路线' : '新增工艺路线'),
 })
 const itemPickerOpen = ref(false)
-const selectedStep = ref(-1)
-const selectedRow = ref(-1)
 const editMode = ref(ROUTE_MODE_PROCESS)
 let unitSeq = 1
 function nextUnitKey() {
@@ -221,8 +220,8 @@ const form = reactive({
   categoryName: '',
   productDisplay: '',
   remark: '',
-  grid: createEmptyGrid(9, 2),
-  stepPolicies: syncStepPolicies(createEmptyGrid(9, 2), []),
+  layout: ROUTE_LAYOUT_TOPOLOGY,
+  nodes: [],
   units: [],
 })
 
@@ -324,7 +323,6 @@ function resetForm() {
   const r = props.editRecord
   editMode.value = resolveRouteEditMode(r)
   if (r) {
-    const grid = r.grid?.length ? r.grid : createEmptyGrid(9, 2)
     Object.assign(form, {
       name: r.name || '',
       applyScope: r.applyScope || '全部产品',
@@ -337,8 +335,8 @@ function resetForm() {
       categoryName: r.categoryName || '',
       productDisplay: r.productDisplay || '',
       remark: r.remark || '',
-      grid,
-      stepPolicies: syncStepPolicies(grid, r.stepPolicies),
+      layout: ROUTE_LAYOUT_TOPOLOGY,
+      nodes: normalizeRouteNodes(r.nodes || []),
       units: (r.units || []).map((unit) => ({
         key: nextUnitKey(),
         equipmentId: unit.equipmentId,
@@ -348,7 +346,6 @@ function resetForm() {
       form.units = [{ key: nextUnitKey(), equipmentId: undefined }]
     }
   } else {
-    const grid = createEmptyGrid(9, 2)
     Object.assign(form, {
       name: '',
       applyScope: '全部产品',
@@ -361,16 +358,15 @@ function resetForm() {
       categoryName: '',
       productDisplay: '',
       remark: '',
-      grid,
-      stepPolicies: syncStepPolicies(grid, []),
+      layout: ROUTE_LAYOUT_TOPOLOGY,
+      // 新建默认 3 个主线空格，便于拖工序
+      nodes: createDefaultMainLineNodes(3),
       units:
         editMode.value === ROUTE_MODE_EQUIPMENT
           ? [{ key: nextUnitKey(), equipmentId: undefined }]
           : [],
     })
   }
-  selectedStep.value = -1
-  selectedRow.value = -1
 }
 
 function onScopeChange() {
@@ -424,9 +420,11 @@ function handleSave() {
   }
   if (editMode.value === ROUTE_MODE_EQUIPMENT) {
     payload.units = form.units.map((unit) => ({ equipmentId: unit.equipmentId || '' }))
+    payload.layout = ROUTE_LAYOUT_TOPOLOGY
+    payload.nodes = []
   } else {
-    payload.grid = form.grid
-    payload.stepPolicies = form.stepPolicies
+    payload.layout = ROUTE_LAYOUT_TOPOLOGY
+    payload.nodes = form.nodes
   }
   const res = isEdit.value
     ? updateProcessRoute(props.editRecord.id, payload)

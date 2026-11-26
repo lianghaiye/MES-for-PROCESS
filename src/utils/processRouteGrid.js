@@ -9,6 +9,11 @@ import {
   isCustomRouteGate,
   formatProcessGate,
 } from '@/store/processConfigStore'
+import {
+  ROUTE_LAYOUT_TOPOLOGY,
+  resolveRouteLayout,
+  collectTopologyEquipmentIds,
+} from '@/utils/processRouteTopology'
 import { normalizeReportMode } from '@/utils/reportMode'
 import { normalizeTaskExecutionMode } from '@/utils/taskExecutionMode'
 import { getProcessDocById } from '@/store/processDocStore'
@@ -48,6 +53,16 @@ export function formatRouteQcOverrideLabel(value) {
   const mode = normalizeRouteQcOverride(value)
   return ROUTE_QC_OVERRIDE_OPTIONS.find((o) => o.value === mode)?.label || '继承工序'
 }
+
+// 拓扑按化验方案覆盖：从 processRouteTopology 再导出，便于网格/工单侧统一引用
+export {
+  normalizeAssayOverrides,
+  buildAssayOverrideRows,
+  resolveAssaySchemesForRouteNode,
+  upsertAssayOverride,
+  routeAssayGateOptions,
+  pruneEmptyReturns,
+} from '@/utils/processRouteTopology'
 
 /** 工序调度策略：一期仅手动调度 */
 export const DISPATCH_STRATEGY_MANUAL = 'manual'
@@ -300,6 +315,11 @@ export function validateCellReturns(grid) {
 
 /** 路线上挂过的设备。传 processId 时只取该工序那几格。 */
 export function collectRouteEquipmentIds(route, processId = '') {
+  // 拓扑路线：设备挂在 nodes(节点) 上
+  if (route && resolveRouteLayout(route) === ROUTE_LAYOUT_TOPOLOGY) {
+    const topoIds = collectTopologyEquipmentIds(route.nodes, processId)
+    if (topoIds.length || processId) return topoIds
+  }
   const ids = []
   const seen = new Set()
   const push = (id) => {

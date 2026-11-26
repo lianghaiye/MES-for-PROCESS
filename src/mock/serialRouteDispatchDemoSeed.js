@@ -1,11 +1,16 @@
 /**
- * 演示：网格「纯串行」工艺路线 + 待下发工单
+ * 演示：串行拓扑工艺路线 + 待下发工单
  * 路线名：湿法串行演示路线
  */
 
 import dayjs from 'dayjs'
 import { buildRouteDispatchSnapshot } from '@/mock/processRoutes'
-import { createEmptyGrid, syncStepPolicies } from '@/utils/processRouteGrid'
+import { createEmptyGrid } from '@/utils/processRouteGrid'
+import {
+  ROUTE_LAYOUT_TOPOLOGY,
+  ROUTE_PATH_MAIN,
+  createRouteNode,
+} from '@/utils/processRouteTopology'
 import { processConfigState } from '@/store/processConfigStore'
 import { syncWorkOrderBlankingMaterials } from '@/utils/blankingSettleMaterial'
 
@@ -33,41 +38,16 @@ function getProcessIdByName(name) {
   return proc?.id || `proc-unknown-${name}`
 }
 
-function cell(processId, extra = {}) {
-  const row = { processId }
-  if (extra.processFileId) row.processFileId = extra.processFileId
-  if (extra.equipmentId) row.equipmentId = extra.equipmentId
-  if (extra.qcOverride) row.qcOverride = extra.qcOverride
-  return row
-}
-
-function buildSerialDemoGrid() {
-  const p = getProcessIdByName
-  const pairs = [
-    [1, 1, p('投料'), { processFileId: 'pdoc-001', equipmentId: EQ.R101 }],
-    [2, 1, p('升温'), { processFileId: 'pdoc-002', equipmentId: EQ.R201 }],
-    [3, 1, p('保温'), { equipmentId: EQ.R201 }],
-    [4, 1, p('过滤'), { processFileId: 'pdoc-003', equipmentId: EQ.F301 }],
-    [5, 1, p('转罐'), { processFileId: 'pdoc-006', equipmentId: EQ.T501 }],
-    [6, 1, p('灌装'), { processFileId: 'pdoc-005', equipmentId: EQ.P701 }],
-  ]
-  const grid = createEmptyGrid(6, 1)
-  pairs.forEach(([step, row, processId, extra]) => {
-    grid[step - 1][row - 1] = cell(processId, extra)
-  })
-  return grid
-}
-
 function buildSerialDemoRoute() {
-  const grid = buildSerialDemoGrid()
-  const stepPolicies = syncStepPolicies(grid, [
-    { stepNo: 1, completionMode: 'all' },
-    { stepNo: 2, completionMode: 'all' },
-    { stepNo: 3, completionMode: 'all' },
-    { stepNo: 4, completionMode: 'all' },
-    { stepNo: 5, completionMode: 'all' },
-    { stepNo: 6, completionMode: 'all' },
-  ])
+  const p = getProcessIdByName
+  const steps = [
+    ['ser-1', '投料', EQ.R101],
+    ['ser-2', '升温', EQ.R201],
+    ['ser-3', '保温', EQ.R201],
+    ['ser-4', '过滤', EQ.F301],
+    ['ser-5', '转罐', EQ.T501],
+    ['ser-6', '灌装', EQ.P701],
+  ]
   const now = dayjs().format('YYYY-MM-DD HH:mm:ss')
   return {
     id: SERIAL_ROUTE_DEMO_ID,
@@ -76,9 +56,20 @@ function buildSerialDemoRoute() {
     status: '使用中',
     applyScope: '全部产品',
     productDisplay: '',
-    remark: '纯串行：投料→升温→保温→过滤→转罐→灌装；过滤继承工序质检',
-    grid,
-    stepPolicies,
+    remark: '纯串行拓扑：投料→升温→保温→过滤→转罐→灌装',
+    layout: ROUTE_LAYOUT_TOPOLOGY,
+    nodes: steps.map(([key, name, equipmentId], i) =>
+      createRouteNode({
+        id: `prn-${key}`,
+        seq: i + 1,
+        pathKind: ROUTE_PATH_MAIN,
+        processId: p(name),
+        name,
+        equipmentIds: [equipmentId],
+      }),
+    ),
+    grid: createEmptyGrid(),
+    stepPolicies: [],
     creator: '张工艺',
     updater: '张工艺',
     createdAt: '2026-10-08 10:00:00',
@@ -122,7 +113,7 @@ function createSerialRouteDispatchDemoOrder() {
     warehouse: '成品仓',
     urgency: '正常',
     planDateRange: [today, end],
-    remark: '演示：工艺路线「湿法串行演示路线」；下发页步骤 1～6 均为串行',
+    remark: '演示：工艺路线「湿法串行演示路线」；下发页步骤均为串行主线',
     processRouteName: SERIAL_ROUTE_DEMO_NAME,
     source: 'serial-route-dispatch-demo',
     sourceOrderNo: 'SO20261008001',

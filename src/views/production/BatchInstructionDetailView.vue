@@ -156,6 +156,12 @@
                   record.confirmed ? '已确认' : '未确认'
                 }}</a-tag>
               </template>
+              <template v-else-if="column.key === 'name'">
+                <span>{{ record.name || record.processName || '—' }}</span>
+                <a-tag v-if="record.parallelGroupId" color="processing" class="parallel-tag">
+                  并行·{{ record.joinMode === 'all' ? '全部汇合' : '完成一条即可' }}
+                </a-tag>
+              </template>
               <template v-else-if="column.key === 'gate'">
                 <a-tag :color="record.gateLabel === '硬门禁' ? 'warning' : 'default'">{{
                   record.gateLabel
@@ -814,6 +820,20 @@
                   size="small"
                   @click="openReextract(record)"
                   >开再提指令</a-button
+                >
+                <a-button
+                  v-if="record.canSpawnBranch"
+                  type="link"
+                  size="small"
+                  @click="spawnBranchOrder(record)"
+                  >开支线指令</a-button
+                >
+                <a-button
+                  v-else-if="record.branchBatchNo"
+                  type="link"
+                  size="small"
+                  @click="goBatchOrder(record.branchOrderId)"
+                  >支线 {{ record.branchBatchNo }}</a-button
                 >
               </template>
             </template>
@@ -1985,6 +2005,7 @@ import {
   stepFeedConfirmErrors,
   stepParamConfirmErrors,
   stepSequenceConfirmErrors,
+  createBranchOrderFromOutput,
   createReextract,
   getBatchOrder,
   getStepQcLink,
@@ -2087,7 +2108,7 @@ const routeStepColumns = [
 const stepColumns = [
   { title: '序', dataIndex: 'stepNo', width: 56, align: 'center', fixed: 'left' },
   { title: '状态', key: 'done', width: 88, fixed: 'left' },
-  { title: '阶段', dataIndex: 'name', width: 110, ellipsis: true },
+  { title: '阶段', key: 'name', width: 168, ellipsis: true },
   { title: '设备', dataIndex: 'equipmentText', width: 150, ellipsis: true },
   { title: '岗位', dataIndex: 'positionText', width: 100, ellipsis: true },
   { title: '配方要求', dataIndex: 'limitText', width: 180, ellipsis: true },
@@ -3242,6 +3263,11 @@ const outRows = computed(() =>
     const contentPending =
       Boolean(row.contentPending) || (Boolean(row.batchId) && !(contentFrac > 0))
     const card = itemMasterCard(row.itemId)
+    const canSpawnBranch =
+      Boolean(row.downstreamSpawnEnabled) &&
+      Boolean(row.downstreamFormulaId) &&
+      Boolean(row.batchId) &&
+      !row.branchOrderId
     return {
       ...row,
       seq: index + 1,
@@ -3249,6 +3275,7 @@ const outRows = computed(() =>
       dispositionLabel: OUTPUT_DISPOSITION_LABEL[disposition] || '—',
       itemName: card.name || name || '—',
       itemCode: card.code || '—',
+      canSpawnBranch,
       specText: card.specModel || '—',
       item: unit ? `${name} ${unit}` : name,
       batchNo: row.batchNo || '—',
@@ -5207,6 +5234,26 @@ function openReextract(record) {
   }
 }
 
+/** 方案 A：由本行产出一键生成支线子指令 */
+function spawnBranchOrder(record) {
+  try {
+    const created = createBranchOrderFromOutput({
+      parentOrderId: order.value.id,
+      outputId: record.id,
+      qty: record.qty,
+    })
+    message.success(`已生成支线指令 ${created.batchNo}（待下发）`)
+    openTab(`/production/work-orders/${created.id}`, `批次指令 ${created.batchNo}`)
+  } catch (error) {
+    message.error(error.message || '开支线失败')
+  }
+}
+
+function goBatchOrder(orderId) {
+  if (!orderId) return
+  openTab(`/production/work-orders/${orderId}`, '批次指令')
+}
+
 function finish() {
   try {
     completeOrder(order.value.id)
@@ -5794,6 +5841,10 @@ function finish() {
   line-height: 20px;
 }
 
+.parallel-tag {
+  margin-left: 6px;
+  font-size: 12px;
+}
 .route-gate-tag {
   margin-inline-end: 0;
 }

@@ -65,6 +65,13 @@ import { positionOptions } from '@/store/employeeGroupStore'
 import { EQUIPMENT_OCCUPY_STATUS, EQUIPMENT_STATUS } from '@/mock/equipmentSeed'
 import { generateCodeByBusiness, peekCodesByBusiness } from '@/store/codingRuleStore'
 import { isSequentialBatchStepEnabled } from '@/store/functionParamStore'
+import { parallelGroupSequenceErrors } from '@/utils/formulaParallelGroup'
+import {
+  canSpawnBranchFromOutput,
+  hasDownstreamSpawnConfig,
+  normalizeDownstreamSpawn,
+  DOWNSTREAM_SPAWN_MODE,
+} from '@/utils/outputDownstreamSpawn'
 
 const STORAGE_KEY = 'i-doms-batch-instruction-v1'
 
@@ -471,6 +478,7 @@ function snapshotOutputs(formula) {
   return (formula.outputs || []).map((o) => {
     const stepNo = Number(o.stepNo) > 0 ? Number(o.stepNo) : null
     const step = steps.find((item) => Number(item.stepNo) === stepNo)
+    const spawn = normalizeDownstreamSpawn(o)
     return {
       role: o.role,
       itemId: o.itemId,
@@ -478,6 +486,7 @@ function snapshotOutputs(formula) {
       stepNo,
       stepName: o.stepName || step?.name || '',
       assayScopes: normalizeOutputAssayScopes(o.assayScopes),
+      ...spawn,
     }
   })
 }
@@ -1398,20 +1407,10 @@ function applyStepExecutionEquipment(order, step, equipmentId) {
   return selectedId
 }
 
-/** 开启「批次阶段时序确认」时：上一步须已确认。 */
+/** 开启「批次阶段时序确认」时：串行上一步 + 并行组汇合（any/all）。 */
 export function stepSequenceConfirmErrors(order, step) {
-  const errors = []
-  if (!order || !step || !isSequentialBatchStepEnabled()) return errors
-  const steps = [...(order.routeSnapshot || [])].sort(
-    (left, right) => Number(left.stepNo) - Number(right.stepNo),
-  )
-  const index = steps.findIndex((row) => Number(row.stepNo) === Number(step.stepNo))
-  if (index <= 0) return errors
-  const prev = steps[index - 1]
-  if ((order.confirmedSteps || []).includes(prev.stepNo)) return errors
-  const prevLabel = prev.name || prev.processName || `步骤${prev.stepNo}`
-  errors.push(`请先确认上一步「${prevLabel}」`)
-  return errors
+  if (!order || !step || !isSequentialBatchStepEnabled()) return []
+  return parallelGroupSequenceErrors(order, step)
 }
 
 /** 本步计划投料是否已过账（按步骤号 + 物料）。 */
@@ -1941,6 +1940,7 @@ export function postOutput(id, { rows, locationId, deviation, stepNo }) {
           previousBatchId: order.reworkOfBatchId || order.reextractOfBatchId || '',
         })
       : null
+    const spawn = normalizeDownstreamSpawn(plan || row)
     created.push({
       id: `out-${Date.now()}-${created.length}`,
       role,
@@ -1955,6 +1955,9 @@ export function postOutput(id, { rows, locationId, deviation, stepNo }) {
       assayHardGate: hardGate,
       contentUsed,
       contentPending,
+      ...spawn,
+      branchOrderId: '',
+      branchBatchNo: '',
       at: dayjs().format('YYYY-MM-DD HH:mm'),
     })
   })
@@ -1968,6 +1971,23 @@ export function postOutput(id, { rows, locationId, deviation, stepNo }) {
     })
   }
   order.outputs = [...(order.outputs || []), ...created]
+  // 方案 A：auto 模式在过账后尝试开支线（失败不回滚产出）
+  created.forEach((outRow) => {
+    if (
+      outRow.downstreamSpawnMode === DOWNSTREAM_SPAWN_MODE.AUTO &&
+      canSpawnBranchFromOutput(outRow)
+    ) {
+      try {
+        createBranchOrderFromOutput({ parentOrderId: order.id, outputId: outRow.id })
+      } catch (err) {
+        appendOperationLog(
+          order,
+          '开支线指令失败',
+          `${itemLabel(outRow.itemId)}：${err?.message || err}`,
+        )
+      }
+    }
+  })
   const mainQty = round3(
     order.outputs.filter((r) => r.role === 'main').reduce((sum, r) => sum + Number(r.qty || 0), 0),
   )
@@ -2545,6 +2565,128 @@ export function mergeStagingBatchesToInbound({ batchIds = [], locationId, operat
   })
 
   return { inbound, lines: createdLines }
+}
+
+/**
+ * 方案 A：由主线产出行生成支线子指令（待下发）。
+ * 投料行若物料=产出物料，写入 preferredBatchId 供现场预选批。
+ */
+export function createBranchOrderFromOutput({ parentOrderId, outputId, qty } = {}) {
+  const parent = getBatchOrder(parentOrderId)
+  if (!parent) throw new Error('主线批次指令不存在')
+  const output = (parent.outputs || []).find((row) => row.id === outputId)
+  if (!output) throw new Error('产出行不存在')
+  if (!canSpawnBranchFromOutput(output)) {
+    if (output.branchOrderId) throw new Error('该产出已开过支线指令')
+    if (!hasDownstreamSpawnConfig(output)) throw new Error('该产出未配置下游配方')
+    if (!output.batchId) throw new Error('产出尚未生成批次，不能开支线')
+    throw new Error('当前产出不能开支线指令')
+  }
+  const formula = getFormula(output.downstreamFormulaId)
+  if (!formula || formula.status !== 'active') throw new Error('下游配方不存在或未生效')
+  const take = round3(qty != null && qty !== '' ? qty : output.qty)
+  if (!(take > 0)) throw new Error('支线批量须大于 0')
+  if (take > Number(output.qty) + 1e-9) throw new Error('支线批量不能超过本行产出量')
+
+  const scaled = scaleFeedSnapshots(formula, take)
+  // 预填：把与产出物料相同的投料行挂上源批次
+  scaled.theoreticalFeeds = (scaled.theoreticalFeeds || []).map((line) => {
+    if (line.itemId === output.itemId) {
+      return { ...line, preferredBatchId: output.batchId, preferredBatchNo: output.batchNo }
+    }
+    return line
+  })
+  // 下游配方若没有同物料投料行，补一行指定批投料，避免现场找不到料
+  if (!scaled.theoreticalFeeds.some((line) => line.itemId === output.itemId)) {
+    scaled.theoreticalFeeds.unshift({
+      itemId: output.itemId,
+      qty: take,
+      feedSequence: 0,
+      convertByContent: false,
+      preferredBatchId: output.batchId,
+      preferredBatchNo: output.batchNo,
+      stepNo: 1,
+    })
+  }
+
+  const batchNo = nextBatchNo()
+  const child = {
+    id: `bo-br-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    batchNo,
+    status: 'pending_release',
+    seq: 1,
+    batchCount: 1,
+    qty: take,
+    qtyConfirmed: true,
+    unit: parent.unit || 'kg',
+    formulaId: formula.id,
+    formulaVersion: formula.version,
+    formulaName: formula.name,
+    itemId: formula.itemId,
+    theoreticalOutput: scaled.theoreticalOutput,
+    theoreticalFeeds: scaled.theoreticalFeeds,
+    expectedOutputs: scaled.expectedOutputs,
+    routeSnapshot: snapshotSteps(formula.steps),
+    equipmentRoute: snapshotEquipmentRoute(formula),
+    feeds: [],
+    paramActuals: [],
+    formActuals: [],
+    ebrEntries: [],
+    stepQcMap: {},
+    confirmedSteps: [],
+    outputs: [],
+    actualOutput: null,
+    yieldGap: null,
+    deviation: '',
+    remark: '',
+    reworkOfBatchId: '',
+    reextractOfBatchId: '',
+    parentOrderId: parent.id,
+    parentOutputId: output.id,
+    branchSourceBatchId: output.batchId,
+    productionLineId: parent.productionLineId || '',
+    workCenterId: parent.workCenterId || '',
+    executeBy: parent.productionLineId ? 'line' : 'formula',
+    sourceLabel: `支线 ← ${parent.batchNo}`,
+    demandQty: take,
+    createdAt: dayjs().format('YYYY-MM-DD HH:mm'),
+    createdBy: currentOperator(),
+  }
+  appendOperationLog(child, '生成批次指令', `支线来自 ${parent.batchNo} / ${output.batchNo || ''}`)
+  batchInstructionState.orders.unshift(child)
+
+  output.branchOrderId = child.id
+  output.branchBatchNo = child.batchNo
+  appendOperationLog(
+    parent,
+    '开支线指令',
+    `${itemLabel(output.itemId)} → ${child.batchNo}（${formula.name}）`,
+  )
+  return child
+}
+
+/** 待开支路：已产出、配了下游、尚未开子令 */
+export function listPendingBranchSpawns() {
+  const rows = []
+  batchInstructionState.orders.forEach((order) => {
+    ;(order.outputs || []).forEach((out) => {
+      if (!canSpawnBranchFromOutput(out)) return
+      rows.push({
+        parentOrderId: order.id,
+        parentBatchNo: order.batchNo,
+        outputId: out.id,
+        itemId: out.itemId,
+        itemName: itemLabel(out.itemId),
+        qty: out.qty,
+        batchId: out.batchId,
+        batchNo: out.batchNo,
+        downstreamFormulaId: out.downstreamFormulaId,
+        formulaName: getFormula(out.downstreamFormulaId)?.name || out.downstreamFormulaId,
+        at: out.at,
+      })
+    })
+  })
+  return rows
 }
 
 export function createRework({ sourceBatchId, qty }) {
