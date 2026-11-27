@@ -148,7 +148,10 @@
             :pagination="false"
             size="small"
             row-key="stepNo"
-            :scroll="{ x: 1480 }"
+            :scroll="{ x: 1580 }"
+            :row-class-name="
+              (record) => (record.enabledOnOrder === false ? 'step-row-skipped' : '')
+            "
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'done'">
@@ -156,11 +159,29 @@
                   record.confirmed ? '已确认' : '未确认'
                 }}</a-tag>
               </template>
+              <template v-else-if="column.key === 'enabled'">
+                <a-switch
+                  v-if="canToggleStepEnabled(record)"
+                  size="small"
+                  :checked="record.enabledOnOrder !== false"
+                  :disabled="order?.status !== 'running' && order?.status !== 'pending_release'"
+                  checked-children="启用"
+                  un-checked-children="关闭"
+                  @change="(v) => onToggleStepEnabled(record, v)"
+                />
+                <span v-else class="muted">—</span>
+              </template>
               <template v-else-if="column.key === 'name'">
-                <span>{{ record.name || record.processName || '—' }}</span>
-                <a-tag v-if="record.parallelGroupId" color="processing" class="parallel-tag">
-                  并行·{{ record.joinMode === 'all' ? '全部汇合' : '完成一条即可' }}
-                </a-tag>
+                <span :class="{ 'step-name-skipped': record.enabledOnOrder === false }">{{
+                  record.name || record.processName || '—'
+                }}</span>
+                <a-tag v-if="record.pathKind === 'branch'" color="processing" class="parallel-tag"
+                  >支线</a-tag
+                >
+                <a-tag v-else-if="record.pathKind === 'sink'" color="warning" class="parallel-tag"
+                  >汇合</a-tag
+                >
+                <a-tag v-if="record.enabledOnOrder === false" class="parallel-tag">本单关闭</a-tag>
               </template>
               <template v-else-if="column.key === 'gate'">
                 <a-tag :color="record.gateLabel === '硬门禁' ? 'warning' : 'default'">{{
@@ -855,6 +876,43 @@
         </DetailSectionCard>
       </div>
     </div>
+
+    <!-- 多下游配方时：开支线前先选要用哪张 -->
+    <a-modal
+      :open="spawnBranchOpen"
+      title="选择下游配方"
+      :width="520"
+      :mask-closable="false"
+      destroy-on-close
+      @cancel="closeSpawnBranchModal"
+    >
+      <div class="modal-basic-card">
+        <div class="section-title">支线配方</div>
+        <a-form layout="inline" class="horizontal-form">
+          <a-row :gutter="[12, 8]" style="width: 100%">
+            <a-col :span="24">
+              <a-form-item label="下游配方" required>
+                <a-select
+                  v-model:value="spawnBranchFormulaId"
+                  size="small"
+                  show-search
+                  option-filter-prop="label"
+                  :options="spawnBranchFormulaOptions"
+                  placeholder="请选择本次下游配方"
+                  style="width: 100%"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </a-form>
+      </div>
+      <template #footer>
+        <a-button @click="closeSpawnBranchModal">取消</a-button>
+        <a-button type="primary" :loading="spawnBranchSaving" @click="confirmSpawnBranchModal"
+          >生成支线指令</a-button
+        >
+      </template>
+    </a-modal>
 
     <a-modal
       :open="stepOpen"
@@ -1993,6 +2051,8 @@ import {
   round3,
   suggestActualFeedQty,
 } from '@/utils/processBatchMath'
+import { canToggleStepEnabled } from '@/utils/batchStageEnable'
+import { canSpawnBranchFromOutput, listDownstreamFormulaIds } from '@/utils/outputDownstreamSpawn'
 import {
   ORDER_STATUS_LABEL,
   cancelBatchOrder,
@@ -2002,6 +2062,7 @@ import {
   deletePendingOrder,
   completionErrors,
   confirmStep,
+  setBatchStepEnabled,
   stepFeedConfirmErrors,
   stepParamConfirmErrors,
   stepSequenceConfirmErrors,
@@ -2108,6 +2169,7 @@ const routeStepColumns = [
 const stepColumns = [
   { title: '序', dataIndex: 'stepNo', width: 56, align: 'center', fixed: 'left' },
   { title: '状态', key: 'done', width: 88, fixed: 'left' },
+  { title: '本次启用', key: 'enabled', width: 100 },
   { title: '阶段', key: 'name', width: 168, ellipsis: true },
   { title: '设备', dataIndex: 'equipmentText', width: 150, ellipsis: true },
   { title: '岗位', dataIndex: 'positionText', width: 100, ellipsis: true },
@@ -3263,11 +3325,7 @@ const outRows = computed(() =>
     const contentPending =
       Boolean(row.contentPending) || (Boolean(row.batchId) && !(contentFrac > 0))
     const card = itemMasterCard(row.itemId)
-    const canSpawnBranch =
-      Boolean(row.downstreamSpawnEnabled) &&
-      Boolean(row.downstreamFormulaId) &&
-      Boolean(row.batchId) &&
-      !row.branchOrderId
+    const canSpawnBranch = canSpawnBranchFromOutput(row)
     return {
       ...row,
       seq: index + 1,
@@ -4423,6 +4481,10 @@ function stepConfirmListBlockers(step) {
   void functionParamState.params.enableSequentialBatchStep
   const errors = []
   if (!step || order.value?.status !== 'running') return errors
+  if (step.enabledOnOrder === false) {
+    errors.push('本阶段已对本单关闭')
+    return errors
+  }
   errors.push(...stepSequenceConfirmErrors(order.value, step))
   errors.push(...stepFeedConfirmErrors(order.value, step))
   const gate = normalizeProcessGate(step.gateMode)
@@ -4438,6 +4500,17 @@ function stepConfirmListBlockers(step) {
     errors.push('本步没有候选设备')
   }
   return errors
+}
+
+/** 支线阶段开关「本次启用」 */
+function onToggleStepEnabled(record, enabled) {
+  if (!order.value?.id) return
+  try {
+    setBatchStepEnabled(order.value.id, record.stepNo, enabled)
+    message.success(enabled ? '已启用本阶段' : '已对本单关闭该支线阶段')
+  } catch (e) {
+    message.error(e?.message || '切换失败')
+  }
 }
 
 function stepConfirmListBlocked(step) {
@@ -5234,13 +5307,60 @@ function openReextract(record) {
   }
 }
 
-/** 方案 A：由本行产出一键生成支线子指令 */
+const spawnBranchOpen = ref(false)
+const spawnBranchRecord = ref(null)
+const spawnBranchFormulaId = ref(undefined)
+const spawnBranchSaving = ref(false)
+const spawnBranchFormulaOptions = computed(() => {
+  const ids = listDownstreamFormulaIds(spawnBranchRecord.value || {})
+  return ids.map((id) => {
+    const f = getFormula(id)
+    return {
+      value: id,
+      label: f ? `${f.formulaNo || ''} ${f.name || ''}`.trim() : id,
+    }
+  })
+})
+
+/** 方案 A：由本行产出一键生成支线子指令；多下游时先选配方 */
 function spawnBranchOrder(record) {
+  const ids = listDownstreamFormulaIds(record)
+  if (ids.length > 1) {
+    spawnBranchRecord.value = record
+    spawnBranchFormulaId.value = ids[0]
+    spawnBranchOpen.value = true
+    return
+  }
+  doSpawnBranchOrder(record, ids[0] || record.downstreamFormulaId)
+}
+
+function closeSpawnBranchModal() {
+  spawnBranchOpen.value = false
+  spawnBranchRecord.value = null
+  spawnBranchFormulaId.value = undefined
+}
+
+async function confirmSpawnBranchModal() {
+  if (!spawnBranchRecord.value || !spawnBranchFormulaId.value) {
+    message.warning('请选择下游配方')
+    return
+  }
+  spawnBranchSaving.value = true
+  try {
+    doSpawnBranchOrder(spawnBranchRecord.value, spawnBranchFormulaId.value)
+    closeSpawnBranchModal()
+  } finally {
+    spawnBranchSaving.value = false
+  }
+}
+
+function doSpawnBranchOrder(record, formulaId) {
   try {
     const created = createBranchOrderFromOutput({
       parentOrderId: order.value.id,
       outputId: record.id,
       qty: record.qty,
+      formulaId,
     })
     message.success(`已生成支线指令 ${created.batchNo}（待下发）`)
     openTab(`/production/work-orders/${created.id}`, `批次指令 ${created.batchNo}`)
@@ -5839,6 +5959,15 @@ function finish() {
   gap: 6px;
   font-size: 12px;
   line-height: 20px;
+}
+
+.step-row-skipped {
+  opacity: 0.55;
+}
+
+.step-name-skipped {
+  color: #86909c;
+  text-decoration: line-through;
 }
 
 .parallel-tag {

@@ -65,12 +65,17 @@ import { positionOptions } from '@/store/employeeGroupStore'
 import { EQUIPMENT_OCCUPY_STATUS, EQUIPMENT_STATUS } from '@/mock/equipmentSeed'
 import { generateCodeByBusiness, peekCodesByBusiness } from '@/store/codingRuleStore'
 import { isSequentialBatchStepEnabled } from '@/store/functionParamStore'
-import { parallelGroupSequenceErrors } from '@/utils/formulaParallelGroup'
+import {
+  allEnabledStepsConfirmed,
+  annotateStepsWithRoutePathKind,
+  applyStepEnabledOnOrder,
+  enabledStepSequenceErrors,
+} from '@/utils/batchStageEnable'
 import {
   canSpawnBranchFromOutput,
   hasDownstreamSpawnConfig,
   normalizeDownstreamSpawn,
-  DOWNSTREAM_SPAWN_MODE,
+  canAutoSpawnBranch,
 } from '@/utils/outputDownstreamSpawn'
 
 const STORAGE_KEY = 'i-doms-batch-instruction-v1'
@@ -193,7 +198,7 @@ function buildDemoBatchOrder(demo) {
     theoreticalOutput: theoreticalOutput(formula.baseBatchQty, formula.theoreticalYield),
     theoreticalFeeds: snapshotFeeds(formula),
     expectedOutputs: snapshotOutputs(formula),
-    routeSnapshot: snapshotSteps(formula.steps),
+    routeSnapshot: snapshotSteps(formula),
     equipmentRoute: snapshotEquipmentRoute(formula),
     feeds: [],
     paramActuals: [],
@@ -261,7 +266,7 @@ function ensureDemoPendingDispositionOutputs() {
         : 1000,
       theoreticalFeeds: formula ? snapshotFeeds(formula) : [],
       expectedOutputs: formula ? snapshotOutputs(formula) : [],
-      routeSnapshot: formula ? snapshotSteps(formula.steps) : [],
+      routeSnapshot: formula ? snapshotSteps(formula) : [],
       equipmentRoute: formula ? snapshotEquipmentRoute(formula) : [],
       feeds: [],
       paramActuals: [],
@@ -491,8 +496,17 @@ function snapshotOutputs(formula) {
   })
 }
 
-function snapshotSteps(steps) {
-  return (steps || []).map((step) => {
+/**
+ * 配方阶段 → 批令快照；挂路线时打 pathKind，供支线「本次启用」。
+ * @param {object[]|object} stepsOrFormula 阶段数组，或带 steps/routeId 的配方
+ */
+function snapshotSteps(stepsOrFormula) {
+  const isFormula =
+    stepsOrFormula && !Array.isArray(stepsOrFormula) && Array.isArray(stepsOrFormula.steps)
+  const rawSteps = isFormula ? stepsOrFormula.steps : stepsOrFormula
+  const routeId = isFormula ? String(stepsOrFormula.routeId || '').trim() : ''
+  const route = routeId ? getProcessRouteById(routeId) : null
+  const base = (rawSteps || []).map((step) => {
     const proc = step.processId ? getProcessById(step.processId) : null
     // 配方阶段若已改过化验/门禁，用配方快照；否则回落到工序默认
     const assaySchemes = resolveAssaySchemesForStep(step, proc)
@@ -500,8 +514,12 @@ function snapshotSteps(steps) {
       ? step.equipmentIds.map((id) => String(id || '').trim()).filter(Boolean)
       : []
     const equipmentId = String(step.equipmentId || equipmentIds[0] || '').trim()
+    // 不再把配方并行组带进快照
+    const stepRest = JSON.parse(JSON.stringify(step))
+    delete stepRest.parallelGroupId
+    delete stepRest.joinMode
     return {
-      ...JSON.parse(JSON.stringify(step)),
+      ...stepRest,
       processCode: step.processCode || proc?.code || '',
       processName: step.name || proc?.name || '',
       gateMode: normalizeProcessGate(
@@ -515,6 +533,7 @@ function snapshotSteps(steps) {
       assaySchemes,
     }
   })
+  return annotateStepsWithRoutePathKind(base, route)
 }
 
 function ensureStepQcBucket(order, stepNo) {
@@ -873,8 +892,25 @@ export function listBatchOrders() {
   return batchInstructionState.orders
 }
 
+/** 旧快照补 pathKind / enabledOnOrder，便于支线开关 */
+function ensureSnapshotPathKind(order) {
+  if (!order?.routeSnapshot?.length) return order
+  const needs = order.routeSnapshot.some((s) => !s.pathKind)
+  if (!needs) {
+    order.routeSnapshot.forEach((s) => {
+      if (s.enabledOnOrder === undefined) s.enabledOnOrder = true
+    })
+    return order
+  }
+  const formula = order.formulaId ? getFormula(order.formulaId) : null
+  const route = formula?.routeId ? getProcessRouteById(formula.routeId) : null
+  order.routeSnapshot = annotateStepsWithRoutePathKind(order.routeSnapshot, route)
+  return order
+}
+
 export function getBatchOrder(id) {
-  return batchInstructionState.orders.find((o) => o.id === id) || null
+  const order = batchInstructionState.orders.find((o) => o.id === id) || null
+  return order ? ensureSnapshotPathKind(order) : null
 }
 
 export function createOrdersFromDemand({
@@ -912,7 +948,7 @@ export function createOrdersFromDemand({
       theoreticalOutput: theoreticalOutput(formula.baseBatchQty, formula.theoreticalYield),
       theoreticalFeeds: snapshotFeeds(formula),
       expectedOutputs: snapshotOutputs(formula),
-      routeSnapshot: snapshotSteps(formula.steps),
+      routeSnapshot: snapshotSteps(formula),
       equipmentRoute: snapshotEquipmentRoute(formula),
       feeds: [],
       paramActuals: [],
@@ -998,7 +1034,7 @@ export function createTankChargeFromPlan({
     theoreticalOutput: scaled.theoreticalOutput,
     theoreticalFeeds: scaled.theoreticalFeeds,
     expectedOutputs: scaled.expectedOutputs,
-    routeSnapshot: snapshotSteps(formula.steps),
+    routeSnapshot: snapshotSteps(formula),
     equipmentRoute: snapshotEquipmentRoute(formula),
     feeds: [],
     paramActuals: [],
@@ -1407,10 +1443,19 @@ function applyStepExecutionEquipment(order, step, equipmentId) {
   return selectedId
 }
 
-/** 开启「批次阶段时序确认」时：串行上一步 + 并行组汇合（any/all）。 */
+/** 开启「批次阶段时序确认」时：只卡仍启用的主线/汇合点先后（无 any/all）。 */
 export function stepSequenceConfirmErrors(order, step) {
   if (!order || !step || !isSequentialBatchStepEnabled()) return []
-  return parallelGroupSequenceErrors(order, step)
+  return enabledStepSequenceErrors(order, step)
+}
+
+/** 批令上开关支线阶段「本次启用」 */
+export function setBatchStepEnabled(orderId, stepNo, enabled) {
+  const order = getBatchOrder(orderId)
+  if (!order) throw new Error('指令不存在')
+  const result = applyStepEnabledOnOrder(order, stepNo, enabled)
+  if (!result.ok) throw new Error(result.message || '无法切换')
+  return order
 }
 
 /** 本步计划投料是否已过账（按步骤号 + 物料）。 */
@@ -1971,14 +2016,15 @@ export function postOutput(id, { rows, locationId, deviation, stepNo }) {
     })
   }
   order.outputs = [...(order.outputs || []), ...created]
-  // 方案 A：auto 模式在过账后尝试开支线（失败不回滚产出）
+  // 方案 A：仅「唯一下游 + auto」时过账后自动开支线（失败不回滚产出）
   created.forEach((outRow) => {
-    if (
-      outRow.downstreamSpawnMode === DOWNSTREAM_SPAWN_MODE.AUTO &&
-      canSpawnBranchFromOutput(outRow)
-    ) {
+    if (canAutoSpawnBranch(outRow) && canSpawnBranchFromOutput(outRow)) {
       try {
-        createBranchOrderFromOutput({ parentOrderId: order.id, outputId: outRow.id })
+        createBranchOrderFromOutput({
+          parentOrderId: order.id,
+          outputId: outRow.id,
+          formulaId: outRow.downstreamFormulaId,
+        })
       } catch (err) {
         appendOperationLog(
           order,
@@ -2116,7 +2162,10 @@ export function completionErrors(order) {
   if (!order) return ['指令不存在']
   const errors = []
   const steps = order.routeSnapshot || []
-  if (steps.some((s) => !order.confirmedSteps.includes(s.stepNo))) errors.push('还有步骤未确认')
+  // 已对本单关闭的支线不挡完工
+  if (steps.some((s) => s.enabledOnOrder !== false && !order.confirmedSteps.includes(s.stepNo))) {
+    errors.push('还有步骤未确认')
+  }
   if (!order.feeds.length) errors.push('实际投料尚未记账')
   ;(order.theoreticalFeeds || []).forEach((line) => {
     if (line.tolerance == null || line.tolerance === '') return
@@ -2155,10 +2204,7 @@ export function completionErrors(order) {
 }
 
 export function allRouteStepsConfirmed(order) {
-  const steps = order?.routeSnapshot || []
-  if (!steps.length) return false
-  const confirmed = new Set(order.confirmedSteps || [])
-  return steps.every((step) => confirmed.has(step.stepNo))
+  return allEnabledStepsConfirmed(order)
 }
 
 function clearCompletionBlockers(order) {
@@ -2571,7 +2617,7 @@ export function mergeStagingBatchesToInbound({ batchIds = [], locationId, operat
  * 方案 A：由主线产出行生成支线子指令（待下发）。
  * 投料行若物料=产出物料，写入 preferredBatchId 供现场预选批。
  */
-export function createBranchOrderFromOutput({ parentOrderId, outputId, qty } = {}) {
+export function createBranchOrderFromOutput({ parentOrderId, outputId, qty, formulaId } = {}) {
   const parent = getBatchOrder(parentOrderId)
   if (!parent) throw new Error('主线批次指令不存在')
   const output = (parent.outputs || []).find((row) => row.id === outputId)
@@ -2582,7 +2628,15 @@ export function createBranchOrderFromOutput({ parentOrderId, outputId, qty } = {
     if (!output.batchId) throw new Error('产出尚未生成批次，不能开支线')
     throw new Error('当前产出不能开支线指令')
   }
-  const formula = getFormula(output.downstreamFormulaId)
+  const cfg = normalizeDownstreamSpawn(output)
+  const pickId = String(formulaId || '').trim() || cfg.downstreamFormulaId
+  if (cfg.downstreamFormulaIds.length > 1 && !String(formulaId || '').trim()) {
+    throw new Error('该产出配置了多个下游配方，请选择要用哪一张')
+  }
+  if (pickId && !cfg.downstreamFormulaIds.includes(pickId)) {
+    throw new Error('所选配方不在该产出的下游配置中')
+  }
+  const formula = getFormula(pickId)
   if (!formula || formula.status !== 'active') throw new Error('下游配方不存在或未生效')
   const take = round3(qty != null && qty !== '' ? qty : output.qty)
   if (!(take > 0)) throw new Error('支线批量须大于 0')
@@ -2626,7 +2680,7 @@ export function createBranchOrderFromOutput({ parentOrderId, outputId, qty } = {
     theoreticalOutput: scaled.theoreticalOutput,
     theoreticalFeeds: scaled.theoreticalFeeds,
     expectedOutputs: scaled.expectedOutputs,
-    routeSnapshot: snapshotSteps(formula.steps),
+    routeSnapshot: snapshotSteps(formula),
     equipmentRoute: snapshotEquipmentRoute(formula),
     feeds: [],
     paramActuals: [],
@@ -2719,7 +2773,9 @@ export function createRework({ sourceBatchId, qty }) {
     theoreticalOutput: formula ? round3(take * Number(formula.theoreticalYield)) : take,
     theoreticalFeeds: [{ itemId: src.itemId, qty: take, feedSequence: 1, convertByContent: false }],
     expectedOutputs: [{ role: 'main', itemId: src.itemId, qty: take }],
-    routeSnapshot: snapshotSteps(formula?.steps || [{ stepNo: 1, name: '再加工', setpoints: {} }]),
+    routeSnapshot: snapshotSteps(
+      formula || { steps: [{ stepNo: 1, name: '再加工', setpoints: {} }], routeId: '' },
+    ),
     equipmentRoute: snapshotEquipmentRoute(formula),
     feeds: [],
     paramActuals: [],
@@ -2778,7 +2834,9 @@ export function createReextract({ sourceBatchId, qty }) {
     theoreticalOutput: formula ? round3(take * Number(formula.theoreticalYield || 1)) : take,
     theoreticalFeeds: [{ itemId: src.itemId, qty: take, feedSequence: 1, convertByContent: false }],
     expectedOutputs: [{ role: 'main', itemId: origin?.itemId || src.itemId, qty: take }],
-    routeSnapshot: snapshotSteps(formula?.steps || [{ stepNo: 1, name: '再提', setpoints: {} }]),
+    routeSnapshot: snapshotSteps(
+      formula || { steps: [{ stepNo: 1, name: '再提', setpoints: {} }], routeId: '' },
+    ),
     equipmentRoute: snapshotEquipmentRoute(formula),
     feeds: [],
     paramActuals: [],

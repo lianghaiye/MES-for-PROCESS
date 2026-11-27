@@ -118,7 +118,7 @@
       </div>
       <p class="block-hint">
         请先维护工艺阶段，再填写产出与投料所属阶段。阶段从工序配置中选择，同一道工序可以出现多次；选中后带出该工序参数，设定值可按本配方修改。设备可先选分类，再多选候选台；有工艺路线时，候选设备优先落在路线该工序挂的设备上。执行时用本阶段选定的设备，产线不改这台设备。
-        分叉：在「并行关系」选「与上一阶段并行」或加入已有并行组（系统自动分组，不必手填编码）；再选汇合方式（默认「组内完成一条即可」）。
+        主线/支线分叉以工艺路线拓扑为准；批令上可关闭本次不做的支线阶段，配方侧不再配并行组。
       </p>
       <a-table
         :columns="stageColumns"
@@ -142,26 +142,6 @@
               style="width: 100%"
               @change="(value) => onStepProcessChange(record.step, value)"
             />
-          </template>
-          <template v-else-if="column.key === 'parallelGroup'">
-            <a-select
-              :value="parallelSelectValue(record.step)"
-              size="small"
-              :options="parallelSelectOptions(record.stepIndex)"
-              style="width: 100%"
-              @change="(v) => onParallelRelationChange(record.step, record.stepIndex, v)"
-            />
-          </template>
-          <template v-else-if="column.key === 'joinMode'">
-            <a-select
-              v-if="record.step.parallelGroupId"
-              :value="record.step.joinMode || PARALLEL_JOIN_MODE.ANY"
-              size="small"
-              :options="PARALLEL_JOIN_MODE_OPTIONS"
-              style="width: 100%"
-              @change="(v) => onJoinModeChange(record.step, v)"
-            />
-            <span v-else class="muted">—</span>
           </template>
           <template v-else-if="column.key === 'equipmentCategory'">
             <a-select
@@ -255,8 +235,8 @@
         理论得率。联产品、副产品、回收料、废弃物按一个基准批量单独填写；请指定在哪一工序产出。产出行只配
         <strong>产出化验</strong>
         （门禁可改，不回写工序主数据）；过程检在工艺阶段/工序化验清单配置。记产出时按勾选带出检单。
-        支线另配方时：勾选「生成下游指令」并选下游配方（一键或过账自动开子令，与并行组方案 B
-        可并存）。
+        支线另配方时：勾选「生成下游指令」并可选<strong>多个</strong>下游配方。仅挂 1
+        个时可「过账后自动开」；挂多个时只能「手动生成」，登产出后由现场选用哪张配方。
       </p>
       <a-table
         :columns="outputColumns"
@@ -264,7 +244,7 @@
         :pagination="false"
         size="small"
         row-key="key"
-        :scroll="{ x: 2280 }"
+        :scroll="{ x: 2480 }"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'role'">
@@ -336,24 +316,31 @@
               >
                 启用
               </a-checkbox>
-              <a-select
-                v-if="record.downstreamSpawnEnabled"
-                v-model:value="record.downstreamFormulaId"
-                size="small"
-                allow-clear
-                show-search
-                option-filter-prop="label"
-                :options="downstreamFormulaOptions"
-                placeholder="下游配方"
-                style="width: 140px"
-              />
-              <a-select
-                v-if="record.downstreamSpawnEnabled"
-                v-model:value="record.downstreamSpawnMode"
-                size="small"
-                :options="DOWNSTREAM_SPAWN_MODE_OPTIONS"
-                style="width: 110px"
-              />
+              <template v-if="record.downstreamSpawnEnabled">
+                <a-select
+                  :value="record.downstreamFormulaIds || []"
+                  mode="multiple"
+                  size="small"
+                  allow-clear
+                  show-search
+                  option-filter-prop="label"
+                  :max-tag-count="2"
+                  :options="downstreamFormulaOptions"
+                  placeholder="下游配方（可多选）"
+                  class="downstream-formula-select"
+                  @change="(v) => onDownstreamFormulasChange(record, v)"
+                />
+                <a-select
+                  v-model:value="record.downstreamSpawnMode"
+                  size="small"
+                  :options="downstreamModeOptions(record)"
+                  :disabled="(record.downstreamFormulaIds || []).length > 1"
+                  class="downstream-mode-select"
+                />
+                <div v-if="(record.downstreamFormulaIds || []).length > 1" class="downstream-hint">
+                  多个下游时只能手动生成，现场选配方
+                </div>
+              </template>
               <span v-else class="muted">—</span>
             </div>
           </template>
@@ -635,8 +622,11 @@ import {
   getEnabledProcessParamUnitOptions,
   processParamUnitState,
 } from '@/store/processParamUnitStore'
-import { PARALLEL_JOIN_MODE, PARALLEL_JOIN_MODE_OPTIONS } from '@/utils/formulaParallelGroup'
-import { DOWNSTREAM_SPAWN_MODE, DOWNSTREAM_SPAWN_MODE_OPTIONS } from '@/utils/outputDownstreamSpawn'
+import {
+  DOWNSTREAM_SPAWN_MODE,
+  downstreamSpawnModeOptionsFor,
+  listDownstreamFormulaIds,
+} from '@/utils/outputDownstreamSpawn'
 
 const route = useRoute()
 const { goBack } = useFormCreatePage('/product-process/bom')
@@ -684,14 +674,7 @@ function assaySchemesFromProcess(proc, existing) {
   return normalizeProcessQcConfigs(proc?.qcConfigs || [])
 }
 
-function blankStep(
-  name,
-  params,
-  processId = '',
-  equipmentPartial = {},
-  assaySchemes,
-  parallelPartial = {},
-) {
+function blankStep(name, params, processId = '', equipmentPartial = {}, assaySchemes) {
   const proc = resolveStepProcess({ name, processId })
   const fromLegacy =
     typeof equipmentPartial === 'string'
@@ -701,7 +684,6 @@ function blankStep(
   if (!equipmentIds.length && fromLegacy.equipmentId) {
     equipmentIds = [fromLegacy.equipmentId]
   }
-  const groupId = String(parallelPartial.parallelGroupId || '').trim()
   return {
     key: nextKey(),
     name: proc?.name || name || '',
@@ -710,107 +692,7 @@ function blankStep(
     equipmentIds,
     params: params?.length ? params : paramsFromProcess(proc),
     assaySchemes: assaySchemesFromProcess(proc, assaySchemes),
-    parallelGroupId: groupId || '',
-    joinMode: groupId ? parallelPartial.joinMode || PARALLEL_JOIN_MODE.ANY : '',
   }
-}
-
-/** 系统内部分组 id，用户界面不展示、不手填 */
-function nextParallelGroupId() {
-  return `pg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
-}
-
-function stepDisplayName(step, index) {
-  return step?.name || `阶段${(index ?? 0) + 1}`
-}
-
-/** 某并行组在界面上的名称：用成员阶段名，不用短码 */
-function parallelGroupLabel(groupId) {
-  const id = String(groupId || '').trim()
-  if (!id) return ''
-  const names = form.steps
-    .map((s, i) => ({ s, i }))
-    .filter(({ s }) => String(s.parallelGroupId || '').trim() === id)
-    .map(({ s, i }) => stepDisplayName(s, i))
-  return names.length ? names.join(' / ') : id
-}
-
-/** 下拉当前值：无组为空串 */
-function parallelSelectValue(step) {
-  return String(step.parallelGroupId || '').trim() || ''
-}
-
-/**
- * 并行关系选项：不并行 / 与上一阶段并行 / 加入已有组（按阶段名展示）。
- * 内部 value 仍是 parallelGroupId 或哨兵 __with_prev__。
- */
-function parallelSelectOptions(stepIndex) {
-  const opts = [{ value: '', label: '不并行' }]
-  if (stepIndex > 0) {
-    const prev = form.steps[stepIndex - 1]
-    opts.push({
-      value: '__with_prev__',
-      label: `与上一阶段并行（${stepDisplayName(prev, stepIndex - 1)}）`,
-    })
-  }
-  const seen = new Set()
-  form.steps.forEach((s, i) => {
-    if (i === stepIndex) return
-    const id = String(s.parallelGroupId || '').trim()
-    if (!id || seen.has(id)) return
-    seen.add(id)
-    opts.push({ value: id, label: `加入并行：${parallelGroupLabel(id)}` })
-  })
-  return opts
-}
-
-/** 用户改并行关系：只选业务语义，短码由系统生成/复用 */
-function onParallelRelationChange(step, stepIndex, value) {
-  const v = String(value || '').trim()
-  if (!v) {
-    step.parallelGroupId = ''
-    step.joinMode = ''
-    return
-  }
-  if (v === '__with_prev__') {
-    if (stepIndex <= 0) return
-    const prev = form.steps[stepIndex - 1]
-    let groupId = String(prev.parallelGroupId || '').trim()
-    let mode = prev.joinMode || PARALLEL_JOIN_MODE.ANY
-    if (!groupId) {
-      groupId = nextParallelGroupId()
-      prev.parallelGroupId = groupId
-      prev.joinMode = mode
-    } else {
-      mode = prev.joinMode || PARALLEL_JOIN_MODE.ANY
-    }
-    step.parallelGroupId = groupId
-    step.joinMode = mode
-    // 同组对齐汇合方式
-    form.steps.forEach((s) => {
-      if (String(s.parallelGroupId || '').trim() === groupId) s.joinMode = mode
-    })
-    return
-  }
-  // 加入已有组
-  const peer = form.steps.find((s) => String(s.parallelGroupId || '').trim() === v)
-  const mode = peer?.joinMode || PARALLEL_JOIN_MODE.ANY
-  step.parallelGroupId = v
-  step.joinMode = mode
-  form.steps.forEach((s) => {
-    if (String(s.parallelGroupId || '').trim() === v) s.joinMode = mode
-  })
-}
-
-/** 改汇合方式：同组全部同步 */
-function onJoinModeChange(step, value) {
-  const id = String(step.parallelGroupId || '').trim()
-  const mode = value === PARALLEL_JOIN_MODE.ALL ? PARALLEL_JOIN_MODE.ALL : PARALLEL_JOIN_MODE.ANY
-  step.joinMode = mode
-  if (!id) return
-  form.steps.forEach((s) => {
-    if (String(s.parallelGroupId || '').trim() === id) s.joinMode = mode
-  })
 }
 
 function blankLine(stepKey) {
@@ -872,10 +754,6 @@ if (existing) {
         equipmentId: step.equipmentId,
       },
       step.assaySchemes,
-      {
-        parallelGroupId: step.parallelGroupId,
-        joinMode: step.joinMode,
-      },
     )
   })
   form.outputs = existing.outputs.map((o) => {
@@ -886,7 +764,7 @@ if (existing) {
       stepKey: step?.key,
       assayScopes: normalizeOutputAssayScopes(o.assayScopes),
       downstreamSpawnEnabled: Boolean(o.downstreamSpawnEnabled),
-      downstreamFormulaId: o.downstreamFormulaId || undefined,
+      downstreamFormulaIds: listDownstreamFormulaIds(o),
       downstreamSpawnMode: o.downstreamSpawnMode || DOWNSTREAM_SPAWN_MODE.MANUAL,
     }
     syncOutputAssayScopes(row)
@@ -916,7 +794,7 @@ if (existing) {
     stepKey: form.steps[form.steps.length - 1]?.key,
     assayScopes: [],
     downstreamSpawnEnabled: false,
-    downstreamFormulaId: undefined,
+    downstreamFormulaIds: [],
     downstreamSpawnMode: DOWNSTREAM_SPAWN_MODE.MANUAL,
   }
   form.outputs = [mainOutput]
@@ -946,11 +824,25 @@ const downstreamFormulaOptions = computed(() => {
 function onDownstreamToggle(record, checked) {
   record.downstreamSpawnEnabled = Boolean(checked)
   if (!checked) {
-    record.downstreamFormulaId = undefined
+    record.downstreamFormulaIds = []
     record.downstreamSpawnMode = DOWNSTREAM_SPAWN_MODE.MANUAL
     return
   }
+  if (!Array.isArray(record.downstreamFormulaIds)) record.downstreamFormulaIds = []
   if (!record.downstreamSpawnMode) record.downstreamSpawnMode = DOWNSTREAM_SPAWN_MODE.MANUAL
+}
+
+/** 改下游配方列表：多于 1 个强制手动生成 */
+function onDownstreamFormulasChange(record, value) {
+  const ids = Array.isArray(value)
+    ? [...new Set(value.map((id) => String(id || '').trim()).filter(Boolean))]
+    : []
+  record.downstreamFormulaIds = ids
+  if (ids.length > 1) record.downstreamSpawnMode = DOWNSTREAM_SPAWN_MODE.MANUAL
+}
+
+function downstreamModeOptions(record) {
+  return downstreamSpawnModeOptionsFor(record.downstreamFormulaIds || [])
 }
 
 const outputColumns = [
@@ -961,7 +853,7 @@ const outputColumns = [
   { title: '规格', key: 'specModel', width: 150 },
   { title: '产出工序', key: 'stage', width: 160 },
   { title: '产出化验 / 门禁', key: 'assay', width: 320 },
-  { title: '生成下游指令', key: 'downstream', width: 280 },
+  { title: '生成下游指令', key: 'downstream', width: 420 },
   { title: '预期数量', key: 'qty', width: 140, align: 'right' },
   { title: '操作', key: 'action', width: 80 },
 ]
@@ -991,8 +883,6 @@ function stageCell(record) {
 const stageColumns = [
   { title: '阶段', key: 'stepNo', width: 64, align: 'center', customCell: stageCell },
   { title: '阶段名称', key: 'stepName', width: 160, customCell: stageCell },
-  { title: '并行关系', key: 'parallelGroup', width: 200, customCell: stageCell },
-  { title: '汇合方式', key: 'joinMode', width: 150, customCell: stageCell },
   { title: '设备分类', key: 'equipmentCategory', width: 120, customCell: stageCell },
   { title: '候选设备', key: 'equipment', width: 240, customCell: stageCell },
   { title: '参数', key: 'name', width: 120 },
@@ -1084,7 +974,7 @@ function addOutput() {
     stepKey: form.steps[form.steps.length - 1]?.key,
     assayScopes: [],
     downstreamSpawnEnabled: false,
-    downstreamFormulaId: undefined,
+    downstreamFormulaIds: [],
     downstreamSpawnMode: DOWNSTREAM_SPAWN_MODE.MANUAL,
   }
   form.outputs.push(row)
@@ -1337,14 +1227,18 @@ function stepProcessValue(step) {
   return step.name ? `legacy:${step.name}` : undefined
 }
 
+/** 路线是否已有可挂接内容：拓扑 nodes / 旧网格 / 产线工段 */
+function routeHasSelectableContent(item) {
+  if ((item.nodes || []).some((n) => n?.processId || n?.name)) return true
+  if (countGridProcesses(item.grid) > 0) return true
+  if ((item.units || []).length > 0) return true
+  return false
+}
+
 const routeOptions = computed(() => {
   void processRouteState.routes
   const options = processRouteState.routes
-    .filter(
-      (item) =>
-        item.status !== '已归档' &&
-        (countGridProcesses(item.grid) > 0 || (item.units || []).length > 0),
-    )
+    .filter((item) => item.status !== '已归档' && routeHasSelectableContent(item))
     .map((item) => ({
       value: item.id,
       label: `${item.code || ''} ${item.name || ''}`.trim(),
@@ -1644,9 +1538,31 @@ function handleSaveAsNew() {
 }
 .output-downstream-panel {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 6px;
+  padding: 4px 0;
+  min-width: 360px;
+}
+
+.output-downstream-panel > .ant-checkbox-wrapper {
+  align-self: flex-start;
+}
+
+.downstream-formula-select {
+  width: 100%;
+  min-width: 220px;
+}
+
+.downstream-mode-select {
+  width: 100%;
+  min-width: 220px;
+}
+
+.downstream-hint {
+  font-size: 12px;
+  color: #86909c;
+  line-height: 1.4;
 }
 .output-assay-panel {
   display: flex;

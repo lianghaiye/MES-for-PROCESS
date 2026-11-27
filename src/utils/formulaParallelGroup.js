@@ -1,6 +1,6 @@
 /**
- * 配方工艺阶段并行组：同组并行确认，组后按下 joinMode 汇合。
- * any = 组内完成一条即可；all = 全部完成才汇合。默认 any。
+ * @deprecated 配方并行组已废弃：分叉以工艺路线为准，批令用 batchStageEnable（支线可关、无 any/all）。
+ * 保留文件仅防旧引用；新逻辑请用 `@/utils/batchStageEnable`。
  */
 
 export const PARALLEL_JOIN_MODE = {

@@ -18,11 +18,6 @@ import {
   deriveProcessGateFromAssaySchemes,
   normalizeProcessQcConfigs,
 } from '@/utils/qcProcessConfig'
-import {
-  PARALLEL_JOIN_MODE,
-  normalizeStepParallelFields,
-  validateParallelGroups,
-} from '@/utils/formulaParallelGroup'
 import { normalizeDownstreamSpawn } from '@/utils/outputDownstreamSpawn'
 import { getUser } from '@/utils/auth'
 
@@ -562,7 +557,7 @@ function seed() {
     {
       id: 'formula-licarbon',
       formulaNo: 'PF-LIC-001',
-      name: '工业级碳酸锂（酸浸沉锂·并行MOCK）',
+      name: '工业级碳酸锂（酸浸沉锂）',
       itemId: 'pi-licarbon',
       version: 'V1.0',
       lineageId: 'lineage-licarbon',
@@ -571,7 +566,7 @@ function seed() {
       isDefault: true,
       // 单槽一次进料约 100 吨（调研）；日计划约 150 吨会跨多槽。
       // 基准批量按原料吨计；理论得率 = 工碳产出 / 原料吨，约 6.4%。
-      // 挂路线 GYLX0012；阶段 G2=二次浆化‖氟渣洗涤，joinMode=any。
+      // 挂路线 GYLX0012；支线并行改由路线拓扑表达，批令上可关本次不做的支线。
       baseBatchQty: 100000,
       theoreticalYield: 0.064,
       routeId: 'route-012',
@@ -587,8 +582,9 @@ function seed() {
           itemId: 'pi-f-slag',
           expectedQty: 2800,
           stepNo: 6,
-          // 方案 A：登渣后可开支线洗涤指令
+          // 方案 A：登渣后可开支线洗涤指令（可扩多个下游，多项时只能一键）
           downstreamSpawnEnabled: true,
+          downstreamFormulaIds: ['formula-f-slag-wash'],
           downstreamFormulaId: 'formula-f-slag-wash',
           downstreamSpawnMode: 'manual',
         },
@@ -721,8 +717,6 @@ function seed() {
           processId: 'proc-op-013',
           equipmentCategory: '反应设备',
           equipmentIds: ['eq-d-2'],
-          parallelGroupId: 'G2',
-          joinMode: 'any',
           params: [
             { name: 'pH', unit: '', target: 10.5, min: 9.5, max: 11.5 },
             { name: '时间', unit: 'min', target: 90, min: 60, max: 150 },
@@ -734,8 +728,6 @@ function seed() {
           processId: 'proc-op-011',
           equipmentCategory: '分离设备',
           equipmentIds: ['eq-d-3'],
-          parallelGroupId: 'G2',
-          joinMode: 'any',
           params: [],
         },
         {
@@ -1314,7 +1306,6 @@ function normalizeFormulaSteps(steps) {
       }
     }
     const assaySchemes = resolveFormulaStepAssaySchemes(s, proc)
-    const parallel = normalizeStepParallelFields(s)
     return {
       stepNo: i + 1,
       name,
@@ -1325,8 +1316,6 @@ function normalizeFormulaSteps(steps) {
       equipmentId: equipmentIds[0] || '',
       assaySchemes,
       gateMode: deriveProcessGateFromAssaySchemes(assaySchemes),
-      parallelGroupId: parallel.parallelGroupId,
-      joinMode: parallel.joinMode,
       params: (s.params || [])
         .filter((param) => String(param.name || '').trim())
         .map((param) => {
@@ -1344,18 +1333,6 @@ function normalizeFormulaSteps(steps) {
         }),
     }
   })
-  // 同组汇合方式对齐为组内第一条的配置，避免漏填
-  const modeByGroup = new Map()
-  mapped.forEach((step) => {
-    if (!step.parallelGroupId) return
-    if (!modeByGroup.has(step.parallelGroupId)) modeByGroup.set(step.parallelGroupId, step.joinMode)
-  })
-  mapped.forEach((step) => {
-    if (!step.parallelGroupId) return
-    step.joinMode = modeByGroup.get(step.parallelGroupId) || PARALLEL_JOIN_MODE.ANY
-  })
-  const check = validateParallelGroups(mapped)
-  if (!check.ok) throw new Error(check.message)
   return mapped
 }
 
@@ -1390,10 +1367,11 @@ export function saveFormula(payload, id) {
       const step = steps.find((item) => Number(item.stepNo) === stepNo)
       const fromSchemes = assayScopesFromSchemes(step?.assaySchemes)
       const spawn = normalizeDownstreamSpawn(o)
-      if (spawn.downstreamSpawnEnabled && !spawn.downstreamFormulaId) {
-        throw new Error('启用「生成下游指令」时请选择下游配方')
+      if (spawn.downstreamSpawnEnabled && !spawn.downstreamFormulaIds.length) {
+        throw new Error('启用「生成下游指令」时请至少选择一个下游配方')
       }
-      if (spawn.downstreamSpawnEnabled && spawn.downstreamFormulaId === (id || payload.id)) {
+      const selfId = id || payload.id
+      if (spawn.downstreamFormulaIds.some((fid) => fid === selfId)) {
         throw new Error('下游配方不能是本配方')
       }
       return {
