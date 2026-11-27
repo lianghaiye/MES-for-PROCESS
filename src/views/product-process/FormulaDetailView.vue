@@ -72,6 +72,7 @@
 
         <DetailSectionCard title="产出">
           <a-table
+            class="formula-output-table"
             :columns="outputColumns"
             :data-source="outputRows"
             :pagination="false"
@@ -79,7 +80,7 @@
             bordered
             row-key="key"
             :locale="{ emptyText: '还没有产出' }"
-            :scroll="{ x: 1100 }"
+            :scroll="{ x: 1440 }"
           />
         </DetailSectionCard>
 
@@ -199,6 +200,7 @@ import { formatProcessGate } from '@/mock/processConfigSeed'
 import { assayTypeLabel, isFinishedAssayScheme } from '@/utils/qcProcessConfig'
 import { getProcessById } from '@/store/processConfigStore'
 import { deviceLabelById } from '@/store/equipmentStore'
+import { formatDownstreamSpawnDetailText } from '@/utils/outputDownstreamSpawn'
 
 const route = useRoute()
 const router = useRouter()
@@ -295,15 +297,18 @@ const basicFields = computed(() => {
   ]
 })
 
+// 列较多，靠横向滚动看全；序号固定在左侧
 const outputColumns = [
-  { title: '角色', dataIndex: 'roleLabel', width: 120 },
-  { title: '物料', dataIndex: 'item', width: 160 },
-  { title: '编码', dataIndex: 'code', width: 120 },
-  { title: '类型', dataIndex: 'materialType', width: 90 },
-  { title: '规格', dataIndex: 'specModel', width: 150 },
-  { title: '产出工序', dataIndex: 'stepText', width: 140 },
-  { title: '产出化验 / 门禁', dataIndex: 'assayText', width: 280 },
-  { title: '预期数量', dataIndex: 'expectedQty', align: 'right', width: 140 },
+  { title: '序号', dataIndex: 'index', width: 64, align: 'center', fixed: 'left' },
+  { title: '角色', dataIndex: 'roleLabel', width: 100 },
+  { title: '物料', dataIndex: 'item', width: 140, ellipsis: true },
+  { title: '编码', dataIndex: 'code', width: 110 },
+  { title: '类型', dataIndex: 'materialType', width: 80 },
+  { title: '规格', dataIndex: 'specModel', width: 120, ellipsis: true },
+  { title: '产出工序', dataIndex: 'stepText', width: 140, ellipsis: true },
+  { title: '产出化验 / 门禁', dataIndex: 'assayText', width: 200, ellipsis: true },
+  { title: '生成下游指令', dataIndex: 'downstreamText', width: 280, ellipsis: true },
+  { title: '预期数量', dataIndex: 'expectedQty', align: 'right', width: 120 },
 ]
 const lineColumns = [
   { title: '序号', dataIndex: 'index', width: 64, align: 'center' },
@@ -372,6 +377,7 @@ const outputRows = computed(() =>
     return {
       ...row,
       key: `${row.role}-${index}`,
+      index: index + 1,
       roleLabel: roleLabel[row.role] || row.role,
       item: card.name || itemLabel(row.itemId),
       code: text(card.code),
@@ -379,6 +385,8 @@ const outputRows = computed(() =>
       specModel: text(card.specModel),
       stepText: row.stepNo ? `${row.stepNo} ${row.stepName || step?.name || ''}`.trim() : '—',
       assayText: outputAssayText(row, step),
+      // 下游多选 + 手动/自动开单方式
+      downstreamText: formatDownstreamSpawnDetailText(row, getFormula),
     }
   }),
 )
@@ -633,5 +641,12 @@ function archive() {
 .current-mark {
   color: #86909c;
   font-size: 13px;
+}
+
+/* 保证产出表横向滚动条可见，下游列不被裁切 */
+.formula-output-table {
+  :deep(.ant-table-content) {
+    overflow-x: auto !important;
+  }
 }
 </style>

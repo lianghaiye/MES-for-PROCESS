@@ -3,6 +3,7 @@
  * pathKind 来自配方挂接的工艺路线拓扑；仅支线可对本单关闭。
  */
 
+import { isSameBatchBranchSkipEnabled } from '@/store/functionParamStore'
 import { ROUTE_PATH_BRANCH, ROUTE_PATH_MAIN, ROUTE_PATH_SINK } from '@/utils/processRouteTopology'
 
 /** 阶段是否对本单启用（默认 true） */
@@ -11,8 +12,9 @@ export function isStepEnabledOnOrder(step) {
   return step.enabledOnOrder !== false
 }
 
-/** 是否允许在批令上切换「本次启用」（仅支线） */
+/** 是否允许在批令上切换「本次启用」（仅支线，且功能参数允许同批关支线） */
 export function canToggleStepEnabled(step) {
+  if (!isSameBatchBranchSkipEnabled()) return false
   return String(step?.pathKind || '') === ROUTE_PATH_BRANCH
 }
 

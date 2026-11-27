@@ -1618,7 +1618,7 @@ export function confirmStep(id, stepNo, actuals, formValues = {}, options = {}) 
   return order
 }
 
-/** 投料扣减方式：自主选批 / 库位先进先出（写入 feeds.deductMode） */
+/** 投料扣减方式：自主选批 / 库位近效先出 FEFO（写入 feeds.deductMode；存档键仍为 location_fifo） */
 export const FEED_DEDUCT_MODES = {
   BATCH_PICK: 'batch_pick',
   LOCATION_FIFO: 'location_fifo',
@@ -1680,7 +1680,7 @@ export function postFeed(
     isRecycle,
     isReextract,
     feedSource: source,
-    /** batch_pick=自主选批；location_fifo=按库位/储罐先进先出（系统拆批） */
+    /** batch_pick=自主选批；location_fifo=按库位/储罐近效先出 FEFO（系统拆批） */
     deductMode: mode,
     operator: currentOperator(),
     at: dayjs().format('YYYY-MM-DD HH:mm'),
@@ -1689,13 +1689,13 @@ export function postFeed(
     order,
     isReextract ? '再提投料' : isRecycle ? '回流投料' : '投料',
     `${itemLabel(batch.itemId)} ${take}${contentPending ? '（有效含量待化验回填）' : ''}${
-      mode === FEED_DEDUCT_MODES.LOCATION_FIFO ? '（库位先进先出）' : ''
+      mode === FEED_DEDUCT_MODES.LOCATION_FIFO ? '（库位近效先出）' : ''
     }`,
   )
   return order
 }
 
-/** 按投料明细一次过账多行（实投 + 含量），扣库存；fifo 行按指定库位先进先出拆批 */
+/** 按投料明细一次过账多行（实投 + 含量），扣库存；fifo 行按指定库位近效先出（FEFO）拆批 */
 export function postFeeds(id, lines = []) {
   const order = getBatchOrder(id)
   if (!order) throw new Error('批次指令不存在')

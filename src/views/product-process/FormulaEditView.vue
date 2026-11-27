@@ -235,8 +235,13 @@
         理论得率。联产品、副产品、回收料、废弃物按一个基准批量单独填写；请指定在哪一工序产出。产出行只配
         <strong>产出化验</strong>
         （门禁可改，不回写工序主数据）；过程检在工艺阶段/工序化验清单配置。记产出时按勾选带出检单。
-        支线另配方时：勾选「生成下游指令」并可选<strong>多个</strong>下游配方。仅挂 1
-        个时可「过账后自动开」；挂多个时只能「手动生成」，登产出后由现场选用哪张配方。
+        <template v-if="spawnBranchOrderEnabled">
+          支线另配方时：勾选「生成下游指令」并可选<strong>多个</strong>下游配方。仅挂 1
+          个时可「过账后自动开」；挂多个时只能「手动生成」，登产出后由现场选用哪张配方。支线处理方式见功能参数。
+        </template>
+        <template v-else>
+          当前功能参数为「仅同批关支线」，本页不配置下游开单；支线在批令上关闭即可。
+        </template>
       </p>
       <a-table
         :columns="outputColumns"
@@ -284,11 +289,12 @@
             />
           </template>
           <template v-else-if="column.key === 'assay'">
+            <!-- 与下游指令一致：上勾选，下门禁组件 -->
             <div class="output-assay-panel">
               <template v-if="!record.stepKey">
                 <span class="output-assay-empty">请先选产出工序</span>
               </template>
-              <div v-else class="output-assay-row">
+              <template v-else>
                 <a-checkbox
                   :checked="outputAssayEnabled(record)"
                   @change="(e) => onOutputAssayToggle(record, e.target.checked)"
@@ -301,14 +307,15 @@
                   :options="PROCESS_GATE_OPTIONS"
                   :disabled="!outputAssayEnabled(record)"
                   :placeholder="outputAssayEnabled(record) ? '请选择门禁' : '勾选后必选'"
-                  style="flex: 1; min-width: 140px"
+                  class="output-assay-gate-select"
                   @change="(value) => onOutputAssayGateSelect(record, value)"
                 />
-              </div>
+              </template>
             </div>
           </template>
           <template v-else-if="column.key === 'downstream'">
-            <div class="output-downstream-panel">
+            <div v-if="!spawnBranchOrderEnabled" class="muted">功能参数未开放另开指令</div>
+            <div v-else class="output-downstream-panel">
               <a-checkbox
                 :checked="Boolean(record.downstreamSpawnEnabled)"
                 :disabled="record.role === 'main'"
@@ -622,6 +629,7 @@ import {
   getEnabledProcessParamUnitOptions,
   processParamUnitState,
 } from '@/store/processParamUnitStore'
+import { isSpawnBranchOrderEnabled } from '@/store/functionParamStore'
 import {
   DOWNSTREAM_SPAWN_MODE,
   downstreamSpawnModeOptionsFor,
@@ -808,6 +816,9 @@ function outputRoleOptions(record) {
   return OUTPUT_ROLE_OPTIONS.filter((item) => item.value !== 'main')
 }
 
+/** 功能参数是否允许「另开指令」 */
+const spawnBranchOrderEnabled = computed(() => isSpawnBranchOrderEnabled())
+
 /** 下游配方：仅生效配方，且排除当前编辑对象 */
 const downstreamFormulaOptions = computed(() => {
   void formulaState.formulas
@@ -852,7 +863,8 @@ const outputColumns = [
   { title: '类型', key: 'materialType', width: 90 },
   { title: '规格', key: 'specModel', width: 150 },
   { title: '产出工序', key: 'stage', width: 160 },
-  { title: '产出化验 / 门禁', key: 'assay', width: 320 },
+  // 约 220：能完整显示「硬门禁 · 系统自动卡」，又不过宽
+  { title: '产出化验 / 门禁', key: 'assay', width: 220 },
   { title: '生成下游指令', key: 'downstream', width: 420 },
   { title: '预期数量', key: 'qty', width: 140, align: 'right' },
   { title: '操作', key: 'action', width: 80 },
@@ -1567,15 +1579,19 @@ function handleSaveAsNew() {
 .output-assay-panel {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 6px;
   padding: 4px 0;
+  max-width: 208px;
 }
 
-.output-assay-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+.output-assay-panel > .ant-checkbox-wrapper {
+  align-self: flex-start;
+}
+
+.output-assay-gate-select {
+  width: 100%;
+  max-width: 208px;
 }
 
 .output-assay-empty {

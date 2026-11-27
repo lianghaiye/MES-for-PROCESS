@@ -161,7 +161,7 @@
               </template>
               <template v-else-if="column.key === 'enabled'">
                 <a-switch
-                  v-if="canToggleStepEnabled(record)"
+                  v-if="sameBatchBranchSkipEnabled && canToggleStepEnabled(record)"
                   size="small"
                   :checked="record.enabledOnOrder !== false"
                   :disabled="order?.status !== 'running' && order?.status !== 'pending_release'"
@@ -1291,7 +1291,7 @@
                 </div>
               </template>
             </a-select>
-            <span v-else class="muted">按库位先进先出</span>
+            <span v-else class="muted">按库位近效先出</span>
           </template>
           <template v-else-if="column.key === 'qty'">
             <a-input-number
@@ -2051,6 +2051,7 @@ import {
   round3,
   suggestActualFeedQty,
 } from '@/utils/processBatchMath'
+import { isSameBatchBranchSkipEnabled } from '@/store/functionParamStore'
 import { canToggleStepEnabled } from '@/utils/batchStageEnable'
 import { canSpawnBranchFromOutput, listDownstreamFormulaIds } from '@/utils/outputDownstreamSpawn'
 import {
@@ -2166,20 +2167,29 @@ const routeStepColumns = [
   { title: '工序门禁', key: 'gate', width: 96 },
   { title: '操作', key: 'action', width: 100, fixed: 'right' },
 ]
-const stepColumns = [
-  { title: '序', dataIndex: 'stepNo', width: 56, align: 'center', fixed: 'left' },
-  { title: '状态', key: 'done', width: 88, fixed: 'left' },
-  { title: '本次启用', key: 'enabled', width: 100 },
-  { title: '阶段', key: 'name', width: 168, ellipsis: true },
-  { title: '设备', dataIndex: 'equipmentText', width: 150, ellipsis: true },
-  { title: '岗位', dataIndex: 'positionText', width: 100, ellipsis: true },
-  { title: '配方要求', dataIndex: 'limitText', width: 180, ellipsis: true },
-  { title: '转序条件', dataIndex: 'transitionText', width: 140, ellipsis: true },
-  { title: '化验', key: 'qc', width: 200 },
-  { title: '实绩摘要', key: 'summary', width: 160 },
-  { title: '产出', key: 'output', width: 160 },
-  { title: '操作', key: 'action', width: 168, fixed: 'right' },
-]
+const sameBatchBranchSkipEnabled = computed(() => isSameBatchBranchSkipEnabled())
+
+const stepColumns = computed(() => {
+  const cols = [
+    { title: '序', dataIndex: 'stepNo', width: 56, align: 'center', fixed: 'left' },
+    { title: '状态', key: 'done', width: 88, fixed: 'left' },
+  ]
+  if (sameBatchBranchSkipEnabled.value) {
+    cols.push({ title: '本次启用', key: 'enabled', width: 100 })
+  }
+  cols.push(
+    { title: '阶段', key: 'name', width: 168, ellipsis: true },
+    { title: '设备', dataIndex: 'equipmentText', width: 150, ellipsis: true },
+    { title: '岗位', dataIndex: 'positionText', width: 100, ellipsis: true },
+    { title: '配方要求', dataIndex: 'limitText', width: 180, ellipsis: true },
+    { title: '转序条件', dataIndex: 'transitionText', width: 140, ellipsis: true },
+    { title: '化验', key: 'qc', width: 200 },
+    { title: '实绩摘要', key: 'summary', width: 160 },
+    { title: '产出', key: 'output', width: 160 },
+    { title: '操作', key: 'action', width: 168, fixed: 'right' },
+  )
+  return cols
+})
 const assayColumns = [
   { title: '序号', key: 'seq', width: 56, align: 'center' },
   { title: '工序', dataIndex: 'point', width: 120, ellipsis: true },
@@ -2675,14 +2685,14 @@ function feedSourceLabelOf(source, row) {
 function feedDeductModeMeta(row) {
   const mode = String(row?.deductMode || '').trim()
   if (mode === 'location_fifo') {
-    return { label: '库位先进先出', color: 'cyan' }
+    return { label: '库位近效先出', color: 'cyan' }
   }
   if (mode === 'batch_pick') {
     return { label: '自主选批', color: 'blue' }
   }
-  // 历史未落字段：含量待补录多半是 FIFO；其余按自主选批，避免空着
+  // 历史未落字段：含量待补录多半是库位 FEFO；其余按自主选批，避免空着
   if (row?.contentPending) {
-    return { label: '库位先进先出', color: 'cyan' }
+    return { label: '库位近效先出', color: 'cyan' }
   }
   return { label: '自主选批', color: 'blue' }
 }
@@ -4088,7 +4098,7 @@ function buildFeedLineDrafts() {
     const preferred = batches[0]
     const card = itemMasterCard(line.itemId)
     const unit = itemUnit(line.itemId) || order.value?.unit || 'kg'
-    // 强制 FIFO / 两者皆可默认不选手选批次；选手选模式才预填首批
+    // 强制库位 FEFO / 两者皆可默认不选手选批次；选手选模式才预填首批
     const preselectBatch = !fifoOnly && !either
     const selected = preselectBatch ? preferred : null
     const qc = selected
@@ -4335,7 +4345,7 @@ function makeFeedDraftRow(base, batch, qty) {
 
 /**
  * 搜索更多多选确认后：一个批次一行。
- * 按含量折算 → 按「目标有效量」FIFO 分摊再反算各批实投；否则按剩余理论毛重 FIFO。
+ * 按含量折算 → 按「目标有效量」分摊再反算各批实投；否则按剩余理论毛重分摊（候选批已按近效先出排序）。
  */
 function onFeedBatchesPicked(batches) {
   const row = feedBatchPickerRow.value
@@ -5130,7 +5140,7 @@ function saveFeed() {
     let tip = '投料已记账，原料批次重量和罐液位已扣减'
     if (isReextractOrder.value) tip = '再提投料已记账'
     else if (usedRecycle && !usedFifo && usedPick) tip = '回流投料已记账'
-    else if (usedFifo && usedPick) tip = '投料已记账，部分选手选批次、部分按库位先进先出扣减'
+    else if (usedFifo && usedPick) tip = '投料已记账，部分选手选批次、部分按库位近效先出扣减'
     else if (usedFifo) tip = '投料已记账，已按所选储罐/库位扣减'
     if (pendingContent) tip += '；有效含量待补录（可手补或化验回填）'
     message.success(tip)

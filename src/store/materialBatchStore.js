@@ -774,7 +774,7 @@ export function listFeedableBatches(itemId, order, options = {}) {
     .sort(compareExpiry)
 }
 
-/** 某物料当前可 FIFO 扣减的来源库位（仓/罐），带可扣量。 */
+/** 某物料当前可按库位 FEFO 扣减的来源库位（仓/罐），带可扣量。 */
 export function listFeedSourceLocations(itemId, order, options = {}) {
   const batches = listFeedableBatches(itemId, order, { ...options, locationId: '' })
   const qtyByLoc = new Map()
@@ -798,7 +798,7 @@ export function listFeedSourceLocations(itemId, order, options = {}) {
 }
 
 /**
- * 按库位先进先出拆分投料量（先失效日，再余量）。
+ * 按库位近效先出（FEFO）拆分投料量：候选批已按失效日期升序；过期批不参与。
  * options.locationId 有值时仅在该库位/罐内扣减。
  */
 export function planFeedFifoAllocations(itemId, qty, order, options = {}) {

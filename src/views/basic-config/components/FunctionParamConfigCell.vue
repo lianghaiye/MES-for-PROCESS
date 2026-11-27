@@ -119,6 +119,21 @@
     />
 
     <a-radio-group
+      v-else-if="record.key === 'batchBranchHandleMode'"
+      :value="batchBranchHandleMode"
+      @change="(e) => onBatchBranchHandleModeChange(e.target.value)"
+    >
+      <a-radio
+        v-for="option in BATCH_BRANCH_HANDLE_MODE_OPTIONS"
+        :key="option.value"
+        :value="option.value"
+        style="display: block; margin: 4px 0"
+      >
+        {{ option.label }}
+      </a-radio>
+    </a-radio-group>
+
+    <a-radio-group
       v-else-if="record.key === 'salesOrderStockFulfillmentDefault'"
       :value="salesOrderStockFulfillmentDefault"
       @change="(e) => onSalesOrderStockFulfillmentDefaultChange(e.target.value)"
@@ -228,6 +243,9 @@ import {
   setEnableSalesOrderDiscount,
   isSequentialBatchStepEnabled,
   setEnableSequentialBatchStep,
+  BATCH_BRANCH_HANDLE_MODE_OPTIONS,
+  getBatchBranchHandleMode,
+  setBatchBranchHandleMode,
   SALES_ORDER_STOCK_FULFILLMENT_DEFAULT_OPTIONS,
   getSalesOrderStockFulfillmentDefault,
   setSalesOrderStockFulfillmentDefault,
@@ -271,6 +289,10 @@ const enableSalesOrderDiscount = computed(() => isSalesOrderDiscountEnabled())
 const enableSequentialBatchStep = computed(() => {
   void functionParamState.params.enableSequentialBatchStep
   return isSequentialBatchStepEnabled()
+})
+const batchBranchHandleMode = computed(() => {
+  void functionParamState.params.batchBranchHandleMode
+  return getBatchBranchHandleMode()
 })
 const salesOrderStockFulfillmentDefault = computed(() => getSalesOrderStockFulfillmentDefault())
 const paymentLinkMode = computed(() => getPaymentLinkMode())
@@ -331,6 +353,9 @@ function onEnableSequentialBatchStepChange(checked) {
     setEnableSequentialBatchStep(checked),
     checked ? '已开启批次阶段时序确认' : '已关闭批次阶段时序确认',
   )
+}
+function onBatchBranchHandleModeChange(mode) {
+  toastSave(setBatchBranchHandleMode(mode), '已更新支线处理方式')
 }
 function onSalesOrderStockFulfillmentDefaultChange(mode) {
   toastSave(setSalesOrderStockFulfillmentDefault(mode), '已更新销售订单库存履约默认值')

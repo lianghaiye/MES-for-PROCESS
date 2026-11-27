@@ -46,7 +46,7 @@
       <div class="center-panel panel-box">
         <div class="box-title">{{ readonly ? '工艺路线' : '配置工艺路线' }}</div>
         <div v-if="!readonly" class="grid-tip">
-          支线落在两个主线格之间；子支在父支右下、汇入最底。无汇合点时不默认汇入。×：先清工序再删格。
+          支线落在两个主线格之间；子支在父支右下、汇入最底。无汇合点时不默认汇入。×：先清工序再删格。空白处拖动可平移画布。
         </div>
         <div v-if="!readonly" class="board-toolbar">
           <a-space :size="8" wrap>
@@ -55,18 +55,7 @@
             <a-button size="small" @click="addSink">添加汇合点</a-button>
             <a-button size="small" @click="relayout">重新排布</a-button>
             <a-divider type="vertical" />
-            <span class="tool-label">连线</span>
-            <a-radio-group v-model:value="linkMode" size="small" button-style="solid">
-              <a-radio-button value="">选择</a-radio-button>
-              <a-radio-button value="fork">设分出</a-radio-button>
-              <a-radio-button value="join">设汇入</a-radio-button>
-            </a-radio-group>
-            <a-divider type="vertical" />
-            <span class="tool-label">视图</span>
-            <a-button size="small" title="缩小" @click="zoomOut">－</a-button>
-            <span class="zoom-label">{{ zoomPercent }}%</span>
-            <a-button size="small" title="放大" @click="zoomIn">＋</a-button>
-            <a-button size="small" @click="resetView">复位</a-button>
+            <a-button size="small" title="内容复位到左上" @click="resetPan">复位视图</a-button>
           </a-space>
         </div>
 
@@ -74,7 +63,6 @@
           ref="areaRef"
           class="grid-area"
           :class="{ 'is-panning': isPanning }"
-          @wheel.prevent="onCanvasWheel"
           @mousedown="onPanStart"
         >
           <div class="grid-viewport" :style="viewportStyle">
@@ -141,7 +129,6 @@
                   {
                     filled: Boolean(cell.processId),
                     selected: selectedId === cell.id,
-                    'link-from': linkFromId === cell.id,
                   },
                 ]"
                 :style="cellStyle(cell)"
@@ -508,20 +495,18 @@ const props = defineProps({
 
 const emit = defineEmits(['update:nodes'])
 
-/** 基准尺寸；实际格子/间距 = 基准 × zoom（内容缩放，不是画布 CSS scale） */
-const BASE_CELL_W = 148
-const BASE_CELL_H = 96
-const BASE_GAP_X = 48
-const BASE_EXTRA_GAP_X = 72
-const BASE_GAP_Y = 40
-const BASE_PAD = 28
+/** 格子与间距固定尺寸（不做缩放，仅平移内容） */
+const CELL_W = 148
+const CELL_H = 96
+const GAP_X = 48
+const EXTRA_GAP_X = 72
+const GAP_Y = 40
+const PAD = 28
 /** 内容区至少预留的列/行（无格时也撑开） */
 const MIN_COLS = 7
 const MIN_ROWS = 4
 
 const selectedId = ref('')
-const linkMode = ref('')
-const linkFromId = ref('')
 const pendingProcessId = ref('')
 const dragProcessId = ref('')
 const leftWidth = ref(220)
@@ -530,65 +515,20 @@ const areaRef = ref(null)
 const areaSize = ref({ w: 0, h: 0 })
 let areaObserver = null
 
-/** 内容缩放 + 平移（格子真实变大变小） */
-const ZOOM_MIN = 0.5
-const ZOOM_MAX = 2
-const ZOOM_STEP = 0.1
-const zoom = ref(1)
+/** 拖空白处平移内容；画布外框不动 */
 const panX = ref(0)
 const panY = ref(0)
 const isPanning = ref(false)
 let panLast = { x: 0, y: 0 }
 
-const cellW = computed(() => BASE_CELL_W * zoom.value)
-const cellH = computed(() => BASE_CELL_H * zoom.value)
-const gapX = computed(() => BASE_GAP_X * zoom.value)
-const extraGapX = computed(() => BASE_EXTRA_GAP_X * zoom.value)
-const gapY = computed(() => BASE_GAP_Y * zoom.value)
-const pad = computed(() => BASE_PAD * zoom.value)
-
-const zoomPercent = computed(() => Math.round(zoom.value * 100))
-/** 仅平移；缩放靠改 cellW/cellH，不 scale 整块画布 */
 const viewportStyle = computed(() => ({
   transform: `translate(${panX.value}px, ${panY.value}px)`,
-  transformOrigin: '0 0',
   willChange: 'transform',
 }))
 
-function clampZoom(z) {
-  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(z.toFixed(2))))
-}
-
-function zoomIn() {
-  zoom.value = clampZoom(zoom.value + ZOOM_STEP)
-}
-
-function zoomOut() {
-  zoom.value = clampZoom(zoom.value - ZOOM_STEP)
-}
-
-function resetView() {
-  zoom.value = 1
+function resetPan() {
   panX.value = 0
   panY.value = 0
-}
-
-/** 滚轮：放大/缩小格子尺寸，指针下内容锚点尽量不动 */
-function onCanvasWheel(e) {
-  const rect = areaRef.value?.getBoundingClientRect()
-  if (!rect) return
-  const old = zoom.value
-  const factor = e.deltaY > 0 ? 1 / 1.1 : 1.1
-  const next = clampZoom(old * factor)
-  if (next === old) return
-  const cx = e.clientX - rect.left
-  const cy = e.clientY - rect.top
-  const contentX = cx - panX.value
-  const contentY = cy - panY.value
-  const ratio = next / old
-  zoom.value = next
-  panX.value = cx - contentX * ratio
-  panY.value = cy - contentY * ratio
 }
 
 /** 空白处拖拽平移（点在格子上不触发，避免和点选冲突） */
@@ -638,8 +578,16 @@ const selectedProcess = computed(() =>
 )
 
 const edgePack = computed(() => buildTopologyGridEdges(props.nodes || []))
-const maxCol = computed(() => Math.max(MIN_COLS, ...laidOut.value.map((n) => n.gridCol || 1), 1))
-const maxRow = computed(() => Math.max(MIN_ROWS, ...laidOut.value.map((n) => n.gridRow || 1), 1))
+/** 实际占格（画板尺寸按此算，避免 MIN_COLS 撑出大片空灰底） */
+const occupiedMaxCol = computed(() =>
+  Math.max(1, ...laidOut.value.map((n) => Number(n.gridCol) || 1), 1),
+)
+const occupiedMaxRow = computed(() =>
+  Math.max(1, ...laidOut.value.map((n) => Number(n.gridRow) || 1), 1),
+)
+/** 含预留空位，供新增汇合点等落位 */
+const maxCol = computed(() => Math.max(MIN_COLS, occupiedMaxCol.value))
+const maxRow = computed(() => Math.max(MIN_ROWS, occupiedMaxRow.value))
 /** 各主线下支线数量，用于列间距加宽 */
 const branchCountByFork = computed(() => countBranchesByForkMain(laidOut.value))
 
@@ -651,50 +599,44 @@ function gapAfterCol(col) {
   const main = laidOut.value.find(
     (n) => n.pathKind === ROUTE_PATH_MAIN && Number(n.gridCol) === Number(col),
   )
-  if (!main) return gapX.value
+  if (!main) return GAP_X
   const n = branchCountByFork.value.get(main.id) || 0
-  if (n <= 1) return gapX.value
-  return gapX.value + Math.min(n - 1, 2) * (extraGapX.value / 2)
+  if (n <= 1) return GAP_X
+  return GAP_X + Math.min(n - 1, 2) * (EXTRA_GAP_X / 2)
 }
 
 function colLeftX(col) {
-  let x = pad.value
+  let x = PAD
   for (let c = 1; c < col; c += 1) {
-    x += cellW.value + gapAfterCol(c)
+    x += CELL_W + gapAfterCol(c)
   }
   return x
 }
 
 const contentW = computed(() => {
-  const cols = maxCol.value
-  let w = pad.value * 2
+  const cols = occupiedMaxCol.value
+  let w = PAD * 2
   for (let c = 1; c <= cols; c += 1) {
-    w += cellW.value
+    w += CELL_W
     if (c < cols) w += gapAfterCol(c)
   }
   return w
 })
 const contentH = computed(
-  () => pad.value * 2 + maxRow.value * cellH.value + (maxRow.value - 1) * gapY.value,
+  () => PAD * 2 + occupiedMaxRow.value * CELL_H + (occupiedMaxRow.value - 1) * GAP_Y,
 )
-/** 内容区随 zoom 变大；格子少时也至少有一块可拖区域 */
-const boardPixelW = computed(() =>
-  Math.max(contentW.value, areaSize.value.w || 0, 720 * zoom.value),
-)
-const boardPixelH = computed(() =>
-  Math.max(contentH.value, areaSize.value.h || 0, 420 * zoom.value),
-)
+/** 灰底至少铺满可视区，内容多时再撑大（固定字号，可拖平移） */
+const boardPixelW = computed(() => Math.max(contentW.value, areaSize.value.w || 0, 720))
+const boardPixelH = computed(() => Math.max(contentH.value, areaSize.value.h || 0, 420))
 const boardStyle = computed(() => ({
   width: `${boardPixelW.value}px`,
   height: `${boardPixelH.value}px`,
-  // 格子内字号随内容缩放
-  '--topo-zoom': String(zoom.value),
 }))
 
 function cellOrigin(col, row) {
   return {
     x: colLeftX(col || 1),
-    y: pad.value + ((row || 1) - 1) * (cellH.value + gapY.value),
+    y: PAD + ((row || 1) - 1) * (CELL_H + GAP_Y),
   }
 }
 
@@ -703,8 +645,8 @@ function cellStyle(cell) {
   return {
     left: `${x}px`,
     top: `${y}px`,
-    width: `${cellW.value}px`,
-    height: `${cellH.value}px`,
+    width: `${CELL_W}px`,
+    height: `${CELL_H}px`,
   }
 }
 
@@ -712,16 +654,16 @@ function cellCenter(id) {
   const n = laidOut.value.find((x) => x.id === id)
   if (!n) return null
   const { x, y } = cellOrigin(n.gridCol || 1, n.gridRow || 1)
-  return { x: x + cellW.value / 2, y: y + cellH.value / 2 }
+  return { x: x + CELL_W / 2, y: y + CELL_H / 2 }
 }
 
 /**
  * 汇入线走「汇合点上方总线」；回流走格子右侧外轨，与主线/汇入区分。
  */
 function buildEdgePath(e, from, to, laneIndex) {
-  const cw = cellW.value
-  const ch = cellH.value
-  const gy = gapY.value
+  const cw = CELL_W
+  const ch = CELL_H
+  const gy = GAP_Y
   const fromBottom = from.y + ch / 2 - 6
   const toTop = to.y - ch / 2 + 6
   if (e.kind === 'main') {
@@ -755,7 +697,7 @@ function buildEdgePath(e, from, to, laneIndex) {
     // 回流：从右侧外轨绕回目标，避免与主流程线重叠
     const fromRight = from.x + cw / 2 - 4
     const toRight = to.x + cw / 2 - 4
-    const railX = Math.max(fromRight, toRight) + 28 * zoom.value + (laneIndex % 5) * 14 * zoom.value
+    const railX = Math.max(fromRight, toRight) + 28 + (laneIndex % 5) * 14
     const labelX = railX + 4
     const labelY = (from.y + to.y) / 2
     return {
@@ -958,31 +900,6 @@ function onDrop(cell, event) {
 function onCellClick(cell) {
   if (props.readonly) {
     selectedId.value = cell.id
-    return
-  }
-  if (linkMode.value === 'fork' || linkMode.value === 'join') {
-    if (!linkFromId.value) {
-      // 设分出：起点须是支线；设汇入：起点可以是支线或主线
-      const canStartFork = linkMode.value === 'fork' && cell.pathKind === ROUTE_PATH_BRANCH
-      const canStartJoin =
-        linkMode.value === 'join' &&
-        (cell.pathKind === ROUTE_PATH_BRANCH || cell.pathKind === ROUTE_PATH_MAIN)
-      if (!canStartFork && !canStartJoin) {
-        selectedId.value = cell.id
-        return
-      }
-      linkFromId.value = cell.id
-      selectedId.value = cell.id
-      return
-    }
-    const list = laidOut.value.map((n) => ({ ...n }))
-    const source = list.find((n) => n.id === linkFromId.value)
-    if (source && cell.id !== source.id) {
-      if (linkMode.value === 'fork') source.forkAfterNodeId = cell.id
-      else source.joinToNodeId = cell.id
-      commit(list)
-    }
-    linkFromId.value = ''
     return
   }
   // 点选工序后点空格放入
@@ -1233,7 +1150,6 @@ function removeCell(id) {
   const next = removeRouteNode(laidOut.value, id)
   emit('update:nodes', next)
   if (selectedId.value === id) selectedId.value = next[0]?.id || ''
-  if (linkFromId.value === id) linkFromId.value = ''
   message.success(target.pathKind === ROUTE_PATH_BRANCH ? '已删除支线格' : '已删除主线格')
 }
 
@@ -1264,10 +1180,6 @@ function startResize(event) {
   window.addEventListener('mousemove', onMove)
   window.addEventListener('mouseup', onUp)
 }
-
-watch(linkMode, () => {
-  linkFromId.value = ''
-})
 
 // 默认选中第一格，方便右侧展示
 watch(
@@ -1438,18 +1350,6 @@ onBeforeUnmount(() => {
   padding: 8px 12px;
 }
 
-.tool-label {
-  font-size: 13px;
-  color: #4e5969;
-}
-
-.zoom-label {
-  min-width: 44px;
-  text-align: center;
-  font-size: 12px;
-  color: #4e5969;
-}
-
 .grid-area {
   flex: 1;
   overflow: hidden;
@@ -1479,7 +1379,7 @@ onBeforeUnmount(() => {
 
 .return-edge-label {
   fill: #d46b08;
-  font-size: calc(11px * var(--topo-zoom, 1));
+  font-size: 11px;
   pointer-events: none;
 }
 
@@ -1495,10 +1395,10 @@ onBeforeUnmount(() => {
   position: absolute;
   z-index: 1;
   box-sizing: border-box;
-  padding: calc(8px * var(--topo-zoom, 1));
+  padding: 8px;
   background: #fff;
   border: 1px dashed #c9cdd4;
-  border-radius: calc(8px * var(--topo-zoom, 1));
+  border-radius: 8px;
   cursor: pointer;
 }
 
@@ -1520,18 +1420,14 @@ onBeforeUnmount(() => {
   box-shadow: inset 0 0 0 2px #307068;
 }
 
-.grid-cell.link-from {
-  box-shadow: inset 0 0 0 2px #d48806;
-}
-
 .cell-tag {
   display: inline-block;
-  margin-bottom: calc(4px * var(--topo-zoom, 1));
-  padding: 0 calc(6px * var(--topo-zoom, 1));
+  margin-bottom: 4px;
+  padding: 0 6px;
   border-radius: 4px;
   background: #e5e6eb;
   color: #4e5969;
-  font-size: calc(11px * var(--topo-zoom, 1));
+  font-size: 11px;
 }
 
 .grid-cell.main .cell-tag {
@@ -1540,7 +1436,7 @@ onBeforeUnmount(() => {
 }
 
 .cell-name {
-  font-size: calc(13px * var(--topo-zoom, 1));
+  font-size: 13px;
   font-weight: 600;
   color: #307068;
   overflow: hidden;
@@ -1550,7 +1446,7 @@ onBeforeUnmount(() => {
 
 .cell-meta {
   margin-top: 2px;
-  font-size: calc(11px * var(--topo-zoom, 1));
+  font-size: 11px;
   color: #86909c;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1558,9 +1454,9 @@ onBeforeUnmount(() => {
 }
 
 .cell-placeholder {
-  margin-top: calc(12px * var(--topo-zoom, 1));
+  margin-top: 12px;
   text-align: center;
-  font-size: calc(12px * var(--topo-zoom, 1));
+  font-size: 12px;
   color: #c9cdd4;
 }
 

@@ -588,6 +588,39 @@ export const ENABLE_SEQUENTIAL_BATCH_STEP_DESCRIPTION =
   '开启后，批次指令工艺阶段按顺序确认：上一步未确认前，下一步不可确认。' +
   '关闭后各步可分别确认（默认）。硬门禁仍按各步自己的过程检控制；关单时仍要求全部步骤已确认。'
 
+/** 物理支线怎么做：同批关阶段 vs 产出另开子令（全厂一套，勿叠配） */
+export const BATCH_BRANCH_HANDLE_MODES = {
+  SAME_BATCH: 'same_batch',
+  SPAWN_ORDER: 'spawn_order',
+  BOTH: 'both',
+}
+
+export const BATCH_BRANCH_HANDLE_MODE_OPTIONS = [
+  {
+    value: BATCH_BRANCH_HANDLE_MODES.SAME_BATCH,
+    label: '仅同批关支线（一张批令里关掉不做的支线阶段）',
+  },
+  {
+    value: BATCH_BRANCH_HANDLE_MODES.SPAWN_ORDER,
+    label: '仅另开指令（登产出后开下游批令）',
+  },
+  {
+    value: BATCH_BRANCH_HANDLE_MODES.BOTH,
+    label: '两者都开（需业务自行避免同一条支线叠配）',
+  },
+]
+
+export const BATCH_BRANCH_HANDLE_MODE_DESCRIPTION =
+  '一条物理支线建议只走一种：同槽顺手做用「仅同批关支线」；独立排产/追溯用「仅另开指令」。' +
+  '选「仅××」时会关掉另一套入口，避免两条路叠在同一条渣线上。'
+
+export function normalizeBatchBranchHandleMode(value) {
+  const text = String(value || '').trim()
+  if (text === BATCH_BRANCH_HANDLE_MODES.SAME_BATCH) return BATCH_BRANCH_HANDLE_MODES.SAME_BATCH
+  if (text === BATCH_BRANCH_HANDLE_MODES.SPAWN_ORDER) return BATCH_BRANCH_HANDLE_MODES.SPAWN_ORDER
+  return BATCH_BRANCH_HANDLE_MODES.BOTH
+}
+
 export const PROCESS_ROUTE_MODE_DESCRIPTION =
   '工艺路线：格子是工序，每格再挂设备，渣/母液回流写回到哪一格。' +
   '设备顺序：只排设备，配方阶段仍选工序，设备从这条顺序里选。' +
@@ -595,7 +628,10 @@ export const PROCESS_ROUTE_MODE_DESCRIPTION =
 
 export { ROUTE_MODE_OPTIONS as PROCESS_ROUTE_MODE_OPTIONS }
 
-/** 流程型投料扣减：新料 / 回流可分别配置；投料来源在行上选 */
+/**
+ * 流程型投料扣减：新料 / 回流可分别配置；投料来源在行上选。
+ * LOCATION_FIFO 存档键仍为 location_fifo（兼容旧数据），业务含义是库位内 FEFO（近效先出）。
+ */
 export const PROCESS_FEED_DEDUCT_MODES = {
   BATCH_PICK: 'batch_pick',
   LOCATION_FIFO: 'location_fifo',
@@ -604,17 +640,17 @@ export const PROCESS_FEED_DEDUCT_MODES = {
 
 export const PROCESS_FEED_DEDUCT_OPTIONS = [
   { value: PROCESS_FEED_DEDUCT_MODES.BATCH_PICK, label: '选手选批次' },
-  { value: PROCESS_FEED_DEDUCT_MODES.LOCATION_FIFO, label: '按库位/储罐先进先出' },
+  { value: PROCESS_FEED_DEDUCT_MODES.LOCATION_FIFO, label: '按库位/储罐近效先出（FEFO）' },
   { value: PROCESS_FEED_DEDUCT_MODES.EITHER, label: '两者皆可' },
 ]
 
 export const PROCESS_FEED_DEDUCT_FRESH_DESCRIPTION =
-  '控制「线边新料」行怎么扣：选手选批次 / 只选储罐或库位按先进先出 / 两者皆可（选了批按批扣，未选批须选位置）。' +
-  'FIFO 时有效含量可手填或空着后补。投料来源在明细行选择，不在表头统一。'
+  '控制「线边新料」行怎么扣：选手选批次 / 只选储罐或库位按近效先出（FEFO：失效日期近的先扣，过期批不参与） / 两者皆可（选了批按批扣，未选批须选位置）。' +
+  'FEFO 时有效含量可手填或空着后补。投料来源在明细行选择，不在表头统一。'
 
 export const PROCESS_FEED_DEDUCT_RECYCLE_DESCRIPTION =
-  '控制「回流料」行怎么扣：选手选批次（默认）/ 回用罐+量先进先出 / 两者皆可。' +
-  'FIFO 只扣待回用池中落在所选回用罐上的量。再提指令仍强制选手选批次，不受本项影响。'
+  '控制「回流料」行怎么扣：选手选批次（默认）/ 回用罐+量近效先出（FEFO） / 两者皆可。' +
+  'FEFO 只扣待回用池中落在所选回用罐上的量。再提指令仍强制选手选批次，不受本项影响。'
 
 /** @deprecated 文案兼容，等同新料说明 */
 export const PROCESS_FEED_DEDUCT_DESCRIPTION = PROCESS_FEED_DEDUCT_FRESH_DESCRIPTION
@@ -726,6 +762,14 @@ export const FUNCTION_PARAM_ROWS = [
     scenario: '批次阶段时序确认',
     description: ENABLE_SEQUENTIAL_BATCH_STEP_DESCRIPTION,
     controlType: 'switch',
+  },
+  {
+    key: 'batchBranchHandleMode',
+    category: 'production',
+    scenario: '支线处理方式',
+    description: BATCH_BRANCH_HANDLE_MODE_DESCRIPTION,
+    controlType: 'radio',
+    options: BATCH_BRANCH_HANDLE_MODE_OPTIONS,
   },
   {
     key: 'salaryPushMode',
@@ -869,6 +913,7 @@ function loadFromStorage() {
           enableBomLevelMts: false,
           enableSequentialProcessTask: false,
           enableSequentialBatchStep: Boolean(parsed.enableSequentialBatchStep),
+          batchBranchHandleMode: normalizeBatchBranchHandleMode(parsed.batchBranchHandleMode),
           processRouteMode: normalizeRouteMode(
             parsed.processRouteMode ?? readLegacyProcessRouteMode(),
           ),
@@ -927,6 +972,7 @@ export const functionParamState = reactive({
     enableBomLevelMts: false,
     enableSequentialProcessTask: false,
     enableSequentialBatchStep: false,
+    batchBranchHandleMode: BATCH_BRANCH_HANDLE_MODES.BOTH,
     processRouteMode: normalizeRouteMode(readLegacyProcessRouteMode()) || ROUTE_MODE_PROCESS,
     processFeedDeductMode: PROCESS_FEED_DEDUCT_MODES.BATCH_PICK,
     processFeedDeductModeRecycle: PROCESS_FEED_DEDUCT_MODES.BATCH_PICK,
@@ -1249,6 +1295,28 @@ export function setEnableSequentialBatchStep(enabled) {
   return { ok: true }
 }
 
+/** 支线处理方式（全厂一套） */
+export function getBatchBranchHandleMode() {
+  return normalizeBatchBranchHandleMode(functionParamState.params.batchBranchHandleMode)
+}
+
+export function setBatchBranchHandleMode(mode) {
+  functionParamState.params.batchBranchHandleMode = normalizeBatchBranchHandleMode(mode)
+  return { ok: true }
+}
+
+/** 是否允许批令上「本次启用」关支线阶段 */
+export function isSameBatchBranchSkipEnabled() {
+  const mode = getBatchBranchHandleMode()
+  return mode === BATCH_BRANCH_HANDLE_MODES.SAME_BATCH || mode === BATCH_BRANCH_HANDLE_MODES.BOTH
+}
+
+/** 是否允许配方产出「生成下游指令 / 开支线子令」 */
+export function isSpawnBranchOrderEnabled() {
+  const mode = getBatchBranchHandleMode()
+  return mode === BATCH_BRANCH_HANDLE_MODES.SPAWN_ORDER || mode === BATCH_BRANCH_HANDLE_MODES.BOTH
+}
+
 function readLegacyProcessRouteMode() {
   try {
     const raw = localStorage.getItem('i-doms-process-mes-settings-v1')
@@ -1294,7 +1362,7 @@ export function getFeedDeductModeForSource(source) {
   return getProcessFeedDeductMode()
 }
 
-/** 强制仅先进先出 */
+/** 强制仅库位近效先出（FEFO；存档模式 location_fifo） */
 export function isProcessFeedLocationFifo(source = 'fresh') {
   return getFeedDeductModeForSource(source) === PROCESS_FEED_DEDUCT_MODES.LOCATION_FIFO
 }
@@ -1304,7 +1372,7 @@ export function isProcessFeedEitherMode(source = 'fresh') {
   return getFeedDeductModeForSource(source) === PROCESS_FEED_DEDUCT_MODES.EITHER
 }
 
-/** 允许 FIFO 扣减 */
+/** 允许库位 FEFO 扣减（强制 FEFO 或两者皆可） */
 export function allowsProcessFeedFifo(source = 'fresh') {
   const mode = getFeedDeductModeForSource(source)
   return (
